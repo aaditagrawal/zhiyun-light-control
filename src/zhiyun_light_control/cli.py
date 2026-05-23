@@ -7,6 +7,7 @@ import asyncio
 import json
 
 from .async_client import AsyncZhiyunLight
+from .artnet import DmxMapping, serve_artnet
 from .client import ZhiyunLight
 from .models import CommandResult, Scene
 from .osc import serve_osc
@@ -112,6 +113,20 @@ def build_parser() -> argparse.ArgumentParser:
     osc.add_argument("--allow-control", action="store_true")
     osc.set_defaults(func=cmd_osc_serve)
 
+    artnet = sub.add_parser("artnet-serve", help="Run an Art-Net / DMX bridge.")
+    artnet.add_argument("--host", default="0.0.0.0")
+    artnet.add_argument("--port", type=int, default=6454)
+    artnet.add_argument("--universe", type=parse_int, default=0)
+    artnet.add_argument("--light-port")
+    artnet.add_argument("--obj", type=parse_int, default=1)
+    artnet.add_argument("--brightness-channel", type=parse_optional_int, default=1)
+    artnet.add_argument("--cct-channel", type=parse_optional_int, default=2)
+    artnet.add_argument("--sleep-channel", type=parse_optional_int)
+    artnet.add_argument("--cct-min", type=int, default=2700)
+    artnet.add_argument("--cct-max", type=int, default=6500)
+    artnet.add_argument("--allow-control", action="store_true")
+    artnet.set_defaults(func=cmd_artnet_serve)
+
     return parser
 
 
@@ -124,6 +139,12 @@ def add_transport_args(parser: argparse.ArgumentParser) -> None:
 
 
 def parse_int(text: str) -> int:
+    return int(text, 0)
+
+
+def parse_optional_int(text: str) -> int | None:
+    if text.lower() in {"none", "off", "disabled"}:
+        return None
     return int(text, 0)
 
 
@@ -365,6 +386,25 @@ def cmd_osc_serve(args: argparse.Namespace) -> int:
         host=args.host,
         port=args.port,
         light_port=args.light_port,
+        allow_control=args.allow_control,
+    )
+    return 0
+
+
+def cmd_artnet_serve(args: argparse.Namespace) -> int:
+    serve_artnet(
+        host=args.host,
+        port=args.port,
+        universe=args.universe,
+        light_port=args.light_port,
+        mapping=DmxMapping(
+            obj=args.obj,
+            brightness_channel=args.brightness_channel,
+            cct_channel=args.cct_channel,
+            sleep_channel=args.sleep_channel,
+            cct_min=args.cct_min,
+            cct_max=args.cct_max,
+        ),
         allow_control=args.allow_control,
     )
     return 0

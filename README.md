@@ -21,6 +21,7 @@ Implemented but still experimental:
 - BLE transport using the direct ZY service and characteristics found in ZY Vega.
 - Local JSON HTTP bridge for wider media-production automation.
 - Local OSC/UDP bridge for QLab, TouchDesigner, Max/MSP, Resolume, and similar tools.
+- Local Art-Net/DMX bridge for lighting desks and media servers.
 - Scene application for media workflows that need to set several light properties together.
 
 Firmware flashing is intentionally not part of this package. Use Zhiyun's official updater for firmware writes.
@@ -119,6 +120,31 @@ Supported OSC addresses:
 
 The `/light/...` prefix is accepted as an alias for the same OSC commands.
 
+Start the local Art-Net bridge:
+
+```sh
+zlight artnet-serve --host 0.0.0.0 --port 6454 --universe 0 --allow-control
+```
+
+Default DMX mapping:
+
+```text
+Channel 1 -> brightness 0-100%
+Channel 2 -> CCT 2700-6500K
+```
+
+Power/sleep is intentionally disabled by default. To opt in:
+
+```sh
+zlight artnet-serve --sleep-channel 3 --allow-control
+```
+
+Use `none` to disable a mapped channel:
+
+```sh
+zlight artnet-serve --cct-channel none --allow-control
+```
+
 ## Python API
 
 ```python
@@ -131,6 +157,15 @@ with ZhiyunLight.usb() as light:
     light.set_cct(obj=1, kelvin=5600)
     results = light.apply_scene(Scene(obj=1, sleep=0, brightness=35, kelvin=5600))
     print([result.to_dict() for result in results])
+```
+
+Map a DMX frame to the same scene model:
+
+```python
+from zhiyun_light_control import DmxMapping, scene_from_dmx
+
+scene = scene_from_dmx(bytes([128, 255]), DmxMapping(obj=1))
+print(scene)
 ```
 
 For integration debugging, use `exchange_runtime()` instead of the convenience methods. It returns a `CommandResult` with the transmitted frame, raw response bytes, parsed frames, and matching ACK if one arrived.

@@ -76,6 +76,16 @@ The OSC bridge is UDP-based and dependency-free:
 
 The `/light/...` prefix is an alias. Control endpoints require `zlight osc-serve --allow-control`. The server replies to each datagram with `/zhiyun/result` containing success flag, action, and error text.
 
+The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and maps DMX channels to a `Scene`:
+
+| DMX Channel | Default | Meaning |
+| --- | --- | --- |
+| 1 | enabled | Brightness, 0-255 mapped to 0-100% |
+| 2 | enabled | CCT, 0-255 mapped to 2700-6500K |
+| 3 | disabled | Sleep/power, values below 128 map to `1`, values 128+ map to `0` |
+
+Power/sleep is opt-in because that command's exact device semantics still need more live validation. Use `zlight artnet-serve --sleep-channel 3 --allow-control` to enable it. Repeated identical scenes are dropped so a steady DMX stream does not spam the USB/BLE transport.
+
 ## Updater Identity Frame
 
 Updater identity uses the same envelope with a different first word:
