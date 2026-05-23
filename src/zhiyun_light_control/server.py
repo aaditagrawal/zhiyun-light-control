@@ -93,6 +93,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/commands",
                         "/capabilities",
                         "/diagnostics",
+                        "/ready",
                         "/devices",
                         "/events",
                         "/history",
@@ -133,6 +134,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/diagnostics":
             self._json(self._handle_diagnostics())
+            return
+        if path == "/ready":
+            self._json(self._handle_ready())
             return
         if path == "/devices":
             try:
@@ -601,17 +605,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         return report.to_dict()
 
     def _handle_diagnostics(self) -> dict[str, object]:
-        status: dict[str, object]
-        connection_confirmed = False
-        error: str | None = None
-        try:
-            with self.server.light_factory() as light:
-                report = read_sync_status(light, transport=self.server.transport)
-            status = report.to_dict()
-            connection_confirmed = report.connection_confirmed
-        except Exception as exc:  # pragma: no cover - endpoint keeps errors useful.
-            error = str(exc)
-            status = {"ok": False, "error": error}
+        status, connection_confirmed, error = self._status_snapshot()
         return diagnostics_response(
             allow_control=self.server.allow_control,
             transport=self.server.transport,
@@ -623,6 +617,46 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             status=status,
             error=error,
         )
+
+    def _handle_ready(self) -> dict[str, object]:
+        status, connection_confirmed, error = self._status_snapshot()
+        version, state = self.server.state_tracker.versioned_snapshot()
+        devices = discover_transport_devices(
+            configured_transport=self.server.transport,
+            configured_usb_port=self.server.light_port,
+            include_ble=False,
+            ble_backend=self.server.ble_backend or "worker",
+            ble_name_contains=self.server.ble_name_contains,
+            ble_python=self.server.ble_python,
+        )
+        return readiness_response(
+            allow_control=self.server.allow_control,
+            transport=self.server.transport,
+            ble_backend=self.server.ble_backend,
+            ble_profile=self.server.ble_profile,
+            ble_address=self.server.ble_address,
+            ble_name_contains=self.server.ble_name_contains,
+            connection_confirmed=connection_confirmed,
+            status=status,
+            error=error,
+            devices=devices,
+            state_version=version,
+            state=None if state is None else state.to_dict(),
+        )
+
+    def _status_snapshot(self) -> tuple[dict[str, object], bool, str | None]:
+        status: dict[str, object]
+        connection_confirmed = False
+        error: str | None = None
+        try:
+            with self.server.light_factory() as light:
+                report = read_sync_status(light, transport=self.server.transport)
+            status = report.to_dict()
+            connection_confirmed = report.connection_confirmed
+        except Exception as exc:  # pragma: no cover - endpoint keeps errors useful.
+            error = str(exc)
+            status = {"ok": False, "error": error}
+        return status, connection_confirmed, error
 
     def _handle_discover_usb(self, body: dict[str, object]) -> dict[str, object]:
         if self.server.transport != "usb":
@@ -848,6 +882,12 @@ def openapi_schema() -> dict[str, object]:
                     "Diagnostics",
                 )
             },
+            "/ready": {
+                "get": _operation(
+                    "Summarize controller readiness",
+                    "Readiness",
+                )
+            },
             "/devices": {
                 "get": _operation(
                     "Discover local USB ports and optional BLE devices",
@@ -1035,6 +1075,7 @@ def _openapi_schemas() -> dict[str, object]:
         },
         "Capabilities": {"type": "object", "additionalProperties": True},
         "Diagnostics": {"type": "object", "additionalProperties": True},
+        "Readiness": {"type": "object", "additionalProperties": True},
         "Devices": {
             "type": "object",
             "additionalProperties": True,
@@ -1310,6 +1351,15 @@ def capabilities_response(
                 "confirmation": "per-attempt ACK/timeout/evidence report",
             },
             {
+                "name": "ready",
+                "method": "GET",
+                "path": "/ready",
+                "requires_control": False,
+                "confirmation": (
+                    "single preflight response for controller read/write readiness"
+                ),
+            },
+            {
                 "name": "devices",
                 "method": "GET",
                 "path": "/devices",
@@ -1470,6 +1520,100 @@ def diagnostics_response(
         "status": status,
         "next_steps": next_steps,
     }
+
+
+def readiness_response(
+    *,
+    allow_control: bool,
+    transport: str,
+    ble_backend: str | None,
+    ble_profile: str | None,
+    ble_address: str | None,
+    ble_name_contains: str | None,
+    connection_confirmed: bool,
+    status: dict[str, object],
+    error: str | None,
+    devices: dict[str, object],
+    state_version: int,
+    state: dict[str, object] | None,
+) -> dict[str, object]:
+    confirmed_control = bool(state and state.get("applied") is True)
+    control_requests = connection_confirmed and allow_control
+    next_steps = _diagnostic_next_steps(
+        allow_control=allow_control,
+        transport=transport,
+        connection_confirmed=connection_confirmed,
+        error=error,
+    )
+    warnings = _readiness_warnings(
+        allow_control=allow_control,
+        transport=transport,
+        connection_confirmed=connection_confirmed,
+        error=error,
+        state=state,
+    )
+    return {
+        "api": "zhiyun-light-control",
+        "ok": connection_confirmed,
+        "connection_confirmed": connection_confirmed,
+        "control_enabled": allow_control,
+        "ready_for": {
+            "read_status": connection_confirmed,
+            "control_requests": control_requests,
+            "confirmed_control": confirmed_control,
+            "state_events": True,
+            "device_discovery": True,
+        },
+        "bridge": {
+            "transport": transport,
+            "ble_backend": ble_backend,
+            "ble_profile": ble_profile,
+            "ble_address": ble_address,
+            "ble_name_contains": ble_name_contains,
+        },
+        "status": status,
+        "devices": devices,
+        "state": {
+            "version": state_version,
+            "snapshot": {"scene": None} if state is None else state,
+        },
+        "write_confirmation": {
+            "required": True,
+            "last_control_confirmed": confirmed_control,
+            "evidence_field": "CommandResult.acknowledged",
+        },
+        "warnings": warnings,
+        "next_steps": next_steps,
+    }
+
+
+def _readiness_warnings(
+    *,
+    allow_control: bool,
+    transport: str,
+    connection_confirmed: bool,
+    error: str | None,
+    state: dict[str, object] | None,
+) -> list[str]:
+    warnings: list[str] = []
+    error_text = error.lower() if error else ""
+    if transport == "ble" and "unauthorized" in error_text:
+        warnings.append("macOS Bluetooth authorization is blocking BLE access.")
+    elif not connection_confirmed:
+        warnings.append("The configured transport did not return ACK-backed status.")
+    if connection_confirmed and not allow_control:
+        warnings.append("Write endpoints are disabled until --allow-control is set.")
+    if connection_confirmed and allow_control and not (
+        state and state.get("applied") is True
+    ):
+        warnings.append("No ACK-confirmed control request is recorded yet.")
+    if state and state.get("applied") is False:
+        reason = state.get("reason")
+        if reason:
+            warnings.append(f"Last control request was not confirmed: {reason}.")
+        else:
+            warnings.append("Last control request was not confirmed.")
+    return warnings
 
 
 def _diagnostic_next_steps(

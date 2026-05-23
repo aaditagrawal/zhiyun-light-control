@@ -131,6 +131,10 @@ class HttpClientTests(unittest.TestCase):
         try:
             self.assertTrue(client.health()["ok"])
             self.assertTrue(client.diagnostics()["connection_confirmed"])
+            ready = client.ready()
+            self.assertTrue(ready["ready_for"]["read_status"])
+            self.assertTrue(ready["ready_for"]["control_requests"])
+            self.assertFalse(ready["ready_for"]["confirmed_control"])
             self.assertIn("/brightness", client.commands()["post"])
             self.assertIn("brightness", client.capabilities()["scene_fields"])
             devices = client.devices()

@@ -42,6 +42,9 @@ class LightBridgeClient:
     def diagnostics(self) -> dict[str, object]:
         return self._get("/diagnostics")
 
+    def ready(self) -> dict[str, object]:
+        return self._get("/ready")
+
     def devices(
         self,
         *,

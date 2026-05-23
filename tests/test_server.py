@@ -408,6 +408,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/validate", commands["post"])
             self.assertIn("/capabilities", commands["get"])
             self.assertIn("/devices", commands["get"])
+            self.assertIn("/ready", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/sequence", commands["post"])
 
@@ -430,6 +431,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("control_mode", primitives["scene"]["fields"])
             self.assertEqual(primitives["sequence"]["path"], "/sequence")
             self.assertEqual(primitives["devices"]["path"], "/devices")
+            self.assertFalse(primitives["ready"]["requires_control"])
             self.assertFalse(primitives["events"]["requires_control"])
             self.assertFalse(primitives["history"]["requires_control"])
 
@@ -440,6 +442,17 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(diagnostics["bridge"]["transport"], "usb")
             self.assertEqual(diagnostics["status"]["firmware"], "1.6.4")
             self.assertIn("allow-control", diagnostics["next_steps"][0])
+
+            ready = json.loads(urlopen(f"{base}/ready", timeout=3).read())
+            self.assertTrue(ready["ok"])
+            self.assertTrue(ready["ready_for"]["read_status"])
+            self.assertFalse(ready["ready_for"]["control_requests"])
+            self.assertFalse(ready["ready_for"]["confirmed_control"])
+            self.assertEqual(ready["status"]["firmware"], "1.6.4")
+            self.assertEqual(ready["state"]["version"], 0)
+            self.assertIsNone(ready["state"]["snapshot"]["scene"])
+            self.assertIn("usb", ready["devices"])
+            self.assertIn("allow-control", ready["warnings"][0])
 
             status = json.loads(urlopen(f"{base}/status", timeout=3).read())
             self.assertTrue(status["connection_confirmed"])
@@ -557,6 +570,15 @@ class ServerTests(unittest.TestCase):
                 diagnostics["status"]["error"], "Bluetooth state unauthorized: 3"
             )
             self.assertIn("Privacy & Security", diagnostics["next_steps"][0])
+
+            ready = json.loads(urlopen(f"{base}/ready", timeout=3).read())
+            self.assertFalse(ready["ok"])
+            self.assertFalse(ready["ready_for"]["read_status"])
+            self.assertEqual(ready["bridge"]["ble_backend"], "macos-app")
+            self.assertEqual(
+                ready["status"]["error"], "Bluetooth state unauthorized: 3"
+            )
+            self.assertIn("Bluetooth authorization", ready["warnings"][0])
         finally:
             server.shutdown()
             server.server_close()
@@ -696,6 +718,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", schema["paths"])
             self.assertIn("/capabilities", schema["paths"])
             self.assertIn("/diagnostics", schema["paths"])
+            self.assertIn("/ready", schema["paths"])
             self.assertIn("/devices", schema["paths"])
             self.assertIn("/discover-usb", schema["paths"])
             self.assertIn("/events", schema["paths"])
@@ -707,6 +730,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("Status", schema["components"]["schemas"])
             self.assertIn("Capabilities", schema["components"]["schemas"])
             self.assertIn("Diagnostics", schema["components"]["schemas"])
+            self.assertIn("Readiness", schema["components"]["schemas"])
             self.assertIn("Devices", schema["components"]["schemas"])
             self.assertIn("History", schema["components"]["schemas"])
             self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])
@@ -717,6 +741,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/openapi.json", commands["get"])
             self.assertIn("/status", commands["get"])
             self.assertIn("/devices", commands["get"])
+            self.assertIn("/ready", commands["get"])
             self.assertIn("/events", commands["get"])
             self.assertIn("/history", commands["get"])
             self.assertIn("/discover-usb", commands["post"])

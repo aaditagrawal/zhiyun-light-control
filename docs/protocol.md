@@ -114,6 +114,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/commands` | List bridge commands |
 | `GET` | `/capabilities` | Discover primitives, fields, and evidence statuses |
 | `GET` | `/diagnostics` | Check bridge transport readiness and next steps |
+| `GET` | `/ready` | One-call controller preflight with status, devices, state, and warnings |
 | `GET` | `/devices` | Discover local USB ports and optional BLE scan results |
 | `GET` | `/events` | Server-Sent Events stream of requested bridge state |
 | `GET` | `/history` | Recent requested-state event history for reconnect recovery |
@@ -144,6 +145,12 @@ sent as an integer or an integer string such as `"0x01"`.
 are read-only and return parsed identity/status fields alongside the raw
 `CommandResult` for each global read. This gives integrations a stable polling
 surface without using the gated raw-frame endpoint.
+
+`GET /ready` is a dashboard/controller preflight that combines the same
+ACK-backed status read with non-scanning device discovery, the current requested
+bridge state, and explicit booleans for `read_status`, `control_requests`, and
+`confirmed_control`. It does not run a BLE scan or send write commands.
+
 `POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
 it is deliberately behind the same control gate because arbitrary frames can be
 state-changing. The matching CLI form is:

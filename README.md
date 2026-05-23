@@ -251,6 +251,7 @@ curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/capabilities
 curl http://127.0.0.1:8765/diagnostics
+curl http://127.0.0.1:8765/ready
 curl http://127.0.0.1:8765/devices
 curl 'http://127.0.0.1:8765/devices?include_ble=true&ble_backend=macos-app&timeout=6&name_contains=PL103'
 curl http://127.0.0.1:8765/events?limit=1
@@ -314,10 +315,18 @@ show-control clients. It lists every supported read/write primitive, required
 payload fields, whether the primitive requires `--allow-control`, scene fields,
 loaded preset names, and the transport evidence statuses a client should expect.
 
-`GET /diagnostics` is the readiness endpoint for integration dashboards. It
-opens the bridge's configured transport, returns ACK-backed status evidence when
+`GET /diagnostics` is the transport diagnostics endpoint for integration
+dashboards. It opens the bridge's configured transport, returns ACK-backed
+status evidence when
 available, echoes the active BLE backend/profile/address filters, and includes
 next-step hints for cases such as macOS Bluetooth authorization failures.
+
+`GET /ready` is the one-call controller preflight. It combines ACK-backed
+transport status, non-scanning device discovery, current requested-state
+snapshot, write gate state, and warnings. `ready_for.control_requests` only
+turns true when the bridge is connected and started with `--allow-control`;
+`ready_for.confirmed_control` only turns true after the bridge has recorded an
+ACK-confirmed control request.
 
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
 Add `include_ble=true` to run a bounded BLE scan through the selected
@@ -418,6 +427,7 @@ from zhiyun_light_control import LightBridgeClient, Scene
 bridge = LightBridgeClient("http://127.0.0.1:8765")
 
 print(bridge.diagnostics()["connection_confirmed"])
+print(bridge.ready()["ready_for"])
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
