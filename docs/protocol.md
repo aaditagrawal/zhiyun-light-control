@@ -130,6 +130,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
 | `POST` | `/plan` | Resolve a scene/preset/transition/sequence without writes |
+| `POST` | `/inspect-ble` | Inspect BLE GATT services and characteristics |
 | `POST` | `/discover-usb` | Bounded USB primitive discovery matrix with per-attempt evidence |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
@@ -194,6 +195,11 @@ the same scene, preset, transition, and sequence shapes used by the write
 endpoints, resolves presets and implicit transition starts, and returns
 `dry_run: true` plus the target scene data without opening USB/BLE or requiring
 `--allow-control`.
+
+HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
+connects through `worker`, `macos-app`, or `direct`, resolves by `address` or
+`name_contains`, and returns GATT services, characteristics, and characteristic
+properties without sending Zhiyun runtime frames or requiring `--allow-control`.
 
 HTTP `/devices` exposes transport discovery for dashboards and controller
 setup flows. It always returns USB `/dev/cu.usbmodem*` ports and the configured
@@ -365,6 +371,12 @@ and `yc`. One-shot BLE CLI commands and bridge commands accept
 `--ble-notify-uuid` for custom bench routing. `AsyncZhiyunLight.ble()` and
 `AsyncZhiyunLight.isolated_ble()` expose the same profile and UUID override
 arguments.
+
+`zlight inspect-ble` and HTTP `POST /inspect-ble` enumerate the live GATT table
+through the selected backend. Use this after Bluetooth authorization to collect
+the exact services, write characteristics, notify characteristics, and
+properties exposed by a specific firmware before choosing a custom command
+profile.
 
 Native bundled CoreBluetooth inspection with an
 `NSBluetoothAlwaysUsageDescription` plist found service `FEE9` plus mesh service

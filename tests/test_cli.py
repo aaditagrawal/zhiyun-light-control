@@ -1000,6 +1000,59 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["devices"][0]["address"], "UUID-1")
         scan.assert_called_once_with(timeout=1.0, name_contains="PL103")
 
+    def test_inspect_ble_can_use_macos_app_backend(self) -> None:
+        class FakeInspectResult:
+            ok = True
+
+            def to_dict(self):
+                return {
+                    "ok": True,
+                    "address": "UUID-1",
+                    "services": [
+                        {
+                            "uuid": "service",
+                            "characteristics": [
+                                {
+                                    "uuid": "write",
+                                    "properties": ["write"],
+                                }
+                            ],
+                        }
+                    ],
+                }
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.inspect_ble_device",
+                return_value=FakeInspectResult(),
+            ) as inspect_ble,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "inspect-ble",
+                    "--backend",
+                    "macos-app",
+                    "--timeout",
+                    "1",
+                    "--name-contains",
+                    "PL103",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["address"], "UUID-1")
+        inspect_ble.assert_called_once_with(
+            backend="macos-app",
+            timeout=1.0,
+            address=None,
+            name_contains="PL103",
+            python=None,
+        )
+
     def test_ble_helper_reports_helper_and_opens_settings(self) -> None:
         stdout = io.StringIO()
         with (

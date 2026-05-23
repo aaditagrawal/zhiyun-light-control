@@ -8,8 +8,12 @@ from dataclasses import dataclass
 from .macos_ble_app import macos_ble_app_info
 from .transports.ble import (
     BLE_PROFILES,
+    BleInspectResult,
     BleScanResult,
     filter_ble_devices_by_name,
+    inspect_zhiyun_ble_macos_app,
+    inspect_zhiyun_ble_safe,
+    inspect_zhiyun_device,
     scan_zhiyun_devices,
     scan_zhiyun_devices_macos_app,
     scan_zhiyun_devices_safe,
@@ -109,6 +113,39 @@ def scan_ble_devices(
     return scan_zhiyun_devices_safe(
         timeout=timeout,
         name_contains=name_contains,
+        python=python,
+    )
+
+
+def inspect_ble_device(
+    *,
+    backend: str = "worker",
+    timeout: float = 5.0,
+    address: str | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+) -> BleInspectResult:
+    if backend not in BLE_BACKENDS:
+        supported = ", ".join(BLE_BACKENDS)
+        raise ValueError(f"unsupported BLE backend {backend!r}; expected {supported}")
+    if backend == "macos-app":
+        return inspect_zhiyun_ble_macos_app(
+            address=address,
+            name_contains=name_contains,
+            timeout=timeout,
+        )
+    if backend == "direct":
+        return asyncio.run(
+            inspect_zhiyun_device(
+                address=address,
+                name_contains=name_contains,
+                timeout=timeout,
+            )
+        )
+    return inspect_zhiyun_ble_safe(
+        address=address,
+        name_contains=name_contains,
+        timeout=timeout,
         python=python,
     )
 

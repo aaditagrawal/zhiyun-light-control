@@ -11,7 +11,12 @@ from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .bridge import LightConnectionConfig, PersistentLightFactory, make_light_factory
 from .client import ProbeResult, ZhiyunLight
 from .cues import CueError, CueLibrary, cue_from_mapping
-from .devices import BLE_BACKENDS, UsbPortInfo, discover_transport_devices
+from .devices import (
+    BLE_BACKENDS,
+    UsbPortInfo,
+    discover_transport_devices,
+    inspect_ble_device,
+)
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_MODES,
@@ -51,8 +56,11 @@ from .transports.ble import (
     BLE_PROFILE_NAMES,
     BLE_PROFILES,
     DEFAULT_BLE_PROFILE,
+    BleCharacteristic,
     BleExchangeResult,
+    BleInspectResult,
     BleProfile,
+    BleService,
     BleWorkerError,
     CrashIsolatedBleTransport,
     MacosBleAppTransport,
@@ -74,8 +82,11 @@ __all__ = [
     "BLE_PROFILE_NAMES",
     "BLE_PROFILES",
     "BLE_BACKENDS",
+    "BleCharacteristic",
     "BleExchangeResult",
+    "BleInspectResult",
     "BleProfile",
+    "BleService",
     "BleWorkerError",
     "CommandResult",
     "CueError",
@@ -124,6 +135,7 @@ __all__ = [
     "encode_artdmx",
     "encode_sacn",
     "iter_frames",
+    "inspect_ble_device",
     "macos_ble_app_info",
     "sacn_multicast_address",
     "read_async_status",

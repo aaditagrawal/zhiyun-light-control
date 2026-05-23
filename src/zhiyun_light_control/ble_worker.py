@@ -12,6 +12,7 @@ from .transports.ble import (
     DEFAULT_BLE_PROFILE,
     BleTransport,
     filter_ble_devices_by_name,
+    inspect_zhiyun_device,
     scan_zhiyun_devices,
 )
 
@@ -26,6 +27,11 @@ def main(argv: list[str] | None = None) -> int:
     scan = sub.add_parser("scan", help="Scan for likely Zhiyun BLE devices.")
     scan.add_argument("--timeout", type=float, default=5.0)
     scan.add_argument("--name-contains")
+
+    inspect = sub.add_parser("inspect", help="Inspect BLE GATT services.")
+    inspect.add_argument("--address")
+    inspect.add_argument("--name-contains")
+    inspect.add_argument("--timeout", type=float, default=5.0)
 
     exchange = sub.add_parser("exchange-raw", help="Exchange one raw frame.")
     exchange.add_argument("--tx-hex", required=True)
@@ -44,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(args_list)
     if args.command == "scan":
         return _scan_main(args.timeout, args.name_contains)
+    if args.command == "inspect":
+        return _inspect_main(args)
     if args.command == "exchange-raw":
         return _exchange_main(args)
     raise AssertionError(args.command)
@@ -73,6 +81,18 @@ def _scan_main(timeout: float, name_contains: str | None = None) -> int:
         )
     )
     return 0
+
+
+def _inspect_main(args: argparse.Namespace) -> int:
+    result = asyncio.run(
+        inspect_zhiyun_device(
+            address=args.address,
+            name_contains=args.name_contains,
+            timeout=args.timeout,
+        )
+    )
+    print(json.dumps(result.to_dict(), sort_keys=True))
+    return 0 if result.ok else 1
 
 
 def _exchange_main(args: argparse.Namespace) -> int:

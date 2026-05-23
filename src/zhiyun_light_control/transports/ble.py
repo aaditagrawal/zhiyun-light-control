@@ -122,6 +122,59 @@ class BleScanResult:
 
 
 @dataclass(frozen=True)
+class BleCharacteristic:
+    uuid: str
+    properties: tuple[str, ...] = ()
+    handle: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "uuid": self.uuid,
+            "properties": list(self.properties),
+        }
+        if self.handle is not None:
+            data["handle"] = self.handle
+        return data
+
+
+@dataclass(frozen=True)
+class BleService:
+    uuid: str
+    characteristics: tuple[BleCharacteristic, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "uuid": self.uuid,
+            "characteristics": [
+                characteristic.to_dict()
+                for characteristic in self.characteristics
+            ],
+        }
+
+
+@dataclass(frozen=True)
+class BleInspectResult:
+    ok: bool
+    address: str | None
+    services: tuple[BleService, ...] = ()
+    error: str | None = None
+    returncode: int | None = None
+    worker_python: str | None = None
+    signal_name: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "address": self.address,
+            "services": [service.to_dict() for service in self.services],
+            "error": self.error,
+            "returncode": self.returncode,
+            "signal": self.signal_name,
+            "worker_python": self.worker_python,
+        }
+
+
+@dataclass(frozen=True)
 class BleExchangeResult:
     ok: bool
     tx: bytes
@@ -522,6 +575,134 @@ def scan_zhiyun_devices_safe(
     )
 
 
+async def inspect_zhiyun_device(
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    timeout: float = 5.0,
+) -> BleInspectResult:
+    BleakClient, _ = _load_bleak()
+    resolved_address = address
+    if resolved_address is None:
+        devices = filter_ble_devices_by_name(
+            await scan_zhiyun_devices(timeout=timeout),
+            name_contains,
+        )
+        if not devices:
+            return BleInspectResult(
+                ok=False,
+                address=None,
+                error="no matching Zhiyun BLE device found",
+                worker_python="direct",
+            )
+        resolved_address = devices[0].address
+    client = BleakClient(resolved_address)
+    try:
+        await client.connect()
+        services = await _client_services(client)
+        return BleInspectResult(
+            ok=True,
+            address=resolved_address,
+            services=_services_from_bleak(services),
+            worker_python="direct",
+        )
+    except Exception as exc:
+        return BleInspectResult(
+            ok=False,
+            address=resolved_address,
+            error=str(exc),
+            worker_python="direct",
+        )
+    finally:
+        disconnect = getattr(client, "disconnect", None)
+        if callable(disconnect):
+            await disconnect()
+
+
+def inspect_zhiyun_ble_safe(
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    timeout: float = 5.0,
+    python: str | None = None,
+) -> BleInspectResult:
+    args = ["inspect", "--timeout", str(timeout)]
+    if address:
+        args.extend(["--address", address])
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    run = _run_ble_worker(args, timeout=timeout, python=python)
+    if not run.ok:
+        return BleInspectResult(
+            ok=False,
+            address=address,
+            error=run.error,
+            returncode=run.returncode,
+            worker_python=run.executable,
+            signal_name=_signal_name(run.returncode),
+        )
+    try:
+        payload = json.loads(run.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        return BleInspectResult(
+            ok=False,
+            address=address,
+            error=f"could not parse BLE worker output: {exc}",
+            returncode=run.returncode,
+            worker_python=run.executable,
+        )
+    if not isinstance(payload, dict):
+        return BleInspectResult(
+            ok=False,
+            address=address,
+            error="BLE worker output was not a JSON object",
+            returncode=run.returncode,
+            worker_python=run.executable,
+        )
+    error = _payload_string(payload, "error")
+    return BleInspectResult(
+        ok=error is None,
+        address=_payload_string(payload, "address"),
+        services=_ble_services_from_payload(payload),
+        error=error,
+        returncode=run.returncode,
+        worker_python=run.executable,
+    )
+
+
+def inspect_zhiyun_ble_macos_app(
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    timeout: float = 5.0,
+) -> BleInspectResult:
+    from ..macos_ble_app import run_macos_ble_app
+
+    args = ["inspect", "--timeout", str(timeout)]
+    if address:
+        args.extend(["--address", address])
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    run = run_macos_ble_app(args, timeout=timeout)
+    if not run.ok:
+        return BleInspectResult(
+            ok=False,
+            address=address,
+            error=run.error,
+            returncode=run.returncode,
+            worker_python="macos-app",
+        )
+    error = _payload_string(run.payload, "error")
+    return BleInspectResult(
+        ok=error is None,
+        address=_payload_string(run.payload, "address"),
+        services=_ble_services_from_payload(run.payload),
+        error=error,
+        returncode=run.returncode,
+        worker_python="macos-app",
+    )
+
+
 def exchange_zhiyun_ble_safe(
     tx: bytes,
     *,
@@ -836,6 +1017,72 @@ def _payload_strings(payload: dict[str, object], key: str) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
     return tuple(str(item) for item in value if item is not None)
+
+
+async def _client_services(client: object) -> object:
+    get_services = getattr(client, "get_services", None)
+    if callable(get_services):
+        return await get_services()
+    return getattr(client, "services", ())
+
+
+def _services_from_bleak(services: object) -> tuple[BleService, ...]:
+    return tuple(_service_from_bleak(service) for service in services)
+
+
+def _service_from_bleak(service: object) -> BleService:
+    return BleService(
+        uuid=_uuid_string(getattr(service, "uuid", "")),
+        characteristics=tuple(
+            _characteristic_from_bleak(characteristic)
+            for characteristic in getattr(service, "characteristics", ())
+        ),
+    )
+
+
+def _characteristic_from_bleak(characteristic: object) -> BleCharacteristic:
+    handle = getattr(characteristic, "handle", None)
+    return BleCharacteristic(
+        uuid=_uuid_string(getattr(characteristic, "uuid", "")),
+        properties=tuple(
+            str(prop).lower()
+            for prop in getattr(characteristic, "properties", ())
+        ),
+        handle=handle if isinstance(handle, int) else None,
+    )
+
+
+def _ble_services_from_payload(payload: dict[str, object]) -> tuple[BleService, ...]:
+    return tuple(
+        _ble_service_from_payload(item)
+        for item in _payload_items(payload, "services")
+    )
+
+
+def _ble_service_from_payload(item: dict[str, object]) -> BleService:
+    return BleService(
+        uuid=_uuid_string(item.get("uuid", "")),
+        characteristics=tuple(
+            _ble_characteristic_from_payload(characteristic)
+            for characteristic in _payload_items(item, "characteristics")
+        ),
+    )
+
+
+def _ble_characteristic_from_payload(item: dict[str, object]) -> BleCharacteristic:
+    handle = item.get("handle")
+    return BleCharacteristic(
+        uuid=_uuid_string(item.get("uuid", "")),
+        properties=tuple(
+            prop.lower()
+            for prop in _payload_strings(item, "properties")
+        ),
+        handle=handle if isinstance(handle, int) else None,
+    )
+
+
+def _uuid_string(value: object) -> str:
+    return str(value).lower()
 
 
 def _format_worker_returncode(returncode: int) -> str:

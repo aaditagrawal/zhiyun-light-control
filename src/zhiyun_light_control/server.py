@@ -11,7 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
-from .devices import BLE_BACKENDS, discover_transport_devices
+from .devices import BLE_BACKENDS, discover_transport_devices, inspect_ble_device
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_KINDS,
@@ -103,6 +103,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     "post": [
                         "/validate",
                         "/plan",
+                        "/inspect-ble",
                         "/register",
                         "/discover-usb",
                         "/brightness",
@@ -185,6 +186,8 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             path = urlparse(self.path).path
             if path == "/plan":
                 result = self._handle_plan(body)
+            elif path == "/inspect-ble":
+                result = self._handle_inspect_ble(body)
             elif path == "/validate":
                 if _body_bool(body, "allow_control") and not self.server.allow_control:
                     self._json(
@@ -413,6 +416,30 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             "control_mode": control_mode,
             **response,
         }
+
+    def _handle_inspect_ble(self, body: dict[str, object]) -> dict[str, object]:
+        backend = str(body.get("backend", self.server.ble_backend or "worker"))
+        timeout = float(body.get("timeout", 5.0))
+        address = _optional_text(body, "address") or self.server.ble_address
+        name_contains = (
+            _optional_text(body, "name_contains") or self.server.ble_name_contains
+        )
+        python = _optional_text(body, "python") or self.server.ble_python
+        result = inspect_ble_device(
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+        ).to_dict()
+        result.update(
+            {
+                "backend": backend,
+                "timeout": timeout,
+                "name_contains": name_contains,
+            }
+        )
+        return result
 
     def _plan_scene(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
         scene_data = body.get("scene", _scene_fields_from_body(body))
@@ -1072,6 +1099,13 @@ def openapi_schema() -> dict[str, object]:
                     request_schema="PlanRequest",
                 )
             },
+            "/inspect-ble": {
+                "post": _operation(
+                    "Inspect BLE GATT services and characteristics",
+                    "BleInspect",
+                    request_schema="BleInspectRequest",
+                )
+            },
             "/discover-usb": {
                 "post": _operation(
                     "Run a bounded USB protocol discovery matrix",
@@ -1298,6 +1332,8 @@ def _openapi_schemas() -> dict[str, object]:
         "Validation": {"type": "object", "additionalProperties": True},
         "PlanRequest": {"type": "object", "additionalProperties": True},
         "PlanResponse": {"type": "object", "additionalProperties": True},
+        "BleInspectRequest": {"type": "object", "additionalProperties": True},
+        "BleInspect": {"type": "object", "additionalProperties": True},
         "UsbDiscovery": {"type": "object", "additionalProperties": True},
         "Presets": {"type": "object", "additionalProperties": True},
         "State": {"type": "object", "additionalProperties": True},
@@ -1538,6 +1574,21 @@ def capabilities_response(
                     "sleep",
                 ],
                 "confirmation": "per-attempt ACK/timeout/evidence report",
+            },
+            {
+                "name": "inspect-ble",
+                "method": "POST",
+                "path": "/inspect-ble",
+                "requires_control": False,
+                "fields": [
+                    "backend",
+                    "address",
+                    "name_contains",
+                    "timeout",
+                    "python",
+                ],
+                "confirmation": "GATT service and characteristic enumeration",
+                "ble_backends": list(BLE_BACKENDS),
             },
             {
                 "name": "ready",
@@ -2019,6 +2070,10 @@ def _optional_int(body: dict[str, object], key: str) -> int | None:
 
 def _optional_float(body: dict[str, object], key: str) -> float | None:
     return float(body[key]) if key in body and body[key] is not None else None
+
+
+def _optional_text(body: dict[str, object], key: str) -> str | None:
+    return str(body[key]) if key in body and body[key] is not None else None
 
 
 def _body_bool(body: dict[str, object], key: str, default: bool = False) -> bool:

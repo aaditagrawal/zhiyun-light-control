@@ -158,6 +158,7 @@ Scan BLE devices:
 ```sh
 uv run --extra ble zlight scan-ble --timeout 8
 uv run zlight scan-ble --backend macos-app --name-contains PL103 --timeout 8
+uv run zlight inspect-ble --backend macos-app --name-contains PL103 --timeout 8
 uv run zlight ble-helper --ensure --open-settings
 ```
 
@@ -170,6 +171,9 @@ commands to use the bundled CoreBluetooth app helper instead of bleak. macOS
 must allow `ZhiyunBleScan` under Bluetooth privacy; otherwise the helper reports
 `Bluetooth state unauthorized: 3`. `zlight ble-helper --ensure` prints the
 exact cached helper app path, bundle id, and Bluetooth settings hint.
+`zlight inspect-ble` connects to the matching BLE device and returns GATT
+services, characteristics, and properties so unknown write/notify endpoints can
+be selected without guessing.
 
 Full BLE validation sends many exchanges, so run a scan first and choose the
 backend explicitly. On macOS use the bundled app helper; on a stable bleak
@@ -267,6 +271,9 @@ curl -X POST http://127.0.0.1:8765/validate \
 curl -X POST http://127.0.0.1:8765/plan \
   -H 'content-type: application/json' \
   -d '{"preset": "key", "overrides": {"brightness": 45}}'
+curl -X POST http://127.0.0.1:8765/inspect-ble \
+  -H 'content-type: application/json' \
+  -d '{"backend": "macos-app", "name_contains": "PL103", "timeout": 6}'
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
@@ -336,6 +343,10 @@ entries such as `read-status`, `enable-control`, `confirm-control`, and
 `POST /plan` resolves a scene, preset, transition, or sequence without opening
 the light or requiring `--allow-control`. Use it for show-control previews and
 setup UIs that need to inspect the exact target scene before arming writes.
+
+`POST /inspect-ble` is the BLE endpoint-discovery surface. It connects through
+the selected backend and returns GATT services, characteristics, and properties
+without sending Zhiyun runtime frames or requiring `--allow-control`.
 
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
 On macOS it also attaches best-effort USB descriptor metadata such as
@@ -455,6 +466,7 @@ print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
+print(bridge.inspect_ble(backend="macos-app", name_contains="PL103")["services"])
 print(bridge.plan({"preset": "key", "overrides": {"brightness": 45}})["scene"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(next(bridge.state_events(limit=1))["state"])
@@ -616,6 +628,9 @@ The `macos-app` backend builds a cached `ZhiyunBleScan.app` with
 that bundle. A standalone native probe previously found the G60 as
 `PL103_EDFE`; current `macos-app` scans are blocked until macOS Bluetooth
 privacy authorizes `ZhiyunBleScan`.
+Use `inspect-ble --backend macos-app` after authorization to capture the live
+GATT surface, including characteristic properties, before trying custom profile
+overrides.
 
 BLE command exchange supports three named characteristic profiles:
 

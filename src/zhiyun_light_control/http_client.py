@@ -161,6 +161,28 @@ class LightBridgeClient:
     def plan(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self._post("/plan", dict(payload))
 
+    def inspect_ble(
+        self,
+        *,
+        backend: str | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        timeout: float | None = None,
+        python: str | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {}
+        if backend is not None:
+            payload["backend"] = backend
+        if address is not None:
+            payload["address"] = address
+        if name_contains is not None:
+            payload["name_contains"] = name_contains
+        if timeout is not None:
+            payload["timeout"] = timeout
+        if python is not None:
+            payload["python"] = python
+        return self._post("/inspect-ble", payload)
+
     def discover_usb(
         self,
         *,

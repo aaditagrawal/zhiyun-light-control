@@ -26,13 +26,19 @@ from zhiyun_light_control.transports.ble import (
     LEGACY_ZY_SERVICE_UUID,
     LEGACY_ZY_WRITE_UUID,
     YC_SERVICE_UUID,
+    BleCharacteristic,
     BleExchangeResult,
+    BleInspectResult,
     BleProfile,
+    BleService,
     BleTransport,
     CrashIsolatedBleTransport,
     MacosBleAppTransport,
     exchange_zhiyun_ble_macos_app,
     exchange_zhiyun_ble_safe,
+    inspect_zhiyun_ble_macos_app,
+    inspect_zhiyun_ble_safe,
+    inspect_zhiyun_device,
     resolve_ble_profile,
     scan_zhiyun_devices,
     scan_zhiyun_devices_macos_app,
@@ -212,6 +218,120 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.error, "Bluetooth is not powered on")
         self.assertEqual(result.returncode, 1)
+
+    def test_inspect_result_serializes_services(self) -> None:
+        result = BleInspectResult(
+            ok=True,
+            address="UUID-1",
+            services=(
+                BleService(
+                    uuid=DIRECT_ZY_SERVICE_UUID,
+                    characteristics=(
+                        BleCharacteristic(
+                            uuid=DIRECT_ZY_WRITE_UUID,
+                            properties=("write-without-response",),
+                            handle=7,
+                        ),
+                    ),
+                ),
+            ),
+            worker_python="macos-app",
+        )
+
+        payload = result.to_dict()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["services"][0]["uuid"], DIRECT_ZY_SERVICE_UUID)
+        self.assertEqual(
+            payload["services"][0]["characteristics"][0]["properties"],
+            ["write-without-response"],
+        )
+        self.assertEqual(payload["services"][0]["characteristics"][0]["handle"], 7)
+
+    def test_safe_inspect_parses_worker_services(self) -> None:
+        payload = {
+            "ok": True,
+            "address": "AA:BB",
+            "services": [
+                {
+                    "uuid": DIRECT_ZY_SERVICE_UUID.upper(),
+                    "characteristics": [
+                        {
+                            "uuid": DIRECT_ZY_WRITE_UUID.upper(),
+                            "properties": ["WRITE", "Notify"],
+                            "handle": 3,
+                        }
+                    ],
+                }
+            ],
+        }
+        proc = types.SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload),
+            stderr="",
+        )
+
+        with patch(
+            "zhiyun_light_control.transports.ble.subprocess.run", return_value=proc
+        ) as run:
+            result = inspect_zhiyun_ble_safe(
+                timeout=1.0,
+                address="AA:BB",
+                python="python-test",
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.address, "AA:BB")
+        self.assertEqual(result.worker_python, "python-test")
+        self.assertEqual(result.services[0].uuid, DIRECT_ZY_SERVICE_UUID)
+        self.assertEqual(
+            result.services[0].characteristics[0].uuid,
+            DIRECT_ZY_WRITE_UUID,
+        )
+        self.assertEqual(
+            result.services[0].characteristics[0].properties,
+            ("write", "notify"),
+        )
+        worker_args = run.call_args.args[0]
+        self.assertIn("inspect", worker_args)
+        self.assertIn("--address", worker_args)
+
+    def test_macos_app_inspect_parses_services(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=True,
+            payload={
+                "address": "UUID-1",
+                "services": [
+                    {
+                        "uuid": LEGACY_ZY_SERVICE_UUID.upper(),
+                        "characteristics": [
+                            {
+                                "uuid": LEGACY_ZY_WRITE_UUID.upper(),
+                                "properties": ["write-without-response"],
+                            }
+                        ],
+                    }
+                ],
+            },
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ) as run:
+            result = inspect_zhiyun_ble_macos_app(
+                timeout=1.0,
+                name_contains="PL103",
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.address, "UUID-1")
+        self.assertEqual(result.worker_python, "macos-app")
+        self.assertEqual(result.services[0].uuid, LEGACY_ZY_SERVICE_UUID)
+        self.assertEqual(
+            run.call_args.args[0],
+            ["inspect", "--timeout", "1.0", "--name-contains", "PL103"],
+        )
 
 
 class SafeBleExchangeTests(unittest.TestCase):
@@ -430,6 +550,47 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(devices[2].address, "DD")
         self.assertEqual(devices[2].services, (YC_SERVICE_UUID,))
         self.assertEqual(devices[2].suggested_profile, "yc")
+
+    async def test_inspect_device_reads_gatt_services(self) -> None:
+        class FakeCharacteristic:
+            uuid = DIRECT_ZY_WRITE_UUID.upper()
+            properties = ["write", "notify"]
+            handle = 9
+
+        class FakeService:
+            uuid = DIRECT_ZY_SERVICE_UUID.upper()
+            characteristics = [FakeCharacteristic()]
+
+        class FakeClient:
+            def __init__(self, address: str):
+                self.address = address
+                self.services = [FakeService()]
+                self.disconnected = False
+
+            async def connect(self) -> None:
+                return
+
+            async def disconnect(self) -> None:
+                self.disconnected = True
+
+        with patch(
+            "zhiyun_light_control.transports.ble._load_bleak",
+            return_value=(FakeClient, object),
+        ):
+            result = await inspect_zhiyun_device(address="AA", timeout=1.0)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.address, "AA")
+        self.assertEqual(result.worker_python, "direct")
+        self.assertEqual(result.services[0].uuid, DIRECT_ZY_SERVICE_UUID)
+        self.assertEqual(
+            result.services[0].characteristics[0].uuid,
+            DIRECT_ZY_WRITE_UUID,
+        )
+        self.assertEqual(
+            result.services[0].characteristics[0].properties,
+            ("write", "notify"),
+        )
 
     async def test_transport_exchange_uses_write_and_notify_characteristics(
         self,

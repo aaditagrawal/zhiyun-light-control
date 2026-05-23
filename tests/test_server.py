@@ -19,7 +19,13 @@ from zhiyun_light_control.protocol import (
     first_frame,
 )
 from zhiyun_light_control.server import LightHttpServer
-from zhiyun_light_control.transports.ble import BleDevice, BleScanResult
+from zhiyun_light_control.transports.ble import (
+    BleCharacteristic,
+    BleDevice,
+    BleInspectResult,
+    BleScanResult,
+    BleService,
+)
 
 
 @dataclass(frozen=True)
@@ -483,6 +489,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/ready", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/plan", commands["post"])
+            self.assertIn("/inspect-ble", commands["post"])
             self.assertIn("/sequence", commands["post"])
 
             capabilities = json.loads(
@@ -501,6 +508,8 @@ class ServerTests(unittest.TestCase):
             )
             self.assertFalse(primitives["plan"]["requires_control"])
             self.assertEqual(primitives["plan"]["path"], "/plan")
+            self.assertFalse(primitives["inspect-ble"]["requires_control"])
+            self.assertEqual(primitives["inspect-ble"]["path"], "/inspect-ble")
             self.assertTrue(primitives["brightness"]["requires_control"])
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
@@ -517,6 +526,58 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(diagnostics["bridge"]["transport"], "usb")
             self.assertEqual(diagnostics["status"]["firmware"], "1.6.4")
             self.assertIn("allow-control", diagnostics["next_steps"][0])
+
+            inspect_request = Request(
+                f"{base}/inspect-ble",
+                data=json.dumps(
+                    {
+                        "backend": "macos-app",
+                        "name_contains": "PL103",
+                        "timeout": 1,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            inspect_result = BleInspectResult(
+                ok=True,
+                address="UUID-1",
+                services=(
+                    BleService(
+                        uuid="service",
+                        characteristics=(
+                            BleCharacteristic(
+                                uuid="write",
+                                properties=("write",),
+                            ),
+                        ),
+                    ),
+                ),
+                worker_python="macos-app",
+            )
+            with patch(
+                "zhiyun_light_control.server.inspect_ble_device",
+                return_value=inspect_result,
+            ) as inspect_ble:
+                inspect_response = json.loads(
+                    urlopen(inspect_request, timeout=3).read()
+                )
+
+            self.assertTrue(inspect_response["ok"])
+            self.assertEqual(inspect_response["address"], "UUID-1")
+            self.assertEqual(inspect_response["backend"], "macos-app")
+            self.assertEqual(inspect_response["name_contains"], "PL103")
+            self.assertEqual(
+                inspect_response["services"][0]["characteristics"][0]["uuid"],
+                "write",
+            )
+            inspect_ble.assert_called_once_with(
+                backend="macos-app",
+                timeout=1.0,
+                address=None,
+                name_contains="PL103",
+                python=None,
+            )
 
             ready = json.loads(urlopen(f"{base}/ready", timeout=3).read())
             self.assertTrue(ready["ok"])
@@ -843,6 +904,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/ready", schema["paths"])
             self.assertIn("/devices", schema["paths"])
             self.assertIn("/plan", schema["paths"])
+            self.assertIn("/inspect-ble", schema["paths"])
             self.assertIn("/discover-usb", schema["paths"])
             self.assertIn("/events", schema["paths"])
             self.assertIn("/history", schema["paths"])
@@ -864,6 +926,8 @@ class ServerTests(unittest.TestCase):
             self.assertIn("History", schema["components"]["schemas"])
             self.assertIn("PlanRequest", schema["components"]["schemas"])
             self.assertIn("PlanResponse", schema["components"]["schemas"])
+            self.assertIn("BleInspectRequest", schema["components"]["schemas"])
+            self.assertIn("BleInspect", schema["components"]["schemas"])
             self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])
             self.assertIn("UsbDiscovery", schema["components"]["schemas"])
             self.assertIn("SequenceRequest", schema["components"]["schemas"])

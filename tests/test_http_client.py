@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from zhiyun_light_control import (
     LightBridgeClient,
@@ -25,6 +26,11 @@ from zhiyun_light_control.protocol import (
     first_frame,
 )
 from zhiyun_light_control.server import LightHttpServer
+from zhiyun_light_control.transports.ble import (
+    BleCharacteristic,
+    BleInspectResult,
+    BleService,
+)
 
 
 class FakeProbe:
@@ -165,6 +171,41 @@ class HttpClientTests(unittest.TestCase):
             devices = client.devices()
             self.assertIn("usb", devices)
             self.assertFalse(devices["ble"]["included"])
+            inspect_result = BleInspectResult(
+                ok=True,
+                address="UUID-1",
+                services=(
+                    BleService(
+                        uuid="service",
+                        characteristics=(
+                            BleCharacteristic(
+                                uuid="write",
+                                properties=("write",),
+                            ),
+                        ),
+                    ),
+                ),
+                worker_python="macos-app",
+            )
+            with patch(
+                "zhiyun_light_control.server.inspect_ble_device",
+                return_value=inspect_result,
+            ) as inspect_ble:
+                ble = client.inspect_ble(
+                    backend="macos-app",
+                    name_contains="PL103",
+                    timeout=1,
+                )
+            self.assertTrue(ble["ok"])
+            self.assertEqual(ble["address"], "UUID-1")
+            self.assertEqual(ble["services"][0]["characteristics"][0]["uuid"], "write")
+            inspect_ble.assert_called_once_with(
+                backend="macos-app",
+                timeout=1.0,
+                address=None,
+                name_contains="PL103",
+                python=None,
+            )
             plan = client.plan(
                 {
                     "preset": "key",

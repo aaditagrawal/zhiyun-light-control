@@ -269,6 +269,22 @@ struct ScanOutput: Encodable {{
     let error: String?
 }}
 
+struct JsonCharacteristic: Encodable {{
+    let uuid: String
+    let properties: [String]
+}}
+
+struct JsonService: Encodable {{
+    let uuid: String
+    let characteristics: [JsonCharacteristic]
+}}
+
+struct InspectOutput: Encodable {{
+    let address: String?
+    let services: [JsonService]
+    let error: String?
+}}
+
 struct ExchangeOutput: Encodable {{
     let address: String?
     let rx_hex: String?
@@ -365,6 +381,8 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     private var peripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var rx = Data()
+    private var inspectedServices: [JsonService] = []
+    private var pendingServiceUuids: Set<CBUUID> = []
     private var finished = false
     private var settleUntil: Date?
 
@@ -380,7 +398,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         super.init()
         self.central = CBCentralManager(delegate: self, queue: DispatchQueue.main)
         DispatchQueue.main.asyncAfter(deadline: .now() + self.timeout) {{
-            self.finish(error: nil)
+            self.finish(error: self.timeoutError())
         }}
     }}
 
@@ -413,7 +431,8 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         if isLikelyZhiyun(device) {{
             devices[device.address] = device
         }}
-        guard mode == "exchange-raw" && peripheralMatches(device) else {{
+        guard (mode == "exchange-raw" || mode == "inspect") &&
+              peripheralMatches(device) else {{
             return
         }}
         self.peripheral = peripheral
@@ -426,6 +445,10 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         _ central: CBCentralManager,
         didConnect peripheral: CBPeripheral
     ) {{
+        if mode == "inspect" {{
+            peripheral.discoverServices(nil)
+            return
+        }}
         guard let serviceUuid = serviceUuid else {{
             finish(error: "service UUID is required")
             return
@@ -441,12 +464,29 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         finish(error: error?.localizedDescription ?? "failed to connect")
     }}
 
-    func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {{
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didDiscoverServices error: Error?
+    ) {{
         if let error = error {{
             finish(error: error.localizedDescription)
             return
         }}
-        let service = peripheral.services?.first(where: {{ $0.uuid == serviceUuid }})
+        if mode == "inspect" {{
+            let services = peripheral.services ?? []
+            if services.isEmpty {{
+                finish(error: "services not found")
+                return
+            }}
+            pendingServiceUuids = Set(services.map {{ $0.uuid }})
+            for service in services {{
+                peripheral.discoverCharacteristics(nil, for: service)
+            }}
+            return
+        }}
+        let service = peripheral.services?.first(where: {{
+            $0.uuid == serviceUuid
+        }})
         guard let service = service else {{
             finish(error: "service not found")
             return
@@ -462,6 +502,23 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     ) {{
         if let error = error {{
             finish(error: error.localizedDescription)
+            return
+        }}
+        if mode == "inspect" {{
+            let characteristics = service.characteristics ?? []
+            inspectedServices.append(JsonService(
+                uuid: service.uuid.uuidString.lowercased(),
+                characteristics: characteristics.map {{ characteristic in
+                    JsonCharacteristic(
+                        uuid: characteristic.uuid.uuidString.lowercased(),
+                        properties: propertyStrings(characteristic.properties)
+                    )
+                }}
+            ))
+            pendingServiceUuids.remove(service.uuid)
+            if pendingServiceUuids.isEmpty {{
+                finish(error: nil)
+            }}
             return
         }}
         guard let characteristics = service.characteristics else {{
@@ -565,6 +622,43 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         return true
     }}
 
+    private func propertyStrings(
+        _ properties: CBCharacteristicProperties
+    ) -> [String] {{
+        var values: [String] = []
+        if properties.contains(.broadcast) {{
+            values.append("broadcast")
+        }}
+        if properties.contains(.read) {{
+            values.append("read")
+        }}
+        if properties.contains(.writeWithoutResponse) {{
+            values.append("write-without-response")
+        }}
+        if properties.contains(.write) {{
+            values.append("write")
+        }}
+        if properties.contains(.notify) {{
+            values.append("notify")
+        }}
+        if properties.contains(.indicate) {{
+            values.append("indicate")
+        }}
+        return values
+    }}
+
+    private func timeoutError() -> String? {{
+        if mode == "inspect" {{
+            if peripheral == nil {{
+                return "no matching BLE device found"
+            }}
+            if !pendingServiceUuids.isEmpty {{
+                return "BLE inspect timed out"
+            }}
+        }}
+        return nil
+    }}
+
     private func finish(error: String?) {{
         if finished {{
             return
@@ -577,6 +671,12 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         if mode == "scan" {{
             writeJson(ScanOutput(
                 devices: Array(devices.values).sorted {{ $0.address < $1.address }},
+                error: error
+            ))
+        }} else if mode == "inspect" {{
+            writeJson(InspectOutput(
+                address: peripheral?.identifier.uuidString,
+                services: inspectedServices.sorted {{ $0.uuid < $1.uuid }},
                 error: error
             ))
         }} else {{

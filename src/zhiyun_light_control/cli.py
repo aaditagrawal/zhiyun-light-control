@@ -11,6 +11,7 @@ from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .cues import CueLibrary
+from .devices import inspect_ble_device
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_KINDS,
@@ -214,6 +215,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="BLE scan backend. macos-app uses a CoreBluetooth app bundle.",
     )
     scan.set_defaults(func=cmd_scan_ble)
+
+    inspect_ble = sub.add_parser(
+        "inspect-ble",
+        help="Inspect BLE GATT services and characteristics.",
+    )
+    inspect_ble.add_argument("--address", help="BLE address/identifier.")
+    inspect_ble.add_argument("--name-contains", help="Filter discovered BLE names.")
+    inspect_ble.add_argument("--timeout", type=float, default=5.0)
+    inspect_ble.add_argument(
+        "--python",
+        help="Python executable for the crash-isolated BLE worker.",
+    )
+    inspect_ble.add_argument(
+        "--backend",
+        choices=["worker", "macos-app", "direct"],
+        default="worker",
+        help="BLE inspection backend. macos-app uses a CoreBluetooth app bundle.",
+    )
+    inspect_ble.add_argument(
+        "--unsafe-in-process",
+        action="store_true",
+        help="Run bleak inspection in this process instead of the worker.",
+    )
+    inspect_ble.add_argument("--json", action="store_true", help="Print compact JSON.")
+    inspect_ble.set_defaults(func=cmd_inspect_ble)
 
     helper = sub.add_parser(
         "ble-helper",
@@ -707,6 +733,19 @@ def cmd_scan_ble(args: argparse.Namespace) -> int:
         python=args.python,
     )
     print_json(result.to_dict())
+    return 0 if result.ok else 2
+
+
+def cmd_inspect_ble(args: argparse.Namespace) -> int:
+    backend = "direct" if args.unsafe_in_process else args.backend
+    result = inspect_ble_device(
+        backend=backend,
+        timeout=args.timeout,
+        address=args.address,
+        name_contains=args.name_contains,
+        python=args.python,
+    )
+    print_json(result.to_dict(), compact=args.json)
     return 0 if result.ok else 2
 
 
