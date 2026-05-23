@@ -318,6 +318,141 @@ class LightIntegration:
             require_acknowledged=require_acknowledged,
         )
 
+    def apply_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).apply_scene(
+            _integration_scene_payload(scene, obj=self._obj(obj)),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def apply_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).apply_preset(
+            name,
+            overrides=overrides,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def run_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool = False,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).run_sequence(
+            steps,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            require_acknowledged=require_acknowledged,
+        )
+
+    def run_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        obj: int | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).run_cue(
+            cue,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def run_named_cue(
+        self,
+        name: str,
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            preset_library=preset_library,
+            cue_library=cue_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).run_named_cue(
+            name,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            require_acknowledged=require_acknowledged,
+        )
+
     def plan_scene(
         self,
         scene: Scene | Mapping[str, object],
@@ -527,6 +662,22 @@ class LightIntegration:
 
     def _obj(self, explicit: int | None) -> int:
         return self.obj if explicit is None else explicit
+
+    def _require_control_readiness(
+        self,
+        require_ready: bool,
+        required_readiness: Iterable[str] | None,
+        *,
+        require_acknowledged: bool,
+    ) -> None:
+        if not require_ready and required_readiness is None:
+            return
+        self.require_readiness(
+            *_control_readiness_capabilities(
+                required_readiness,
+                require_acknowledged=require_acknowledged,
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -779,6 +930,141 @@ class AsyncLightIntegration:
             require_acknowledged=require_acknowledged,
         )
 
+    async def apply_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).apply_scene(
+            _integration_scene_payload(scene, obj=self._obj(obj)),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def apply_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).apply_preset(
+            name,
+            overrides=overrides,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def run_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool = False,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).run_sequence(
+            steps,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def run_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        obj: int | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).run_cue(
+            cue,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def run_named_cue(
+        self,
+        name: str,
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            preset_library=preset_library,
+            cue_library=cue_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).run_named_cue(
+            name,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            require_acknowledged=require_acknowledged,
+        )
+
     def plan_scene(
         self,
         scene: Scene | Mapping[str, object],
@@ -989,6 +1275,22 @@ class AsyncLightIntegration:
     def _obj(self, explicit: int | None) -> int:
         return self.obj if explicit is None else explicit
 
+    async def _require_control_readiness(
+        self,
+        require_ready: bool,
+        required_readiness: Iterable[str] | None,
+        *,
+        require_acknowledged: bool,
+    ) -> None:
+        if not require_ready and required_readiness is None:
+            return
+        await self.require_readiness(
+            *_control_readiness_capabilities(
+                required_readiness,
+                require_acknowledged=require_acknowledged,
+            )
+        )
+
 
 def _integration_preset_names(
     names: Iterable[str],
@@ -1004,6 +1306,30 @@ def _integration_cue_names(
 ) -> tuple[str, ...]:
     explicit = tuple(names)
     return explicit if explicit else () if library is None else tuple(library.names())
+
+
+def _integration_scene_payload(
+    scene: Scene | Mapping[str, object],
+    *,
+    obj: int,
+) -> Scene | dict[str, object]:
+    if isinstance(scene, Scene):
+        return scene
+    payload = dict(scene)
+    payload.setdefault("obj", obj)
+    return payload
+
+
+def _control_readiness_capabilities(
+    required_readiness: Iterable[str] | None,
+    *,
+    require_acknowledged: bool,
+) -> tuple[str, ...]:
+    if required_readiness is not None:
+        return tuple(required_readiness)
+    if require_acknowledged:
+        return ("confirmed_control",)
+    return ("control_requests",)
 
 
 def local_status_snapshot(

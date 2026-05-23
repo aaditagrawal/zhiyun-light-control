@@ -242,7 +242,10 @@ SDK callers can reach the same surface through `LightController.plan_scene()`,
 `LightBridgeClient` helpers when the HTTP bridge is the process boundary.
 Embedded hosts that already use `LightIntegration` or `AsyncLightIntegration`
 can attach preset/cue libraries there and call the same `plan_*` helpers before
-opening USB or BLE.
+opening USB or BLE. The same integration objects also expose direct
+`apply_scene`, `apply_preset`, `run_sequence`, `run_cue`, and `run_named_cue`
+control helpers with opt-in readiness checks for embedded hosts that do not run
+the HTTP bridge.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

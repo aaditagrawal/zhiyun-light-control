@@ -696,6 +696,11 @@ Embedded SDK integrations expose the same guard semantics with
 `integration.require_readiness()`, and `integration.require_control_ready()`;
 the rig API also has `require_readiness()` and `require_readiness_all()` for
 fixture-scoped preflights.
+The integration facade also exposes direct control helpers:
+`apply_scene()`, `apply_preset()`, `run_sequence()`, `run_cue()`, and
+`run_named_cue()`. Pass `require_ready=True` to check `control_requests` before
+opening the transport, or combine it with `require_acknowledged=True` to require
+the stricter `confirmed_control` readiness preflight.
 
 Host applications can get the same setup model without starting the HTTP bridge
 or shelling out to the CLI:
@@ -734,9 +739,12 @@ print(validation["summary"]["ready_for"])
 print(usb_discovery["summary"]["confirmed_names"])
 print(plan["steps"])
 
-with integration.controller(require_acknowledged=True) as controller:
-    result = controller.apply_scene({"obj": 1, "brightness": 35, "kelvin": 5600})
-    print(result["applied"], result["reason"])
+result = integration.apply_scene(
+    {"brightness": 35, "kelvin": 5600},
+    require_ready=True,
+    require_acknowledged=True,
+)
+print(result["applied"], result["reason"])
 ```
 
 Async host applications can use the same setup/preflight model for native BLE
@@ -783,9 +791,12 @@ async def main() -> None:
     print(validation["summary"]["ready_for"])
     print(plan["steps"])
 
-    async with integration.controller(require_acknowledged=True) as controller:
-        result = await controller.apply_scene({"obj": 1, "brightness": 35})
-        print(result["applied"], result["reason"])
+    result = await integration.apply_scene(
+        {"brightness": 35},
+        require_ready=True,
+        require_acknowledged=True,
+    )
+    print(result["applied"], result["reason"])
 
 
 asyncio.run(main())

@@ -635,6 +635,70 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(light.control_modes, [0x01])
         self.assertEqual(light.scenes[0].brightness, 45)
 
+    def test_light_integration_runs_controls_directly(self) -> None:
+        light = FakeSceneLight()
+        presets = ScenePresetLibrary.from_mapping({"key": {"brightness": 25}})
+        cues = CueLibrary.from_mapping({"intro": {"steps": [{"preset": "key"}]}})
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            obj=2,
+            light_factory=FakeFactory(light),
+            preset_library=presets,
+            cue_library=cues,
+        )
+
+        scene = integration.apply_scene({"brightness": 12}, control_mode=0x01)
+        preset = integration.apply_preset(
+            "key",
+            overrides={"brightness": 30},
+            control_mode=0x01,
+        )
+        sequence = integration.run_sequence(
+            [{"scene": {"brightness": 14}}, {"preset": "key"}],
+            control_mode=0x01,
+        )
+        cue = integration.run_named_cue("intro", control_mode=0x01)
+
+        self.assertTrue(scene["applied"])
+        self.assertTrue(preset["applied"])
+        self.assertTrue(sequence["applied"])
+        self.assertTrue(cue["applied"])
+        self.assertEqual(
+            [sent.obj for sent in light.scenes],
+            [2, 2, 2, 2, 2],
+        )
+        self.assertEqual(
+            [sent.brightness for sent in light.scenes],
+            [12.0, 30.0, 14.0, 25.0, 25.0],
+        )
+        self.assertEqual(light.control_modes, [0x01, 0x01, 0x01, 0x01, 0x01])
+
+    def test_light_integration_control_readiness_guard_fails_closed(self) -> None:
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            allow_control=False,
+            light_factory=FakeFactory(FakeStatusLight()),
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.test",
+                    "ports": [],
+                },
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ), self.assertRaises(IntegrationNotReady) as error:
+            integration.apply_scene({"brightness": 10}, require_ready=True)
+
+        self.assertEqual(error.exception.capabilities, ("control_requests",))
+        self.assertEqual(
+            error.exception.pending_action_ids,
+            {"control_requests": ["enable-control"]},
+        )
+
     def test_light_integration_plans_sdk_primitives_without_opening_light(
         self,
     ) -> None:
@@ -978,6 +1042,68 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["action"], "scene")
         self.assertEqual(light.control_modes, [0x01])
         self.assertEqual(light.scenes[0].brightness, 45)
+
+    async def test_async_light_integration_runs_controls_directly(self) -> None:
+        light = AsyncFakeSceneLight()
+        presets = ScenePresetLibrary.from_mapping({"key": {"brightness": 25}})
+        cues = CueLibrary.from_mapping({"intro": {"steps": [{"preset": "key"}]}})
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            obj=2,
+            light_factory=AsyncFakeFactory(light),
+            preset_library=presets,
+            cue_library=cues,
+        )
+
+        scene = await integration.apply_scene({"brightness": 12}, control_mode=0x01)
+        preset = await integration.apply_preset(
+            "key",
+            overrides={"brightness": 30},
+            control_mode=0x01,
+        )
+        sequence = await integration.run_sequence(
+            [{"scene": {"brightness": 14}}, {"preset": "key"}],
+            control_mode=0x01,
+        )
+        cue = await integration.run_named_cue("intro", control_mode=0x01)
+
+        self.assertTrue(scene["applied"])
+        self.assertTrue(preset["applied"])
+        self.assertTrue(sequence["applied"])
+        self.assertTrue(cue["applied"])
+        self.assertEqual(
+            [sent.obj for sent in light.scenes],
+            [2, 2, 2, 2, 2],
+        )
+        self.assertEqual(
+            [sent.brightness for sent in light.scenes],
+            [12.0, 30.0, 14.0, 25.0, 25.0],
+        )
+        self.assertEqual(light.control_modes, [0x01, 0x01, 0x01, 0x01, 0x01])
+
+    async def test_async_light_integration_control_readiness_guard_fails_closed(
+        self,
+    ) -> None:
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            allow_control=False,
+            light_factory=AsyncFakeFactory(AsyncFakeStatusLight()),
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ), self.assertRaises(IntegrationNotReady) as error:
+            await integration.apply_scene({"brightness": 10}, require_ready=True)
+
+        self.assertEqual(error.exception.capabilities, ("control_requests",))
+        self.assertEqual(
+            error.exception.pending_action_ids,
+            {"control_requests": ["enable-control"]},
+        )
 
     async def test_async_light_integration_plans_sdk_primitives_without_opening_light(
         self,
