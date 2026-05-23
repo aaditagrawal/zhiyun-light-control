@@ -11,11 +11,19 @@ from zhiyun_light_control.protocol import (
     first_frame,
 )
 from zhiyun_light_control.transports.ble import (
+    BLE_PROFILE_NAMES,
+    DIRECT_ZY_SERVICE_UUID,
     DIRECT_ZY_WRITE_UUID,
+    LEGACY_ZY_NOTIFY_UUID,
+    LEGACY_ZY_SERVICE_UUID,
+    LEGACY_ZY_WRITE_UUID,
+    YC_SERVICE_UUID,
     BleExchangeResult,
+    BleProfile,
     BleTransport,
     CrashIsolatedBleTransport,
     exchange_zhiyun_ble_safe,
+    resolve_ble_profile,
     scan_zhiyun_devices,
     scan_zhiyun_devices_safe,
 )
@@ -107,6 +115,34 @@ class SafeBleScanTests(unittest.TestCase):
 
 
 class SafeBleExchangeTests(unittest.TestCase):
+    def test_profile_names_include_known_zhiyun_surfaces(self) -> None:
+        self.assertEqual(BLE_PROFILE_NAMES, ("direct", "legacy", "yc"))
+
+    def test_resolve_ble_profile_supports_legacy_and_custom_overrides(self) -> None:
+        legacy = resolve_ble_profile("legacy")
+        self.assertEqual(legacy.service_uuid, LEGACY_ZY_SERVICE_UUID)
+        self.assertEqual(legacy.write_uuid, LEGACY_ZY_WRITE_UUID)
+        self.assertEqual(legacy.notify_uuid, LEGACY_ZY_NOTIFY_UUID)
+
+        custom = resolve_ble_profile(legacy, write_uuid="write-test")
+        self.assertEqual(custom.name, "legacy+custom")
+        self.assertEqual(custom.service_uuid, LEGACY_ZY_SERVICE_UUID)
+        self.assertEqual(custom.write_uuid, "write-test")
+        self.assertEqual(custom.notify_uuid, LEGACY_ZY_NOTIFY_UUID)
+
+    def test_custom_profile_resolves_without_known_name(self) -> None:
+        custom = resolve_ble_profile(
+            BleProfile(
+                name="bench",
+                service_uuid="service-test",
+                write_uuid="write-test",
+                notify_uuid="notify-test",
+            )
+        )
+
+        self.assertEqual(custom.name, "bench")
+        self.assertEqual(custom.write_uuid, "write-test")
+
     def test_safe_exchange_parses_worker_response(self) -> None:
         tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
         rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
@@ -131,6 +167,43 @@ class SafeBleExchangeTests(unittest.TestCase):
         self.assertEqual(result.rx, rx)
         self.assertEqual(result.worker_python, "python-test")
         self.assertEqual(result.to_dict()["rx_hex"], rx.hex())
+
+    def test_safe_exchange_passes_profile_and_characteristics_to_worker(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        proc = types.SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"address": "AA:BB", "rx_hex": ""}),
+            stderr="",
+        )
+
+        with patch(
+            "zhiyun_light_control.transports.ble.subprocess.run", return_value=proc
+        ) as run:
+            result = exchange_zhiyun_ble_safe(
+                tx,
+                profile="legacy",
+                service_uuid="service-test",
+                write_uuid="write-test",
+                notify_uuid="notify-test",
+                timeout=1.0,
+            )
+
+        self.assertTrue(result.ok)
+        worker_args = run.call_args.args[0]
+        self.assertIn("--profile", worker_args)
+        self.assertEqual(worker_args[worker_args.index("--profile") + 1], "legacy")
+        self.assertEqual(
+            worker_args[worker_args.index("--service-uuid") + 1],
+            "service-test",
+        )
+        self.assertEqual(
+            worker_args[worker_args.index("--write-uuid") + 1],
+            "write-test",
+        )
+        self.assertEqual(
+            worker_args[worker_args.index("--notify-uuid") + 1],
+            "notify-test",
+        )
 
     def test_safe_exchange_reports_worker_abort(self) -> None:
         tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
@@ -174,6 +247,13 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
                             rssi=-60,
                         ),
                     ),
+                    "four": (
+                        FakeDevice("DD", "Unknown"),
+                        FakeAdvertisement(
+                            service_uuids=[YC_SERVICE_UUID.upper()],
+                            rssi=-65,
+                        ),
+                    ),
                 }
 
         with patch(
@@ -182,10 +262,11 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         ):
             devices = await scan_zhiyun_devices(timeout=1.0)
 
-        self.assertEqual(len(devices), 2)
+        self.assertEqual(len(devices), 3)
         self.assertEqual(devices[0].address, "AA")
         self.assertEqual(devices[0].name, "MOLUS G60")
         self.assertEqual(devices[1].address, "CC")
+        self.assertEqual(devices[2].address, "DD")
 
     async def test_transport_exchange_uses_write_and_notify_characteristics(
         self,
@@ -232,6 +313,53 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(FakeClient.writes[0][2])
         self.assertEqual(first_frame(rx).cmd, RuntimeCommand.DEVICE_INFO)
 
+    async def test_transport_profile_selects_legacy_characteristics(self) -> None:
+        class FakeClient:
+            callback = None
+            writes: list[tuple[str, bytes, bool]] = []
+
+            def __init__(self, address: str):
+                self.address = address
+
+            async def connect(self) -> None:
+                return
+
+            async def disconnect(self) -> None:
+                return
+
+            async def start_notify(self, uuid: str, callback) -> None:
+                self.__class__.callback = callback
+                self.notify_uuid = uuid
+
+            async def stop_notify(self, uuid: str) -> None:
+                self.stopped_uuid = uuid
+
+            async def write_gatt_char(
+                self, uuid: str, tx: bytes, response: bool
+            ) -> None:
+                self.__class__.writes.append((uuid, tx, response))
+                frame = first_frame(tx)
+                assert frame is not None
+                ack = build_runtime_frame(frame.seq, frame.cmd, b"\x00")
+                self.__class__.callback(uuid, bytearray(ack))
+
+        with patch(
+            "zhiyun_light_control.transports.ble._load_bleak",
+            return_value=(FakeClient, object),
+        ):
+            async with BleTransport(
+                address="AA",
+                profile="legacy",
+                timeout=1.0,
+            ) as transport:
+                tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+                rx = await transport.exchange(tx, timeout=1.0)
+
+        self.assertTrue(rx)
+        self.assertEqual(transport.profile, "legacy")
+        self.assertEqual(transport.notify_uuid, LEGACY_ZY_NOTIFY_UUID)
+        self.assertEqual(FakeClient.writes[0][0], LEGACY_ZY_WRITE_UUID)
+
     async def test_crash_isolated_transport_uses_safe_exchange(self) -> None:
         tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
         rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
@@ -250,6 +378,11 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, rx)
         self.assertEqual(transport.address, "AA")
         exchange.assert_called_once()
+        self.assertEqual(exchange.call_args.kwargs["profile"], "direct")
+        self.assertEqual(
+            exchange.call_args.kwargs["service_uuid"],
+            DIRECT_ZY_SERVICE_UUID,
+        )
         self.assertEqual(exchange.call_args.kwargs["python"], "python-test")
 
 

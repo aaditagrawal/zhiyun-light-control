@@ -33,6 +33,8 @@ from .protocol import (
 from .sacn import serve_sacn
 from .server import serve
 from .transports.ble import (
+    BLE_PROFILE_NAMES,
+    DEFAULT_BLE_PROFILE,
     BleWorkerError,
     scan_zhiyun_devices,
     scan_zhiyun_devices_safe,
@@ -65,6 +67,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a structured hardware validation report.",
     )
     add_transport_args(validate)
+    add_ble_profile_args(validate)
     validate.add_argument("--allow-control", action="store_true")
     validate.add_argument("--include-object-reads", action="store_true")
     validate.add_argument("--include-color", action="store_true")
@@ -289,6 +292,7 @@ def add_transport_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_ble_execution_args(parser: argparse.ArgumentParser) -> None:
+    add_ble_profile_args(parser)
     parser.add_argument(
         "--python",
         help="Python executable for the crash-isolated BLE worker.",
@@ -297,6 +301,27 @@ def add_ble_execution_args(parser: argparse.ArgumentParser) -> None:
         "--unsafe-in-process",
         action="store_true",
         help="Run BLE commands in this process instead of the crash-isolated worker.",
+    )
+
+
+def add_ble_profile_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--ble-profile",
+        choices=BLE_PROFILE_NAMES,
+        default=DEFAULT_BLE_PROFILE.name,
+        help="BLE characteristic profile to use for command exchange.",
+    )
+    parser.add_argument(
+        "--ble-service-uuid",
+        help="Override the BLE service UUID for command exchange.",
+    )
+    parser.add_argument(
+        "--ble-write-uuid",
+        help="Override the BLE write characteristic UUID.",
+    )
+    parser.add_argument(
+        "--ble-notify-uuid",
+        help="Override the BLE notify/read characteristic UUID.",
     )
 
 
@@ -310,6 +335,7 @@ def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--name-contains", help="BLE name substring used for discovery."
     )
+    add_ble_profile_args(parser)
     parser.add_argument(
         "--ble-python",
         help="Python executable for crash-isolated BLE bridge exchanges.",
@@ -441,11 +467,7 @@ def cmd_discover_usb(args: argparse.Namespace) -> int:
 
 
 async def _validate_ble(args: argparse.Namespace):
-    async with AsyncZhiyunLight.ble(
-        address=args.address,
-        name_contains=args.name_contains,
-        timeout=args.timeout,
-    ) as light:
+    async with async_ble_light_from_args(args) as light:
         return await validate_async_light(
             light,
             transport=args.transport,
@@ -677,11 +699,19 @@ def async_ble_light_from_args(args: argparse.Namespace) -> AsyncZhiyunLight:
         return AsyncZhiyunLight.ble(
             address=args.address,
             name_contains=args.name_contains,
+            profile=args.ble_profile,
+            service_uuid=args.ble_service_uuid,
+            write_uuid=args.ble_write_uuid,
+            notify_uuid=args.ble_notify_uuid,
             timeout=args.timeout,
         )
     return AsyncZhiyunLight.isolated_ble(
         address=args.address,
         name_contains=args.name_contains,
+        profile=args.ble_profile,
+        service_uuid=args.ble_service_uuid,
+        write_uuid=args.ble_write_uuid,
+        notify_uuid=args.ble_notify_uuid,
         timeout=args.timeout,
         python=getattr(args, "python", None),
     )
@@ -791,6 +821,10 @@ def bridge_light_factory(args: argparse.Namespace):
             name_contains=args.name_contains,
             timeout=args.light_timeout,
             usb_lock_timeout=args.usb_lock_timeout,
+            ble_profile=args.ble_profile,
+            ble_service_uuid=args.ble_service_uuid,
+            ble_write_uuid=args.ble_write_uuid,
+            ble_notify_uuid=args.ble_notify_uuid,
             ble_python=args.ble_python,
             ble_in_process=args.unsafe_in_process,
             persistent=not args.no_persistent_light,

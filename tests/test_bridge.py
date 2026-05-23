@@ -111,6 +111,10 @@ class BridgeFactoryTests(unittest.TestCase):
         make_ble.assert_called_once_with(
             address="AA:BB",
             name_contains="MOLUS",
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
             timeout=2.5,
             python="python-test",
         )
@@ -150,9 +154,43 @@ class BridgeFactoryTests(unittest.TestCase):
         direct_ble.assert_called_once_with(
             address="AA:BB",
             name_contains="MOLUS",
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
             timeout=2.5,
         )
         self.assertEqual(probe.to_dict()["firmware"], "ble-test")
+
+    def test_ble_factory_passes_profile_and_custom_characteristics(self) -> None:
+        fake = FakeAsyncLight()
+
+        with patch(
+            "zhiyun_light_control.bridge.AsyncZhiyunLight.isolated_ble",
+            return_value=fake,
+        ) as make_ble:
+            factory = make_light_factory(
+                LightConnectionConfig(
+                    transport="ble",
+                    ble_profile="legacy",
+                    ble_service_uuid="service-test",
+                    ble_write_uuid="write-test",
+                    ble_notify_uuid="notify-test",
+                )
+            )
+            with factory() as light:
+                light.probe()
+
+        make_ble.assert_called_once_with(
+            address=None,
+            name_contains=None,
+            profile="legacy",
+            service_uuid="service-test",
+            write_uuid="write-test",
+            notify_uuid="notify-test",
+            timeout=1.5,
+            python=None,
+        )
 
     def test_persistent_factory_reuses_open_light_until_closed(self) -> None:
         contexts: list[FakeSyncContext] = []

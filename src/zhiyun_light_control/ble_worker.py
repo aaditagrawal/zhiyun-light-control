@@ -8,9 +8,8 @@ import json
 import sys
 
 from .transports.ble import (
-    DIRECT_ZY_NOTIFY_UUID,
-    DIRECT_ZY_SERVICE_UUID,
-    DIRECT_ZY_WRITE_UUID,
+    BLE_PROFILE_NAMES,
+    DEFAULT_BLE_PROFILE,
     BleTransport,
     scan_zhiyun_devices,
 )
@@ -31,9 +30,14 @@ def main(argv: list[str] | None = None) -> int:
     exchange.add_argument("--address")
     exchange.add_argument("--name-contains")
     exchange.add_argument("--timeout", type=float, default=1.5)
-    exchange.add_argument("--service-uuid", default=DIRECT_ZY_SERVICE_UUID)
-    exchange.add_argument("--write-uuid", default=DIRECT_ZY_WRITE_UUID)
-    exchange.add_argument("--notify-uuid", default=DIRECT_ZY_NOTIFY_UUID)
+    exchange.add_argument(
+        "--profile",
+        choices=BLE_PROFILE_NAMES,
+        default=DEFAULT_BLE_PROFILE.name,
+    )
+    exchange.add_argument("--service-uuid")
+    exchange.add_argument("--write-uuid")
+    exchange.add_argument("--notify-uuid")
 
     args = parser.parse_args(args_list)
     if args.command == "scan":
@@ -83,6 +87,7 @@ async def _exchange_raw(
     async with BleTransport(
         address=args.address,
         name_contains=args.name_contains,
+        profile=args.profile,
         service_uuid=args.service_uuid,
         write_uuid=args.write_uuid,
         notify_uuid=args.notify_uuid,

@@ -361,7 +361,10 @@ import asyncio
 from zhiyun_light_control import AsyncZhiyunLight, Scene
 
 async def main():
-    async with AsyncZhiyunLight.isolated_ble(name_contains="MOLUS") as light:
+    async with AsyncZhiyunLight.isolated_ble(
+        name_contains="MOLUS",
+        profile="legacy",
+    ) as light:
         print(await light.probe())
         await light.transition_scene(
             Scene(obj=1, brightness=10),
@@ -399,6 +402,18 @@ deliberate: on this Mac, fresh Python `3.13` and `3.12` virtualenvs with
 process alive and reports `worker_python`, `returncode`, and `signal` fields.
 One-shot BLE probe/control commands use the same worker isolation by default;
 `--unsafe-in-process` is available for direct bleak runs on stable runtimes.
+
+BLE command exchange supports three named characteristic profiles:
+
+- `direct`: Nordic-UART-style Zhiyun service `6e400001...`.
+- `legacy`: ZY Vega direct service `0000fee9...` with `d44bc439...` characteristics.
+- `yc`: older/alternate `0000ffe0...` light service.
+
+Use `--ble-profile legacy` or `--ble-profile yc` on one-shot BLE commands and
+bridge commands. For bench work against another firmware path, override the
+selected profile with `--ble-service-uuid`, `--ble-write-uuid`, and
+`--ble-notify-uuid`; the Python API exposes the same `profile`, `service_uuid`,
+`write_uuid`, and `notify_uuid` arguments.
 
 USB control, bridge code paths, and BLE module imports are verified. BLE control
 still needs validation on a Python/macOS/Bluetooth stack where bleak scanning is

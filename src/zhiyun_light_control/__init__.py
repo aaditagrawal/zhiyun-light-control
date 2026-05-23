@@ -30,7 +30,16 @@ from .protocol import (
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 from .state import SceneState, SceneStateTracker
 from .transitions import SceneTransition, interpolate_scene, scene_transition
-from .transports.ble import BleExchangeResult, BleWorkerError, CrashIsolatedBleTransport
+from .transports.ble import (
+    BLE_PROFILE_NAMES,
+    BLE_PROFILES,
+    DEFAULT_BLE_PROFILE,
+    BleExchangeResult,
+    BleProfile,
+    BleWorkerError,
+    CrashIsolatedBleTransport,
+    resolve_ble_profile,
+)
 from .validation import (
     HardwareValidationReport,
     PrimitiveCheck,
@@ -42,10 +51,14 @@ __all__ = [
     "AsyncZhiyunLight",
     "AsyncProbeResult",
     "ArtDmxPacket",
+    "BLE_PROFILE_NAMES",
+    "BLE_PROFILES",
     "BleExchangeResult",
+    "BleProfile",
     "BleWorkerError",
     "CommandResult",
     "CrashIsolatedBleTransport",
+    "DEFAULT_BLE_PROFILE",
     "DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS",
     "DEFAULT_DISCOVERY_FIRST_WORDS",
     "DEFAULT_DISCOVERY_OBJECT_IDS",
@@ -75,6 +88,7 @@ __all__ = [
     "encode_sacn",
     "iter_frames",
     "sacn_multicast_address",
+    "resolve_ble_profile",
     "make_light_factory",
     "merge_scene",
     "scene_from_mapping",

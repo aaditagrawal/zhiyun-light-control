@@ -276,6 +276,10 @@ class CliTests(unittest.TestCase):
         isolated.assert_called_once_with(
             address=None,
             name_contains="MOLUS",
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
             timeout=1.5,
             python="python-test",
         )
@@ -323,7 +327,63 @@ class CliTests(unittest.TestCase):
         direct.assert_called_once_with(
             address=None,
             name_contains=None,
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
             timeout=1.5,
+        )
+
+    def test_ble_probe_passes_profile_and_custom_characteristics(self) -> None:
+        class FakeProbe:
+            def to_dict(self):
+                return {"address": "AA", "firmware": "test"}
+
+        class FakeAsyncLight:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+                return
+
+            async def probe(self):
+                return FakeProbe()
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.AsyncZhiyunLight.isolated_ble",
+                return_value=FakeAsyncLight(),
+            ) as isolated,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "probe",
+                    "--transport",
+                    "ble",
+                    "--ble-profile",
+                    "legacy",
+                    "--ble-service-uuid",
+                    "service-test",
+                    "--ble-write-uuid",
+                    "write-test",
+                    "--ble-notify-uuid",
+                    "notify-test",
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        isolated.assert_called_once_with(
+            address=None,
+            name_contains=None,
+            profile="legacy",
+            service_uuid="service-test",
+            write_uuid="write-test",
+            notify_uuid="notify-test",
+            timeout=1.5,
+            python=None,
         )
 
     def test_ble_probe_worker_failure_returns_json_error(self) -> None:
@@ -390,10 +450,43 @@ class CliTests(unittest.TestCase):
         self.assertEqual(config.transport, "ble")
         self.assertEqual(config.address, "AA:BB")
         self.assertEqual(config.usb_lock_timeout, 0.25)
+        self.assertEqual(config.ble_profile, "direct")
+        self.assertIsNone(config.ble_service_uuid)
+        self.assertIsNone(config.ble_write_uuid)
+        self.assertIsNone(config.ble_notify_uuid)
         self.assertEqual(config.ble_python, "python-test")
         self.assertTrue(config.ble_in_process)
         self.assertEqual(serve.call_args.kwargs["cors_origin"], "http://studio.local")
         serve.assert_called_once()
+
+    def test_bridge_cli_passes_ble_profile_options(self) -> None:
+        with (
+            patch("zhiyun_light_control.cli.make_light_factory") as make_factory,
+            patch("zhiyun_light_control.cli.serve"),
+        ):
+            make_factory.return_value = object()
+            code = main(
+                [
+                    "serve",
+                    "--transport",
+                    "ble",
+                    "--ble-profile",
+                    "yc",
+                    "--ble-service-uuid",
+                    "service-test",
+                    "--ble-write-uuid",
+                    "write-test",
+                    "--ble-notify-uuid",
+                    "notify-test",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        config = make_factory.call_args.args[0]
+        self.assertEqual(config.ble_profile, "yc")
+        self.assertEqual(config.ble_service_uuid, "service-test")
+        self.assertEqual(config.ble_write_uuid, "write-test")
+        self.assertEqual(config.ble_notify_uuid, "notify-test")
 
     def test_bridge_cli_can_disable_cors(self) -> None:
         with (

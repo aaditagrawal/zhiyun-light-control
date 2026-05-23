@@ -77,12 +77,20 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         light = AsyncZhiyunLight.isolated_ble(
             address="AA",
             name_contains="MOLUS",
+            profile="legacy",
+            service_uuid="service-test",
+            write_uuid="write-test",
+            notify_uuid="notify-test",
             timeout=1.0,
             python="python-test",
         )
 
         self.assertEqual(light.transport.address, "AA")
         self.assertEqual(light.transport.name_contains, "MOLUS")
+        self.assertEqual(light.transport.profile, "legacy+custom")
+        self.assertEqual(light.transport.service_uuid, "service-test")
+        self.assertEqual(light.transport.write_uuid, "write-test")
+        self.assertEqual(light.transport.notify_uuid, "notify-test")
         self.assertEqual(light.transport.timeout, 1.0)
         self.assertEqual(light.transport.python, "python-test")
 

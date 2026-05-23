@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
 from .models import Scene
+from .transports.ble import DEFAULT_BLE_PROFILE
 from .transports.usb import DEFAULT_LOCK_TIMEOUT
 
 
@@ -21,6 +22,10 @@ class LightConnectionConfig:
     name_contains: str | None = None
     timeout: float = 1.5
     usb_lock_timeout: float | None = DEFAULT_LOCK_TIMEOUT
+    ble_profile: str = DEFAULT_BLE_PROFILE.name
+    ble_service_uuid: str | None = None
+    ble_write_uuid: str | None = None
+    ble_notify_uuid: str | None = None
     ble_python: str | None = None
     ble_in_process: bool = False
     persistent: bool = False
@@ -185,11 +190,19 @@ class SyncBleLight:
             return AsyncZhiyunLight.ble(
                 address=self.config.address,
                 name_contains=self.config.name_contains,
+                profile=self.config.ble_profile,
+                service_uuid=self.config.ble_service_uuid,
+                write_uuid=self.config.ble_write_uuid,
+                notify_uuid=self.config.ble_notify_uuid,
                 timeout=self.config.timeout,
             )
         return AsyncZhiyunLight.isolated_ble(
             address=self.config.address,
             name_contains=self.config.name_contains,
+            profile=self.config.ble_profile,
+            service_uuid=self.config.ble_service_uuid,
+            write_uuid=self.config.ble_write_uuid,
+            notify_uuid=self.config.ble_notify_uuid,
             timeout=self.config.timeout,
             python=self.config.ble_python,
         )

@@ -230,9 +230,16 @@ Older direct ZY service observed in prior notes:
 - Write characteristic: `d44bc439-abfd-45a2-b575-925416129600`
 - Notify/read characteristic: `d44bc439-abfd-45a2-b575-925416129601`
 
+The BLE API names these characteristic sets as profiles: `direct`, `legacy`,
+and `yc`. One-shot BLE CLI commands and bridge commands accept
+`--ble-profile`, plus `--ble-service-uuid`, `--ble-write-uuid`, and
+`--ble-notify-uuid` for custom bench routing. `AsyncZhiyunLight.ble()` and
+`AsyncZhiyunLight.isolated_ble()` expose the same profile and UUID override
+arguments.
+
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
 
-One-shot BLE command primitives (`probe`, `register`, `read`, `set`, and `apply`) also use worker-isolated raw exchanges by default. The worker connects, writes one frame to the direct ZY characteristic, waits for notification data, and returns `{address, rx_hex}` to the parent process. The parent then parses that response through the same `CommandResult` path used by USB, so ACKs, timeouts, and echo detection keep the same semantics. Use `--unsafe-in-process` only when you want the direct bleak transport in the parent process.
+One-shot BLE command primitives (`probe`, `register`, `read`, `set`, and `apply`) also use worker-isolated raw exchanges by default. The worker connects, writes one frame to the selected profile's write characteristic, waits for notification data, and returns `{address, rx_hex}` to the parent process. The parent then parses that response through the same `CommandResult` path used by USB, so ACKs, timeouts, and echo detection keep the same semantics. Use `--unsafe-in-process` only when you want the direct bleak transport in the parent process.
 
 `zlight validate --transport ble` is intentionally guarded by
 `--unsafe-in-process` because direct bleak validation runs in the main process.

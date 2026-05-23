@@ -23,14 +23,60 @@ DIRECT_ZY_NOTIFY_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 LEGACY_ZY_SERVICE_UUID = "0000fee9-0000-1000-8000-00805f9b34fb"
 LEGACY_ZY_WRITE_UUID = "d44bc439-abfd-45a2-b575-925416129600"
 LEGACY_ZY_NOTIFY_UUID = "d44bc439-abfd-45a2-b575-925416129601"
+YC_SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb"
+YC_WRITE_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
+YC_NOTIFY_UUID = "0000ffe2-0000-1000-8000-00805f9b34fb"
 MESH_PROVISIONING_SERVICE_UUID = "00001827-0000-1000-8000-00805f9b34fb"
 MESH_PROXY_SERVICE_UUID = "00001828-0000-1000-8000-00805f9b34fb"
 KNOWN_ZHIYUN_SERVICE_UUIDS = {
     DIRECT_ZY_SERVICE_UUID,
     LEGACY_ZY_SERVICE_UUID,
+    YC_SERVICE_UUID,
     MESH_PROVISIONING_SERVICE_UUID,
     MESH_PROXY_SERVICE_UUID,
 }
+
+
+@dataclass(frozen=True)
+class BleProfile:
+    name: str
+    service_uuid: str
+    write_uuid: str
+    notify_uuid: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "service_uuid": self.service_uuid,
+            "write_uuid": self.write_uuid,
+            "notify_uuid": self.notify_uuid,
+        }
+
+
+DIRECT_ZY_PROFILE = BleProfile(
+    name="direct",
+    service_uuid=DIRECT_ZY_SERVICE_UUID,
+    write_uuid=DIRECT_ZY_WRITE_UUID,
+    notify_uuid=DIRECT_ZY_NOTIFY_UUID,
+)
+LEGACY_ZY_PROFILE = BleProfile(
+    name="legacy",
+    service_uuid=LEGACY_ZY_SERVICE_UUID,
+    write_uuid=LEGACY_ZY_WRITE_UUID,
+    notify_uuid=LEGACY_ZY_NOTIFY_UUID,
+)
+YC_PROFILE = BleProfile(
+    name="yc",
+    service_uuid=YC_SERVICE_UUID,
+    write_uuid=YC_WRITE_UUID,
+    notify_uuid=YC_NOTIFY_UUID,
+)
+BLE_PROFILES = {
+    profile.name: profile
+    for profile in (DIRECT_ZY_PROFILE, LEGACY_ZY_PROFILE, YC_PROFILE)
+}
+BLE_PROFILE_NAMES = tuple(BLE_PROFILES)
+DEFAULT_BLE_PROFILE = DIRECT_ZY_PROFILE
 
 
 @dataclass(frozen=True)
@@ -112,16 +158,24 @@ class BleTransport:
         *,
         address: str | None = None,
         name_contains: str | None = None,
-        service_uuid: str = DIRECT_ZY_SERVICE_UUID,
-        write_uuid: str = DIRECT_ZY_WRITE_UUID,
-        notify_uuid: str = DIRECT_ZY_NOTIFY_UUID,
+        profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+        service_uuid: str | None = None,
+        write_uuid: str | None = None,
+        notify_uuid: str | None = None,
         timeout: float = 1.5,
     ):
+        resolved = resolve_ble_profile(
+            profile,
+            service_uuid=service_uuid,
+            write_uuid=write_uuid,
+            notify_uuid=notify_uuid,
+        )
         self.address = address
         self.name_contains = name_contains
-        self.service_uuid = service_uuid
-        self.write_uuid = write_uuid
-        self.notify_uuid = notify_uuid
+        self.profile = resolved.name
+        self.service_uuid = resolved.service_uuid
+        self.write_uuid = resolved.write_uuid
+        self.notify_uuid = resolved.notify_uuid
         self.timeout = timeout
         self._client: object | None = None
         self._queue: asyncio.Queue[bytes] = asyncio.Queue()
@@ -201,17 +255,26 @@ class CrashIsolatedBleTransport:
         *,
         address: str | None = None,
         name_contains: str | None = None,
-        service_uuid: str = DIRECT_ZY_SERVICE_UUID,
-        write_uuid: str = DIRECT_ZY_WRITE_UUID,
-        notify_uuid: str = DIRECT_ZY_NOTIFY_UUID,
+        profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+        service_uuid: str | None = None,
+        write_uuid: str | None = None,
+        notify_uuid: str | None = None,
         timeout: float = 1.5,
         python: str | None = None,
     ):
+        resolved = resolve_ble_profile(
+            profile,
+            service_uuid=service_uuid,
+            write_uuid=write_uuid,
+            notify_uuid=notify_uuid,
+        )
         self.address = address
         self.name_contains = name_contains
-        self.service_uuid = service_uuid
-        self.write_uuid = write_uuid
-        self.notify_uuid = notify_uuid
+        self.profile = resolved.name
+        self._worker_profile = _worker_profile_arg(profile)
+        self.service_uuid = resolved.service_uuid
+        self.write_uuid = resolved.write_uuid
+        self.notify_uuid = resolved.notify_uuid
         self.timeout = timeout
         self.python = python
 
@@ -235,6 +298,7 @@ class CrashIsolatedBleTransport:
             tx,
             address=self.address,
             name_contains=self.name_contains,
+            profile=self._worker_profile,
             service_uuid=self.service_uuid,
             write_uuid=self.write_uuid,
             notify_uuid=self.notify_uuid,
@@ -322,24 +386,33 @@ def exchange_zhiyun_ble_safe(
     *,
     address: str | None = None,
     name_contains: str | None = None,
-    service_uuid: str = DIRECT_ZY_SERVICE_UUID,
-    write_uuid: str = DIRECT_ZY_WRITE_UUID,
-    notify_uuid: str = DIRECT_ZY_NOTIFY_UUID,
+    profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+    service_uuid: str | None = None,
+    write_uuid: str | None = None,
+    notify_uuid: str | None = None,
     timeout: float = 1.5,
     python: str | None = None,
 ) -> BleExchangeResult:
+    resolved = resolve_ble_profile(
+        profile,
+        service_uuid=service_uuid,
+        write_uuid=write_uuid,
+        notify_uuid=notify_uuid,
+    )
     args = [
         "exchange-raw",
         "--tx-hex",
         tx.hex(),
         "--timeout",
         str(timeout),
+        "--profile",
+        _worker_profile_arg(profile),
         "--service-uuid",
-        service_uuid,
+        resolved.service_uuid,
         "--write-uuid",
-        write_uuid,
+        resolved.write_uuid,
         "--notify-uuid",
-        notify_uuid,
+        resolved.notify_uuid,
     ]
     if address:
         args.extend(["--address", address])
@@ -397,6 +470,52 @@ def exchange_zhiyun_ble_safe(
         returncode=run.returncode,
         worker_python=run.executable,
     )
+
+
+def resolve_ble_profile(
+    profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+    *,
+    service_uuid: str | None = None,
+    write_uuid: str | None = None,
+    notify_uuid: str | None = None,
+) -> BleProfile:
+    if isinstance(profile, BleProfile):
+        base = profile
+    else:
+        name = profile.lower()
+        try:
+            base = BLE_PROFILES[name]
+        except KeyError as exc:
+            choices = ", ".join(BLE_PROFILE_NAMES)
+            message = f"unknown BLE profile {profile!r}; expected {choices}"
+            raise ValueError(message) from exc
+    resolved = BleProfile(
+        name=base.name,
+        service_uuid=service_uuid or base.service_uuid,
+        write_uuid=write_uuid or base.write_uuid,
+        notify_uuid=notify_uuid or base.notify_uuid,
+    )
+    if resolved == base:
+        return base
+    return BleProfile(
+        name=f"{base.name}+custom",
+        service_uuid=resolved.service_uuid,
+        write_uuid=resolved.write_uuid,
+        notify_uuid=resolved.notify_uuid,
+    )
+
+
+def _profile_arg(profile: str | BleProfile) -> str:
+    if isinstance(profile, BleProfile):
+        return profile.name
+    return profile
+
+
+def _worker_profile_arg(profile: str | BleProfile) -> str:
+    name = _profile_arg(profile).lower()
+    if name in BLE_PROFILES:
+        return name
+    return DEFAULT_BLE_PROFILE.name
 
 
 def _run_ble_worker(
