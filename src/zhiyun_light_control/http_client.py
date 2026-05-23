@@ -128,6 +128,42 @@ class LightBridgeClient:
             payload.update(values)
         return self._post("/validate", payload)
 
+    def discover_usb(
+        self,
+        *,
+        allow_control: bool = False,
+        object_ids: Iterable[int | str] | None = None,
+        first_words: Iterable[int | str] | None = None,
+        control_object_ids: Iterable[int | str] | None = None,
+        control_first_words: Iterable[int | str] | None = None,
+        register_device_ids: Iterable[int | str] | None = None,
+        register_group_ids: Iterable[int | str] | None = None,
+        control_kinds: Iterable[str] | None = None,
+        control_modes: Iterable[int | str] | None = None,
+        timeout: float | None = None,
+        brightness: float | None = None,
+        kelvin: int | None = None,
+        sleep: int | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {"allow_control": allow_control}
+        _set_iterable(payload, "object_ids", object_ids)
+        _set_iterable(payload, "first_words", first_words)
+        _set_iterable(payload, "control_object_ids", control_object_ids)
+        _set_iterable(payload, "control_first_words", control_first_words)
+        _set_iterable(payload, "register_device_ids", register_device_ids)
+        _set_iterable(payload, "register_group_ids", register_group_ids)
+        _set_iterable(payload, "control_kinds", control_kinds)
+        _set_iterable(payload, "control_modes", control_modes)
+        if timeout is not None:
+            payload["timeout"] = timeout
+        if brightness is not None:
+            payload["brightness"] = brightness
+        if kelvin is not None:
+            payload["kelvin"] = kelvin
+        if sleep is not None:
+            payload["sleep"] = sleep
+        return self._post("/discover-usb", payload)
+
     def register(self, *, device_id: int = 0) -> dict[str, object]:
         return self._post("/register", {"device_id": device_id})
 
@@ -327,6 +363,15 @@ def _with_control_mode(
     if control_mode is not None:
         payload["control_mode"] = control_mode
     return payload
+
+
+def _set_iterable(
+    payload: dict[str, object],
+    key: str,
+    value: Iterable[object] | None,
+) -> None:
+    if value is not None:
+        payload[key] = list(value)
 
 
 def _json_response(data: bytes) -> dict[str, object]:

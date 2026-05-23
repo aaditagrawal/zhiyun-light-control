@@ -397,6 +397,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/validate", commands["post"])
             self.assertIn("/capabilities", commands["get"])
             self.assertIn("/devices", commands["get"])
+            self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/sequence", commands["post"])
 
             capabilities = json.loads(
@@ -409,6 +410,10 @@ class ServerTests(unittest.TestCase):
                 primitive["name"]: primitive for primitive in capabilities["primitives"]
             }
             self.assertFalse(primitives["status"]["requires_control"])
+            self.assertEqual(
+                primitives["discover-usb"]["requires_control"],
+                "allow_control request field",
+            )
             self.assertTrue(primitives["brightness"]["requires_control"])
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
@@ -447,6 +452,35 @@ class ServerTests(unittest.TestCase):
             )
             with self.assertRaises(HTTPError) as raised:
                 urlopen(request, timeout=3).read()
+            self.assertEqual(raised.exception.code, 403)
+
+            discover_request = Request(
+                f"{base}/discover-usb",
+                data=json.dumps(
+                    {
+                        "object_ids": [1],
+                        "first_words": ["0x0100"],
+                        "timeout": 0.1,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            discovery = json.loads(urlopen(discover_request, timeout=3).read())
+            self.assertFalse(discovery["control_enabled"])
+            self.assertEqual(discovery["object_ids"], [1])
+            self.assertEqual(discovery["first_words"], [0x0100])
+            self.assertEqual(discovery["summary"]["attempted"], 16)
+            self.assertGreaterEqual(discovery["summary"]["confirmed"], 1)
+
+            gated_discover_request = Request(
+                f"{base}/discover-usb",
+                data=json.dumps({"allow_control": True}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(gated_discover_request, timeout=3).read()
             self.assertEqual(raised.exception.code, 403)
         finally:
             server.shutdown()
@@ -651,6 +685,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/capabilities", schema["paths"])
             self.assertIn("/diagnostics", schema["paths"])
             self.assertIn("/devices", schema["paths"])
+            self.assertIn("/discover-usb", schema["paths"])
             self.assertIn("/events", schema["paths"])
             self.assertIn("/sequence", schema["paths"])
             self.assertIn("/frame", schema["paths"])
@@ -660,6 +695,8 @@ class ServerTests(unittest.TestCase):
             self.assertIn("Capabilities", schema["components"]["schemas"])
             self.assertIn("Diagnostics", schema["components"]["schemas"])
             self.assertIn("Devices", schema["components"]["schemas"])
+            self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])
+            self.assertIn("UsbDiscovery", schema["components"]["schemas"])
             self.assertIn("SequenceRequest", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
@@ -667,6 +704,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", commands["get"])
             self.assertIn("/devices", commands["get"])
             self.assertIn("/events", commands["get"])
+            self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/frame", commands["post"])
 
             options = Request(f"{base}/scene", method="OPTIONS")

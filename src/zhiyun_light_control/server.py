@@ -12,6 +12,15 @@ from urllib.parse import parse_qs, urlparse
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .devices import BLE_BACKENDS, discover_transport_devices
+from .discovery import (
+    DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    DEFAULT_DISCOVERY_CONTROL_KINDS,
+    DEFAULT_DISCOVERY_FIRST_WORDS,
+    DEFAULT_DISCOVERY_OBJECT_IDS,
+    DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+    DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    discover_usb_primitives,
+)
 from .models import Scene
 from .presets import ScenePresetLibrary, merge_scene, scene_from_optional_mapping
 from .protocol import (
@@ -92,6 +101,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     "post": [
                         "/validate",
                         "/register",
+                        "/discover-usb",
                         "/brightness",
                         "/cct",
                         "/sleep",
@@ -177,6 +187,19 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     )
                     return
                 result = self._handle_validate(body)
+            elif path == "/discover-usb":
+                if _body_bool(body, "allow_control") and not self.server.allow_control:
+                    self._json(
+                        {
+                            "error": (
+                                "USB discovery control probes require bridge "
+                                "--allow-control"
+                            )
+                        },
+                        status=HTTPStatus.FORBIDDEN,
+                    )
+                    return
+                result = self._handle_discover_usb(body)
             else:
                 if not self.server.allow_control:
                     self._json(
@@ -597,6 +620,55 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             error=error,
         )
 
+    def _handle_discover_usb(self, body: dict[str, object]) -> dict[str, object]:
+        if self.server.transport != "usb":
+            raise ValueError("USB discovery requires a bridge running transport=usb")
+        with self.server.light_factory() as light:
+            report = discover_usb_primitives(
+                light,
+                object_ids=_body_int_tuple(
+                    body,
+                    "object_ids",
+                    default=DEFAULT_DISCOVERY_OBJECT_IDS,
+                ),
+                first_words=_body_int_tuple(
+                    body,
+                    "first_words",
+                    default=DEFAULT_DISCOVERY_FIRST_WORDS,
+                ),
+                control_object_ids=_body_optional_int_tuple(
+                    body,
+                    "control_object_ids",
+                ),
+                control_first_words=_body_int_tuple(
+                    body,
+                    "control_first_words",
+                    default=DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+                ),
+                register_device_ids=_body_int_tuple(
+                    body,
+                    "register_device_ids",
+                    default=DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+                ),
+                register_group_ids=_body_int_tuple(
+                    body,
+                    "register_group_ids",
+                    default=DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+                ),
+                control_kinds=_body_text_tuple(
+                    body,
+                    "control_kinds",
+                    default=DEFAULT_DISCOVERY_CONTROL_KINDS,
+                ),
+                control_modes=_body_optional_int_tuple(body, "control_modes"),
+                timeout=float(body.get("timeout", 0.5)),
+                allow_control=_body_bool(body, "allow_control"),
+                brightness=float(body.get("brightness", 35.0)),
+                kelvin=int(body.get("kelvin", 5600)),
+                sleep=int(body.get("sleep", 0)),
+            )
+        return report.to_dict()
+
     def _handle_devices(self, query: str) -> dict[str, object]:
         params = parse_qs(query)
         backend = _query_text(
@@ -789,6 +861,13 @@ def openapi_schema() -> dict[str, object]:
                     request_schema="ValidationRequest",
                 ),
             },
+            "/discover-usb": {
+                "post": _operation(
+                    "Run a bounded USB protocol discovery matrix",
+                    "UsbDiscovery",
+                    request_schema="UsbDiscoveryRequest",
+                )
+            },
             "/presets": {"get": _operation("List loaded scene presets", "Presets")},
             "/state": {"get": _operation("Read requested bridge state", "State")},
             "/register": {
@@ -968,6 +1047,7 @@ def _openapi_schemas() -> dict[str, object]:
             ],
         },
         "Validation": {"type": "object", "additionalProperties": True},
+        "UsbDiscovery": {"type": "object", "additionalProperties": True},
         "Presets": {"type": "object", "additionalProperties": True},
         "State": {"type": "object", "additionalProperties": True},
         "ValidationRequest": {
@@ -985,6 +1065,24 @@ def _openapi_schemas() -> dict[str, object]:
         "RegisterRequest": {
             "type": "object",
             "properties": {"device_id": {"type": "integer"}},
+        },
+        "UsbDiscoveryRequest": {
+            "type": "object",
+            "properties": {
+                "allow_control": {"type": "boolean"},
+                "object_ids": {"type": "array", "items": control_mode},
+                "first_words": {"type": "array", "items": control_mode},
+                "control_object_ids": {"type": "array", "items": control_mode},
+                "control_first_words": {"type": "array", "items": control_mode},
+                "register_device_ids": {"type": "array", "items": control_mode},
+                "register_group_ids": {"type": "array", "items": control_mode},
+                "control_kinds": {"type": "array", "items": {"type": "string"}},
+                "control_modes": {"type": "array", "items": control_mode},
+                "timeout": {"type": "number"},
+                "brightness": {"type": "number"},
+                "kelvin": {"type": "integer"},
+                "sleep": {"type": "integer"},
+            },
         },
         "BrightnessRequest": {
             "type": "object",
@@ -1149,6 +1247,28 @@ def capabilities_response(
                 "path": "/validate",
                 "requires_control": "allow_control request field",
                 "confirmation": "per-check validation report",
+            },
+            {
+                "name": "discover-usb",
+                "method": "POST",
+                "path": "/discover-usb",
+                "requires_control": "allow_control request field",
+                "fields": [
+                    "allow_control",
+                    "object_ids",
+                    "first_words",
+                    "control_object_ids",
+                    "control_first_words",
+                    "register_device_ids",
+                    "register_group_ids",
+                    "control_kinds",
+                    "control_modes",
+                    "timeout",
+                    "brightness",
+                    "kelvin",
+                    "sleep",
+                ],
+                "confirmation": "per-attempt ACK/timeout/evidence report",
             },
             {
                 "name": "devices",
@@ -1418,6 +1538,69 @@ def _body_bool(body: dict[str, object], key: str, default: bool = False) -> bool
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _body_int_tuple(
+    body: dict[str, object],
+    key: str,
+    *,
+    default: tuple[int, ...],
+) -> tuple[int, ...]:
+    if key not in body or body[key] is None:
+        return default
+    return _int_tuple_value(body[key], key=key)
+
+
+def _body_optional_int_tuple(
+    body: dict[str, object],
+    key: str,
+) -> tuple[int, ...] | None:
+    if key not in body or body[key] is None:
+        return None
+    return _int_tuple_value(body[key], key=key)
+
+
+def _body_text_tuple(
+    body: dict[str, object],
+    key: str,
+    *,
+    default: tuple[str, ...],
+) -> tuple[str, ...]:
+    if key not in body or body[key] is None:
+        return default
+    value = body[key]
+    if isinstance(value, str):
+        items = tuple(part.strip() for part in value.split(",") if part.strip())
+    elif isinstance(value, list | tuple):
+        items = tuple(str(item).strip() for item in value if str(item).strip())
+    else:
+        raise ValueError(f"{key} must be a list or comma-separated string")
+    if not items:
+        raise ValueError(f"{key} must contain at least one value")
+    return items
+
+
+def _int_tuple_value(value: object, *, key: str) -> tuple[int, ...]:
+    if isinstance(value, int):
+        return (value,)
+    if isinstance(value, str):
+        items = tuple(part.strip() for part in value.split(",") if part.strip())
+        if not items:
+            raise ValueError(f"{key} must contain at least one value")
+        return tuple(int(item, 0) for item in items)
+    if isinstance(value, list | tuple):
+        if not value:
+            raise ValueError(f"{key} must contain at least one value")
+        return tuple(_int_item(item, key=key) for item in value)
+    raise ValueError(f"{key} must be an integer, list, or comma-separated string")
+
+
+def _int_item(value: object, *, key: str) -> int:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value, 0)
+    raise ValueError(f"{key} values must be integers or integer strings")
 
 
 def _query_bool(

@@ -254,6 +254,9 @@ curl 'http://127.0.0.1:8765/devices?include_ble=true&ble_backend=macos-app&timeo
 curl http://127.0.0.1:8765/events?limit=1
 curl http://127.0.0.1:8765/state
 curl http://127.0.0.1:8765/presets
+curl -X POST http://127.0.0.1:8765/discover-usb \
+  -H 'content-type: application/json' \
+  -d '{"object_ids": [0, 1], "first_words": ["0x0100", "0x0301"], "timeout": 0.4}'
 curl -X POST http://127.0.0.1:8765/validate \
   -H 'content-type: application/json' \
   -d '{"allow_control": true, "include_object_reads": true}'
@@ -313,6 +316,12 @@ next-step hints for cases such as macOS Bluetooth authorization failures.
 Add `include_ble=true` to run a bounded BLE scan through the selected
 `ble_backend` (`worker`, `macos-app`, or `direct`); scan failures such as macOS
 Bluetooth authorization errors are returned as JSON diagnostics.
+
+`POST /discover-usb` runs the same bounded USB protocol matrix as
+`zlight discover-usb` and returns every attempt with ACK/timeout evidence.
+Read-only discovery works without `--allow-control`; control candidates require
+the bridge to be started with `--allow-control` and the request body to include
+`allow_control: true`.
 
 `GET /status` returns read-only identity/status fields plus the raw
 `CommandResult` evidence for global device info, firmware, voltage/status,
@@ -402,6 +411,7 @@ bridge = LightBridgeClient("http://127.0.0.1:8765")
 print(bridge.diagnostics()["connection_confirmed"])
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
+print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(next(bridge.state_events(limit=1))["state"])
 
 result = bridge.set_brightness(35, obj=1)

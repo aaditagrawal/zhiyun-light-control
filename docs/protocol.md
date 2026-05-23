@@ -119,6 +119,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/presets` | List loaded named scene presets |
 | `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
+| `POST` | `/discover-usb` | Bounded USB primitive discovery matrix with per-attempt evidence |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
 | `POST` | `/cct` | Set color temperature |
@@ -173,6 +174,13 @@ USB port, without opening the light. Add `include_ble=true` to run a bounded
 BLE scan with `ble_backend=worker`, `macos-app`, or `direct`; BLE scan errors
 are returned in the `ble.scan` object with the same `ok`, `error`,
 `returncode`, and `signal` fields as `zlight scan-ble`.
+
+HTTP `/discover-usb` exposes the same bounded primitive matrix as
+`zlight discover-usb` for dashboard-driven bench work. The endpoint returns the
+object ids, first words, control candidate settings, summary counts, notes, and
+every `CommandResult`. Read-only discovery can run without `--allow-control`;
+control/register candidates are only included when the bridge has
+`--allow-control` and the request body sets `allow_control: true`.
 
 The OSC bridge is UDP-based and dependency-free:
 

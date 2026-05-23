@@ -10,6 +10,7 @@ from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
     brightness_payload,
+    build_frame,
     build_runtime_frame,
     cct_payload,
     first_frame,
@@ -52,6 +53,21 @@ class FakeLight:
         }
         tx = build_runtime_frame(1, cmd, payload)
         rx = build_runtime_frame(1, cmd, payload_by_cmd.get(cmd, b"\x00"))
+        ack = first_frame(rx, cmd=cmd)
+        return CommandResult(cmd, tx, rx, (ack,), ack)
+
+    def exchange_frame(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ):
+        del timeout
+        self.commands.append((cmd, payload))
+        tx = build_frame(first_word, 1, cmd, payload)
+        rx = build_frame(first_word, 1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
@@ -120,6 +136,14 @@ class HttpClientTests(unittest.TestCase):
             devices = client.devices()
             self.assertIn("usb", devices)
             self.assertFalse(devices["ble"]["included"])
+            discovery = client.discover_usb(
+                object_ids=[1],
+                first_words=["0x0100"],
+                timeout=0.1,
+            )
+            self.assertFalse(discovery["control_enabled"])
+            self.assertEqual(discovery["object_ids"], [1])
+            self.assertEqual(discovery["first_words"], [0x0100])
             self.assertEqual(client.status()["firmware"], "1.6.4")
 
             brightness = client.set_brightness(35, obj=1, control_mode=0x01)
