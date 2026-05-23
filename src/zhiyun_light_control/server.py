@@ -1694,8 +1694,10 @@ def integration_manifest_response(
         },
         "setup": {
             "preflight": {"method": "GET", "path": "/ready"},
+            "integration": {"method": "GET", "path": "/integration"},
             "local_preflight": {
                 "command": "zlight ready --transport usb --json",
+                "integration_command": "zlight integration --transport usb --json",
                 "ble_macos_command": (
                     "zlight ready --transport ble --ble-backend macos-app "
                     "--name-contains <name> --json"
@@ -2184,6 +2186,16 @@ def capabilities_response(
                 "confirmation": (
                     "local read-only preflight with the same readiness model as "
                     "HTTP /ready"
+                ),
+            },
+            {
+                "name": "integration-cli",
+                "method": "CLI",
+                "command": "zlight integration --transport usb --json",
+                "requires_control": False,
+                "confirmation": (
+                    "local controller snapshot with manifest, capabilities, "
+                    "readiness, and device discovery payloads"
                 ),
             },
             {

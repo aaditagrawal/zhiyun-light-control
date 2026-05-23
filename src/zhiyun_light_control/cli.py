@@ -48,7 +48,13 @@ from .protocol import (
     sleep_payload,
 )
 from .sacn import serve_sacn
-from .server import readiness_response, serve
+from .server import (
+    capabilities_response,
+    integration_manifest_response,
+    integration_snapshot_response,
+    readiness_response,
+    serve,
+)
 from .status import read_async_status, read_sync_status
 from .transports.ble import (
     BLE_PROFILE_NAMES,
@@ -104,6 +110,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ready.add_argument("--json", action="store_true", help="Print compact JSON.")
     ready.set_defaults(func=cmd_ready)
+
+    integration = sub.add_parser(
+        "integration",
+        help="Print a local controller integration snapshot.",
+    )
+    add_transport_args(integration)
+    add_ble_execution_args(integration)
+    integration.add_argument(
+        "--allow-control",
+        action="store_true",
+        help="Report control-request readiness as enabled for this snapshot.",
+    )
+    integration.add_argument(
+        "--include-ble",
+        action="store_true",
+        help="Run a bounded BLE scan and include its diagnostic result.",
+    )
+    integration.add_argument(
+        "--include-ble-status",
+        action="store_true",
+        help="Run the macOS helper Bluetooth authorization/status check.",
+    )
+    integration.add_argument("--json", action="store_true", help="Print compact JSON.")
+    integration.set_defaults(func=cmd_integration)
 
     validate = sub.add_parser(
         "validate",
@@ -747,13 +777,66 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_ready(args: argparse.Namespace) -> int:
+    payload = local_readiness_payload(
+        args,
+        include_ble=False,
+        include_ble_status=None,
+    )
+    print_json(payload, compact=args.json)
+    return 0 if payload.get("connection_confirmed") is True else 2
+
+
+def cmd_integration(args: argparse.Namespace) -> int:
+    ready = local_readiness_payload(
+        args,
+        include_ble=args.include_ble,
+        include_ble_status=True if args.include_ble_status else None,
+    )
+    ble_backend = "direct" if args.unsafe_in_process else args.ble_backend
+    devices = ready.get("devices")
+    if not isinstance(devices, dict):
+        devices = {}
+    snapshot = integration_snapshot_response(
+        manifest=integration_manifest_response(
+            allow_control=args.allow_control,
+            presets=[],
+            cues=[],
+            transport=args.transport,
+            ble_backend=ble_backend,
+            ble_profile=args.ble_profile,
+            ble_address=args.address,
+            ble_name_contains=args.name_contains,
+        ),
+        capabilities=capabilities_response(
+            allow_control=args.allow_control,
+            presets=[],
+            cues=[],
+        ),
+        ready=ready,
+        devices=devices,
+    )
+    print_json(snapshot, compact=args.json)
+    return 0 if ready.get("connection_confirmed") is True else 2
+
+
+def local_readiness_payload(
+    args: argparse.Namespace,
+    *,
+    include_ble: bool,
+    include_ble_status: bool | None,
+) -> dict[str, object]:
     status, connection_confirmed, error = local_status_snapshot(args)
     ble_backend = "direct" if args.unsafe_in_process else args.ble_backend
+    status_requested = (
+        args.transport == "ble" and ble_backend == "macos-app"
+        if include_ble_status is None
+        else include_ble_status
+    )
     devices = discover_transport_devices(
         configured_transport=args.transport,
         configured_usb_port=args.port,
-        include_ble=False,
-        include_ble_status=args.transport == "ble" and ble_backend == "macos-app",
+        include_ble=include_ble,
+        include_ble_status=status_requested,
         ble_backend=ble_backend,
         ble_timeout=args.timeout,
         ble_name_contains=args.name_contains,
@@ -773,8 +856,7 @@ def cmd_ready(args: argparse.Namespace) -> int:
         state_version=0,
         state=None,
     )
-    print_json(payload, compact=args.json)
-    return 0 if connection_confirmed else 2
+    return payload
 
 
 def local_status_snapshot(

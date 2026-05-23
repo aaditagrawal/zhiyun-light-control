@@ -173,6 +173,8 @@ Read ACK-backed status with raw command evidence:
 ```sh
 uv run zlight ready --transport usb --json
 uv run zlight ready --transport ble --ble-backend macos-app --name-contains PL103 --json
+uv run zlight integration --transport usb --include-ble-status --ble-backend macos-app --json
+uv run zlight integration --transport ble --ble-backend macos-app --name-contains PL103 --json
 uv run zlight status --transport usb
 uv run --extra ble zlight status --transport ble --name-contains MOLUS
 ```
@@ -181,6 +183,10 @@ uv run --extra ble zlight status --transport ble --name-contains MOLUS
 returns the same `ready_for`, `requirements`, `warnings`, and `actions` model as
 HTTP `GET /ready` without starting the bridge. It does not run a BLE scan or send
 control writes; in macOS BLE helper mode it includes `devices.ble.macos_status`.
+`integration` is the bridge-free setup snapshot for media controllers. It wraps
+the local manifest, capabilities, readiness, and device-discovery payloads in the
+same `summary` shape as HTTP `GET /integration`; add `--include-ble` when a setup
+script should also run a bounded BLE scan.
 
 Scan BLE devices:
 

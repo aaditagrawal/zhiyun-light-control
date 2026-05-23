@@ -560,6 +560,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/capabilities", commands["get"])
             self.assertIn("/devices", commands["get"])
             self.assertIn("/ready", commands["get"])
+            self.assertIn("/integration", commands["get"])
             self.assertIn("/cues", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/plan", commands["post"])
@@ -606,6 +607,11 @@ class ServerTests(unittest.TestCase):
                 "zlight ready --transport usb --json",
             )
             self.assertFalse(primitives["ready-cli"]["requires_control"])
+            self.assertEqual(
+                primitives["integration-cli"]["command"],
+                "zlight integration --transport usb --json",
+            )
+            self.assertFalse(primitives["integration-cli"]["requires_control"])
             self.assertFalse(primitives["events"]["requires_control"])
             self.assertFalse(primitives["history"]["requires_control"])
 
@@ -614,9 +620,14 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(manifest["control_enabled"])
             self.assertEqual(manifest["transport"]["active"], "usb")
             self.assertEqual(manifest["setup"]["preflight"]["path"], "/ready")
+            self.assertEqual(manifest["setup"]["integration"]["path"], "/integration")
             self.assertEqual(
                 manifest["setup"]["local_preflight"]["command"],
                 "zlight ready --transport usb --json",
+            )
+            self.assertEqual(
+                manifest["setup"]["local_preflight"]["integration_command"],
+                "zlight integration --transport usb --json",
             )
             self.assertFalse(manifest["setup"]["local_preflight"]["requires_bridge"])
             self.assertEqual(
