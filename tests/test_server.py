@@ -175,12 +175,21 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(state["action"], "scene")
             self.assertTrue(state["applied"])
             self.assertEqual(state["scene"]["brightness"], 30.0)
+            self.assertEqual(
+                [result["command"] for result in state["result_summaries"]],
+                [0x1001, 0x1002],
+            )
+            self.assertTrue(state["result_summaries"][0]["acknowledged"])
 
             history = json.loads(urlopen(f"{base}/history?limit=1", timeout=3).read())
             self.assertEqual(history["version"], 1)
             self.assertEqual(len(history["events"]), 1)
             self.assertEqual(history["events"][0]["version"], 1)
             self.assertEqual(history["events"][0]["state"]["action"], "scene")
+            self.assertEqual(
+                history["events"][0]["state"]["result_summaries"][0]["command"],
+                0x1001,
+            )
 
             empty_history = json.loads(
                 urlopen(f"{base}/history?after=1&limit=5", timeout=3).read()
@@ -219,6 +228,11 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(state["applied"])
             self.assertEqual(state["reason"], "sent_no_response")
             self.assertEqual(state["result_statuses"], ["sent_no_response"])
+            self.assertEqual(
+                state["result_summaries"][0]["transport_status"],
+                "sent_no_response",
+            )
+            self.assertFalse(state["result_summaries"][0]["acknowledged"])
         finally:
             server.shutdown()
             server.server_close()

@@ -267,6 +267,10 @@ class HttpClientTests(unittest.TestCase):
             history = client.history(limit=1)
             self.assertEqual(history["version"], 1)
             self.assertEqual(history["events"][0]["state"]["action"], "brightness")
+            self.assertEqual(
+                history["events"][0]["state"]["result_summaries"][0]["command"],
+                RuntimeCommand.BRIGHTNESS,
+            )
             self.assertTrue(bridge_response_applied(history))
             self.assertEqual(bridge_response_statuses(history), ["acknowledged"])
 
@@ -377,6 +381,8 @@ class HttpClientTests(unittest.TestCase):
             state = events[0]["state"]
             self.assertEqual(state["scene"]["brightness"], 22.0)
             self.assertEqual(state["action"], "brightness")
+            self.assertEqual(state["result_summaries"][0]["command"], 0x1001)
+            self.assertTrue(state["result_summaries"][0]["acknowledged"])
         finally:
             server.shutdown()
             server.server_close()

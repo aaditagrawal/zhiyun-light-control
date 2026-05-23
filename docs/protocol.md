@@ -268,10 +268,13 @@ resolve a preset and override set without opening a USB/BLE connection.
 Bridge state is in-memory and intentionally reports requested state, not a
 device-confirmed physical measurement. It includes the last scene payload,
 source protocol, action name, timestamp, ACK-based applied flag, optional
-reason, and transport status strings from any command results. `applied` is
-`true` only when all command results for that scene were acknowledged by the
-light; unconfirmed writes keep the requested scene visible but report
-`applied: false` with a reason such as `sent_no_response` or `echoed_write`.
+reason, transport status strings, and `result_summaries` from any command
+results. Those summaries preserve command ids, ACK booleans, transport
+statuses, and raw tx/rx evidence for reconnecting controllers and dashboards.
+`applied` is `true` only when all command results for that scene were
+acknowledged by the light; unconfirmed writes keep the requested scene visible
+but report `applied: false` with a reason such as `sent_no_response` or
+`echoed_write`.
 The Python client exposes `bridge_response_applied()`,
 `bridge_response_statuses()`, and `bridge_response_reason()` so controller code
 can apply the same interpretation to single command results, scenes,

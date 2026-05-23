@@ -516,11 +516,13 @@ def _append_bridge_statuses(value: object, statuses: list[str]) -> None:
     if not isinstance(value, dict):
         return
     status = value.get("transport_status")
-    if status is not None:
-        statuses.append(str(status))
     result_statuses = value.get("result_statuses")
     if isinstance(result_statuses, list):
         statuses.extend(str(item) for item in result_statuses if item is not None)
+        return
+    if status is not None:
+        statuses.append(str(status))
+        return
     for item in value.values():
         _append_bridge_statuses(item, statuses)
 

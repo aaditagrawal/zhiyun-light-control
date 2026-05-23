@@ -18,11 +18,13 @@ class SceneState:
     applied: bool | None = None
     reason: str | None = None
     result_statuses: tuple[str, ...] = ()
+    result_summaries: tuple[dict[str, object], ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         data = asdict(self)
         data["scene"] = self.scene.to_dict()
         data["result_statuses"] = list(self.result_statuses)
+        data["result_summaries"] = [dict(item) for item in self.result_summaries]
         return data
 
 
@@ -46,6 +48,7 @@ class SceneStateTracker:
     ) -> SceneState:
         result_items = tuple(results)
         statuses = tuple(_result_status(result) for result in result_items)
+        summaries = tuple(_result_summary(result) for result in result_items)
         if applied is None and result_items:
             applied = results_confirmed(result_items)
         if reason is None and applied is False and result_items:
@@ -58,6 +61,7 @@ class SceneStateTracker:
             applied=applied,
             reason=reason,
             result_statuses=statuses,
+            result_summaries=summaries,
         )
         with self._condition:
             self._state = state
@@ -118,6 +122,37 @@ def _result_status(result: object) -> str:
     if isinstance(result, dict) and "transport_status" in result:
         return str(result["transport_status"])
     return "unknown"
+
+
+def _result_summary(result: object) -> dict[str, object]:
+    converter = getattr(result, "to_dict", None)
+    if callable(converter):
+        payload = converter()
+        if isinstance(payload, dict):
+            return _normalized_result_summary(payload, fallback=result)
+    if isinstance(result, dict):
+        return _normalized_result_summary(result, fallback=result)
+    summary: dict[str, object] = {
+        "transport_status": _result_status(result),
+        "acknowledged": _result_acknowledged(result),
+    }
+    command = getattr(result, "command", None)
+    if isinstance(command, int):
+        summary["command"] = command
+    return summary
+
+
+def _normalized_result_summary(
+    payload: dict[object, object],
+    *,
+    fallback: object,
+) -> dict[str, object]:
+    summary = {str(key): value for key, value in payload.items()}
+    if "transport_status" not in summary:
+        summary["transport_status"] = _result_status(fallback)
+    if "acknowledged" not in summary:
+        summary["acknowledged"] = _result_acknowledged(fallback)
+    return summary
 
 
 def results_confirmed(results: list[object] | tuple[object, ...]) -> bool:

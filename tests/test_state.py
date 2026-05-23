@@ -8,6 +8,16 @@ from zhiyun_light_control import Scene, SceneStateTracker
 class FakeResult:
     transport_status = "acknowledged"
     acknowledged = True
+    command = 0x1001
+
+    def to_dict(self):
+        return {
+            "command": self.command,
+            "transport_status": self.transport_status,
+            "acknowledged": self.acknowledged,
+            "tx_hex": "tx",
+            "rx_hex": "rx",
+        }
 
 
 class FakeUnconfirmedResult:
@@ -35,6 +45,18 @@ class StateTests(unittest.TestCase):
         self.assertEqual(payload["action"], "scene")
         self.assertTrue(payload["applied"])
         self.assertEqual(payload["result_statuses"], ["acknowledged"])
+        self.assertEqual(
+            payload["result_summaries"],
+            [
+                {
+                    "command": 0x1001,
+                    "transport_status": "acknowledged",
+                    "acknowledged": True,
+                    "tx_hex": "tx",
+                    "rx_hex": "rx",
+                }
+            ],
+        )
         version, versioned_state = tracker.versioned_snapshot()
         self.assertEqual(version, 1)
         self.assertIs(versioned_state, state)
@@ -79,6 +101,10 @@ class StateTests(unittest.TestCase):
         self.assertFalse(payload["applied"])
         self.assertEqual(payload["reason"], "sent_no_response")
         self.assertEqual(payload["result_statuses"], ["sent_no_response"])
+        self.assertEqual(
+            payload["result_summaries"],
+            [{"transport_status": "sent_no_response", "acknowledged": False}],
+        )
 
     def test_empty_tracker_payload_is_stable(self) -> None:
         self.assertEqual(SceneStateTracker().to_dict(), {"scene": None})

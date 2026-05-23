@@ -321,7 +321,10 @@ same object id.
 statuses behind it. Its `applied` field is ACK-based: it is `true` only when all
 command results for that request were acknowledged by the light. If a command
 was sent but not confirmed, `applied` is `false` and `reason` carries values
-such as `sent_no_response` or `echoed_write`.
+such as `sent_no_response` or `echoed_write`. The response also carries
+`result_summaries` with the command ids, ACK flags, transport statuses, and
+raw tx/rx evidence from the last request so reconnecting controllers can audit
+what actually happened.
 
 `GET /events` streams bridge state as Server-Sent Events for dashboards and
 automation panels that should react to cue/control requests without polling.
