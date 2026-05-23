@@ -16,6 +16,7 @@ from zhiyun_light_control.protocol import (
     parse_chip_sync,
     parse_device_id,
     parse_device_info,
+    parse_read_sn,
     parse_version,
     register_payload,
     sleep_payload,
@@ -106,6 +107,16 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(chip.hardware, 0x0840)
         self.assertEqual(chip.firmware_raw, 164)
         self.assertEqual(chip.flash_size, 1048576)
+
+    def test_parse_read_sn_after_upgrade(self) -> None:
+        rx = bytes.fromhex("243c1100010301000213004105130110c1e009a408cd00")
+        frame = first_frame(rx, cmd=UpdaterCommand.READ_SN)
+        read_sn = parse_read_sn(frame)
+
+        self.assertEqual(read_sn.prefix, 0)
+        self.assertEqual(read_sn.product, 0x0541)
+        self.assertEqual(read_sn.identifier_little_endian_hex, "130110c1e009a408")
+        self.assertEqual(read_sn.device_identifier, "08a409e0c1100113")
 
 
 if __name__ == "__main__":

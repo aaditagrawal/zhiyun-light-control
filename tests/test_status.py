@@ -39,12 +39,16 @@ class FakeStatusLight:
         timeout: float = 0.8,
     ) -> CommandResult:
         del payload, timeout
-        if cmd != UpdaterCommand.CHIP_SYNC:
-            raise AssertionError(cmd)
+        payload_by_cmd = {
+            UpdaterCommand.CHIP_SYNC: bytes.fromhex(
+                "0048444c0000010010030041054008a40065a36075"
+            ),
+            UpdaterCommand.READ_SN: bytes.fromhex("004105130110c1e009a408"),
+        }
         return _result(
             UPDATER_DEVICE,
             cmd,
-            bytes.fromhex("0048444c0000010010030041054008a40065a36075"),
+            payload_by_cmd[cmd],
         )
 
 
@@ -82,8 +86,14 @@ class StatusTests(unittest.TestCase):
         self.assertEqual(payload["device_id"], 1)
         self.assertEqual(payload["chip_sync"]["core_id"], "HDL")
         self.assertEqual(payload["chip_sync"]["updater_firmware"], "1.64")
+        self.assertEqual(payload["read_sn"]["product"], "0x0541")
+        self.assertEqual(
+            payload["read_sn"]["device_identifier"],
+            "08a409e0c1100113",
+        )
         self.assertTrue(payload["commands"]["device_info"]["acknowledged"])
         self.assertTrue(payload["commands"]["updater_chip_sync"]["acknowledged"])
+        self.assertTrue(payload["commands"]["updater_read_sn"]["acknowledged"])
 
 
 class AsyncStatusTests(unittest.IsolatedAsyncioTestCase):
@@ -99,8 +109,10 @@ class AsyncStatusTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["voltage_status"], 101)
         self.assertEqual(payload["device_id"], 1)
         self.assertIsNone(payload["chip_sync"])
+        self.assertIsNone(payload["read_sn"])
         self.assertTrue(payload["commands"]["device_info"]["acknowledged"])
         self.assertNotIn("updater_chip_sync", payload["commands"])
+        self.assertNotIn("updater_read_sn", payload["commands"])
 
 
 if __name__ == "__main__":

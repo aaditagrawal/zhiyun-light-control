@@ -23,6 +23,7 @@ from .protocol import (
     parse_chip_sync,
     parse_device_id,
     parse_device_info,
+    parse_read_sn,
     parse_version,
     parse_voltage_status,
     register_payload,
@@ -348,4 +349,5 @@ class ZhiyunLight:
         return parse_chip_sync(frame) if frame else None
 
     def read_sn(self):
-        return self.updater_command(UpdaterCommand.READ_SN)
+        frame = self.updater_command(UpdaterCommand.READ_SN)
+        return parse_read_sn(frame) if frame else None

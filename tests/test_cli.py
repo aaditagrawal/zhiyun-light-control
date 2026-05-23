@@ -12,6 +12,7 @@ from zhiyun_light_control.cli import main
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
+    UpdaterCommand,
     build_frame,
     build_runtime_frame,
     first_frame,
@@ -267,12 +268,18 @@ class CliTests(unittest.TestCase):
 
             def exchange_updater(self, cmd, payload=b"", *, timeout=0.8):
                 del payload, timeout
+                payload_by_cmd = {
+                    UpdaterCommand.CHIP_SYNC: bytes.fromhex(
+                        "0048444c0000010010030041054008a40065a36075"
+                    ),
+                    UpdaterCommand.READ_SN: bytes.fromhex("004105130110c1e009a408"),
+                }
                 tx = build_frame(0x0103, 1, cmd)
                 rx = build_frame(
                     0x0103,
                     1,
                     cmd,
-                    bytes.fromhex("0048444c0000010010030041054008a40065a36075"),
+                    payload_by_cmd[cmd],
                 )
                 frames = tuple(iter_frames(rx))
                 return CommandResult(
@@ -302,6 +309,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["voltage_status"], 101)
         self.assertEqual(payload["device_id"], 0)
         self.assertEqual(payload["chip_sync"]["updater_firmware"], "1.64")
+        self.assertEqual(payload["read_sn"]["product"], "0x0541")
+        self.assertEqual(
+            payload["read_sn"]["device_identifier"],
+            "08a409e0c1100113",
+        )
         self.assertTrue(payload["commands"]["device_info"]["acknowledged"])
 
     def test_set_returns_nonzero_when_command_is_unacknowledged(self) -> None:

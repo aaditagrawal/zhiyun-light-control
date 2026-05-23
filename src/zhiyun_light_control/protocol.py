@@ -111,6 +111,22 @@ class ChipSyncInfo:
         return f"{self.firmware_raw // 100}.{self.firmware_raw % 100:02d}"
 
 
+@dataclass(frozen=True)
+class ReadSnInfo:
+    prefix: int
+    product: int
+    identifier_bytes: bytes
+    raw: bytes
+
+    @property
+    def identifier_little_endian_hex(self) -> str:
+        return self.identifier_bytes.hex()
+
+    @property
+    def device_identifier(self) -> str:
+        return self.identifier_bytes[::-1].hex()
+
+
 def crc16(data: bytes) -> int:
     return binascii.crc_hqx(data, 0)
 
@@ -370,4 +386,16 @@ def parse_chip_sync(frame: ParsedFrame) -> ChipSyncInfo:
         hardware=hardware,
         firmware_raw=firmware_raw,
         serial32=serial32,
+    )
+
+
+def parse_read_sn(frame: ParsedFrame) -> ReadSnInfo:
+    payload = frame.payload
+    if len(payload) < 3:
+        raise ValueError(f"readSn payload too short: {len(payload)} bytes")
+    return ReadSnInfo(
+        prefix=payload[0],
+        product=struct.unpack_from("<H", payload, 1)[0],
+        identifier_bytes=payload[3:],
+        raw=payload,
     )

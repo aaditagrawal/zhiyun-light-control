@@ -413,7 +413,8 @@ scraping every raw attempt.
 
 `GET /status` returns read-only identity/status fields plus the raw
 `CommandResult` evidence for global device info, firmware, voltage/status,
-device id, and updater chip sync when that transport exposes it.
+device id, updater chip sync, and updater `readSn` identity when that transport
+exposes them.
 
 `POST /sequence` is a cue-style orchestration endpoint for media controllers. It
 accepts ordered `steps` containing scene steps, preset steps, or transition steps
@@ -731,12 +732,14 @@ chip_sync core: HDL
 product: 0x0541
 hardware: 0x0840
 updater firmware: 1.64
+read_sn product: 0x0541
+read_sn device_identifier: 08a409e0c1100113
 ```
 
 The latest local hardware pass, run against `/dev/cu.usbmodem21301`, confirmed
 probe, global firmware/voltage/device-id reads, register-default-group, and
-updater chip sync. `zlight status --transport usb` also returned ACK-backed
-status for firmware `1.6.4`, generation `pl103`, device id `0`, and
+updater chip sync plus `readSn`. `zlight status --transport usb` also returned
+ACK-backed status for firmware `1.6.4`, generation `pl103`, device id `0`, and
 voltage/status `101`. It did not confirm USB brightness, CCT, sleep, RGB, HSI,
 or object reads; runtime writes returned `sent_no_response` even when using the
 official Vega `controlMode` byte `0x33`. A raw/default sleep write with

@@ -639,6 +639,17 @@ def cmd_probe(args: argparse.Namespace) -> int:
                     "firmware_raw": chip.firmware_raw,
                     "updater_firmware": chip.updater_firmware,
                 }
+            read_sn = light.read_sn()
+            if read_sn:
+                result["read_sn"] = {
+                    "prefix": read_sn.prefix,
+                    "product": f"0x{read_sn.product:04x}",
+                    "identifier_little_endian_hex": (
+                        read_sn.identifier_little_endian_hex
+                    ),
+                    "device_identifier": read_sn.device_identifier,
+                    "raw_hex": read_sn.raw.hex(),
+                }
     print_json(result, compact=args.json)
     return 0
 

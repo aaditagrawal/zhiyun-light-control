@@ -368,7 +368,7 @@ Read-only updater commands implemented:
 | Command | Name | Status |
 | --- | --- | --- |
 | `0x1300` | chipSync | Verified USB |
-| `0x1302` | readSn | Verified USB |
+| `0x1302` | readSn | Verified USB; payload decodes to product `0x0541` and runtime identifier `08a409e0c1100113` |
 
 Firmware write commands are intentionally not exposed by this package.
 

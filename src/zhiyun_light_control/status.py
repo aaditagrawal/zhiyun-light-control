@@ -13,6 +13,7 @@ from .protocol import (
     parse_chip_sync,
     parse_device_id,
     parse_device_info,
+    parse_read_sn,
     parse_version,
     parse_voltage_status,
 )
@@ -29,6 +30,7 @@ class LightStatusReport:
     voltage_status: int | None
     device_id: int | None
     chip_sync: dict[str, object] | None
+    read_sn: dict[str, object] | None
     commands: dict[str, CommandResult]
 
     @property
@@ -45,6 +47,7 @@ class LightStatusReport:
             "voltage_status": self.voltage_status,
             "device_id": self.device_id,
             "chip_sync": self.chip_sync,
+            "read_sn": self.read_sn,
             "commands": {
                 name: result.to_dict() for name, result in self.commands.items()
             },
@@ -68,13 +71,19 @@ def read_sync_status(
     }
 
     chip_sync: dict[str, object] | None = None
+    read_sn: dict[str, object] | None = None
     exchange_updater = _optional_exchange(light, "exchange_updater")
     if exchange_updater is not None:
         commands["updater_chip_sync"] = exchange_updater(
             UpdaterCommand.CHIP_SYNC,
             timeout=timeout,
         )
+        commands["updater_read_sn"] = exchange_updater(
+            UpdaterCommand.READ_SN,
+            timeout=timeout,
+        )
         chip_sync = _parse_chip_sync(commands["updater_chip_sync"])
+        read_sn = _parse_read_sn(commands["updater_read_sn"])
 
     device_info = _parse_device_info(commands["device_info"])
     return LightStatusReport(
@@ -85,6 +94,7 @@ def read_sync_status(
         voltage_status=_parse_voltage(commands["voltage"]),
         device_id=_parse_device_id(commands["device_id"]),
         chip_sync=chip_sync,
+        read_sn=read_sn,
         commands=commands,
     )
 
@@ -108,13 +118,19 @@ async def read_async_status(
     }
 
     chip_sync: dict[str, object] | None = None
+    read_sn: dict[str, object] | None = None
     exchange_updater = _optional_async_exchange(light, "exchange_updater")
     if exchange_updater is not None:
         commands["updater_chip_sync"] = await exchange_updater(
             UpdaterCommand.CHIP_SYNC,
             timeout=timeout,
         )
+        commands["updater_read_sn"] = await exchange_updater(
+            UpdaterCommand.READ_SN,
+            timeout=timeout,
+        )
         chip_sync = _parse_chip_sync(commands["updater_chip_sync"])
+        read_sn = _parse_read_sn(commands["updater_read_sn"])
 
     device_info = _parse_device_info(commands["device_info"])
     return LightStatusReport(
@@ -125,6 +141,7 @@ async def read_async_status(
         voltage_status=_parse_voltage(commands["voltage"]),
         device_id=_parse_device_id(commands["device_id"]),
         chip_sync=chip_sync,
+        read_sn=read_sn,
         commands=commands,
     )
 
@@ -214,4 +231,20 @@ def _parse_chip_sync(result: CommandResult) -> dict[str, object] | None:
         "firmware_raw": chip.firmware_raw,
         "updater_firmware": chip.updater_firmware,
         "serial32": chip.serial32,
+    }
+
+
+def _parse_read_sn(result: CommandResult) -> dict[str, object] | None:
+    if not result.acknowledged or result.ack is None:
+        return None
+    try:
+        read_sn = parse_read_sn(result.ack)
+    except ValueError:
+        return None
+    return {
+        "prefix": read_sn.prefix,
+        "product": f"0x{read_sn.product:04x}",
+        "identifier_little_endian_hex": read_sn.identifier_little_endian_hex,
+        "device_identifier": read_sn.device_identifier,
+        "raw_hex": read_sn.raw.hex(),
     }
