@@ -61,6 +61,21 @@ The local HTTP bridge is intentionally small and JSON-only:
 
 Control endpoints require `zlight serve --allow-control`. Responses include command result details instead of hiding timeouts, because some endpoints are still experimental on the current G60.
 
+The OSC bridge is UDP-based and dependency-free:
+
+| Address | Arguments |
+| --- | --- |
+| `/zhiyun/probe` | none |
+| `/zhiyun/register` | `i device_id` |
+| `/zhiyun/brightness` | `f value`, optional trailing `i obj` |
+| `/zhiyun/cct` | `i kelvin`, optional trailing `i obj` |
+| `/zhiyun/sleep` | `i value`, optional trailing `i obj` |
+| `/zhiyun/rgb` | `i red, i green, i blue`, optional trailing `i obj` |
+| `/zhiyun/hsi` | `f hue, f saturation, i intensity`, optional trailing `i obj` |
+| `/zhiyun/scene` | `f brightness, i kelvin, i sleep`, optional trailing `i obj` |
+
+The `/light/...` prefix is an alias. Control endpoints require `zlight osc-serve --allow-control`. The server replies to each datagram with `/zhiyun/result` containing success flag, action, and error text.
+
 ## Updater Identity Frame
 
 Updater identity uses the same envelope with a different first word:

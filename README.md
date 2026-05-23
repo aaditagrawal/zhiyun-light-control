@@ -20,6 +20,7 @@ Implemented but still experimental:
 - Object-scoped brightness, CCT, sleep/power, RGB, HSI, and related controls.
 - BLE transport using the direct ZY service and characteristics found in ZY Vega.
 - Local JSON HTTP bridge for wider media-production automation.
+- Local OSC/UDP bridge for QLab, TouchDesigner, Max/MSP, Resolume, and similar tools.
 - Scene application for media workflows that need to set several light properties together.
 
 Firmware flashing is intentionally not part of this package. Use Zhiyun's official updater for firmware writes.
@@ -96,6 +97,27 @@ curl -X POST http://127.0.0.1:8765/scene \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "sleep": 0, "brightness": 35, "kelvin": 5600}'
 ```
+
+Start the local OSC bridge:
+
+```sh
+zlight osc-serve --host 127.0.0.1 --port 9000 --allow-control
+```
+
+Supported OSC addresses:
+
+```text
+/zhiyun/probe
+/zhiyun/register     i:device_id
+/zhiyun/brightness   f:value [i:obj]
+/zhiyun/cct          i:kelvin [i:obj]
+/zhiyun/sleep        i:value [i:obj]
+/zhiyun/rgb          i:red i:green i:blue [i:obj]
+/zhiyun/hsi          f:hue f:saturation i:intensity [i:obj]
+/zhiyun/scene        f:brightness i:kelvin i:sleep [i:obj]
+```
+
+The `/light/...` prefix is accepted as an alias for the same OSC commands.
 
 ## Python API
 

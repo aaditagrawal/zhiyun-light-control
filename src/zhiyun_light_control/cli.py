@@ -9,6 +9,7 @@ import json
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
 from .models import CommandResult, Scene
+from .osc import serve_osc
 from .protocol import (
     RuntimeCommand,
     build_runtime_frame,
@@ -103,6 +104,13 @@ def build_parser() -> argparse.ArgumentParser:
     server.add_argument("--light-port")
     server.add_argument("--allow-control", action="store_true")
     server.set_defaults(func=cmd_serve)
+
+    osc = sub.add_parser("osc-serve", help="Run a local OSC UDP bridge.")
+    osc.add_argument("--host", default="127.0.0.1")
+    osc.add_argument("--port", type=int, default=9000)
+    osc.add_argument("--light-port")
+    osc.add_argument("--allow-control", action="store_true")
+    osc.set_defaults(func=cmd_osc_serve)
 
     return parser
 
@@ -344,6 +352,16 @@ def scene_from_args(args: argparse.Namespace) -> Scene:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     serve(
+        host=args.host,
+        port=args.port,
+        light_port=args.light_port,
+        allow_control=args.allow_control,
+    )
+    return 0
+
+
+def cmd_osc_serve(args: argparse.Namespace) -> int:
+    serve_osc(
         host=args.host,
         port=args.port,
         light_port=args.light_port,
