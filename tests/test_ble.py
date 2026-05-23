@@ -48,12 +48,13 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(result.devices[0].address, "AA:BB")
         self.assertEqual(result.devices[0].name, "MOLUS G60")
         self.assertEqual(result.devices[0].rssi, -55)
+        self.assertEqual(result.worker_python, "python-test")
 
     def test_safe_scan_reports_worker_abort(self) -> None:
         proc = types.SimpleNamespace(
             returncode=-6,
             stdout="",
-            stderr="Fatal Python error: Aborted",
+            stderr="",
         )
 
         with patch("zhiyun_light_control.transports.ble.subprocess.run", return_value=proc):
@@ -61,7 +62,9 @@ class SafeBleScanTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertEqual(result.returncode, -6)
-        self.assertIn("Aborted", result.error)
+        self.assertEqual(result.signal_name, "SIGABRT")
+        self.assertEqual(result.error, "worker terminated by signal 6 (SIGABRT)")
+        self.assertIn("SIGABRT", result.to_dict()["signal"])
 
     def test_safe_scan_uses_worker_json_error(self) -> None:
         proc = types.SimpleNamespace(

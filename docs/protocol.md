@@ -137,3 +137,14 @@ Older/alternate YC light service:
 - Read characteristic: `0000ffe2-0000-1000-8000-00805f9b34fb`
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
+
+Current local BLE scan validation:
+
+| Runtime | BLE stack | Result |
+| --- | --- | --- |
+| Python 3.13 | `bleak 3.0.2`, PyObjC `12.1` | Worker terminates with `SIGABRT` before returning devices |
+| Python 3.12 | `bleak 3.0.2`, PyObjC `12.1` | Worker terminates with `SIGABRT` before returning devices |
+
+The failure appears to be below the package's Python transport layer. The
+worker wrapper reports `worker_python`, `returncode`, and `signal` so callers can
+surface this separately from ordinary zero-device scans.

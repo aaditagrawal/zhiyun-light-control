@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -41,6 +42,8 @@ class BleScanResult:
     devices: tuple[BleDevice, ...]
     error: str | None = None
     returncode: int | None = None
+    worker_python: str | None = None
+    signal_name: str | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -48,6 +51,8 @@ class BleScanResult:
             "devices": [device.to_dict() for device in self.devices],
             "error": self.error,
             "returncode": self.returncode,
+            "signal": self.signal_name,
+            "worker_python": self.worker_python,
         }
 
 
@@ -201,13 +206,15 @@ def scan_zhiyun_devices_safe(
             _worker_error(stdout)
             or proc.stderr.strip()
             or stdout
-            or f"worker exited {proc.returncode}"
+            or _format_worker_returncode(proc.returncode)
         )
         return BleScanResult(
             ok=False,
             devices=(),
             error=detail,
             returncode=proc.returncode,
+            worker_python=executable,
+            signal_name=_signal_name(proc.returncode),
         )
     try:
         payload = json.loads(stdout or "{}")
@@ -217,6 +224,7 @@ def scan_zhiyun_devices_safe(
             devices=(),
             error=f"could not parse BLE worker output: {exc}",
             returncode=proc.returncode,
+            worker_python=executable,
         )
     devices = tuple(
         BleDevice(
@@ -226,7 +234,12 @@ def scan_zhiyun_devices_safe(
         )
         for item in payload.get("devices", [])
     )
-    return BleScanResult(ok=True, devices=devices, returncode=proc.returncode)
+    return BleScanResult(
+        ok=True,
+        devices=devices,
+        returncode=proc.returncode,
+        worker_python=executable,
+    )
 
 
 def _worker_error(stdout: str) -> str | None:
@@ -236,6 +249,22 @@ def _worker_error(stdout: str) -> str | None:
         return None
     error = payload.get("error")
     return str(error) if error else None
+
+
+def _format_worker_returncode(returncode: int) -> str:
+    name = _signal_name(returncode)
+    if name:
+        return f"worker terminated by signal {-returncode} ({name})"
+    return f"worker exited {returncode}"
+
+
+def _signal_name(returncode: int) -> str | None:
+    if returncode >= 0:
+        return None
+    try:
+        return signal.Signals(-returncode).name
+    except ValueError:
+        return f"SIG{-returncode}"
 
 
 def _load_bleak() -> tuple[Any, Any]:

@@ -62,6 +62,12 @@ If bleak is installed in a separate runtime, point the worker at it:
 zlight scan-ble --python /path/to/venv/bin/python --timeout 8
 ```
 
+The scan result includes `worker_python`, `returncode`, and `signal` fields so
+automation can distinguish "no devices found" from local CoreBluetooth/PyObjC
+worker crashes. On this Mac, fresh Python `3.13` and `3.12` virtualenvs with
+`bleak 3.0.2` both currently terminate the scan worker with `SIGABRT`; USB and
+the bridge code paths remain usable.
+
 Register the light to the default group over USB:
 
 ```sh
@@ -201,7 +207,7 @@ async def main():
 asyncio.run(main())
 ```
 
-On the local Python `3.13` and `3.12` test environments, importing the BLE transport works but CoreBluetooth scanning via bleak aborts before returning a Python exception. USB tests and live USB probing are verified; BLE needs validation from a Python/macOS combination where bleak scanning is stable. The CLI's default `scan-ble` command isolates that crash in a worker process and reports it as JSON.
+On the local Python `3.13` and `3.12` test environments, importing the BLE transport works but CoreBluetooth scanning via bleak aborts before returning a Python exception. USB tests and live USB probing are verified; BLE needs validation from a Python/macOS combination where bleak scanning is stable. The CLI's default `scan-ble` command isolates that crash in a worker process and reports it as JSON, including `signal: "SIGABRT"` when macOS aborts the worker.
 
 ## Protocol Notes
 
