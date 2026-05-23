@@ -326,7 +326,9 @@ transport status, non-scanning device discovery, current requested-state
 snapshot, write gate state, and warnings. `ready_for.control_requests` only
 turns true when the bridge is connected and started with `--allow-control`;
 `ready_for.confirmed_control` only turns true after the bridge has recorded an
-ACK-confirmed control request.
+ACK-confirmed control request. The response also includes stable `actions`
+entries such as `read-status`, `enable-control`, `confirm-control`, and
+`authorize-bluetooth` so setup dashboards can render deterministic next steps.
 
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
 On macOS it also attaches best-effort USB descriptor metadata such as

@@ -453,6 +453,19 @@ class ServerTests(unittest.TestCase):
             self.assertIsNone(ready["state"]["snapshot"]["scene"])
             self.assertIn("usb", ready["devices"])
             self.assertIn("allow-control", ready["warnings"][0])
+            actions = {action["id"]: action for action in ready["actions"]}
+            self.assertTrue(actions["read-status"]["ready"])
+            self.assertEqual(actions["read-status"]["path"], "/status")
+            self.assertFalse(actions["enable-control"]["ready"])
+            self.assertEqual(
+                actions["enable-control"]["command"],
+                "zlight serve --allow-control",
+            )
+            self.assertFalse(actions["confirm-control"]["ready"])
+            self.assertEqual(
+                actions["confirm-control"]["blocked_by"],
+                ["enable-control"],
+            )
 
             status = json.loads(urlopen(f"{base}/status", timeout=3).read())
             self.assertTrue(status["connection_confirmed"])
@@ -579,6 +592,13 @@ class ServerTests(unittest.TestCase):
                 ready["status"]["error"], "Bluetooth state unauthorized: 3"
             )
             self.assertIn("Bluetooth authorization", ready["warnings"][0])
+            actions = {action["id"]: action for action in ready["actions"]}
+            self.assertFalse(actions["authorize-bluetooth"]["ready"])
+            self.assertEqual(
+                actions["authorize-bluetooth"]["command"],
+                "zlight ble-helper --ensure --open-settings",
+            )
+            self.assertFalse(actions["read-status"]["ready"])
         finally:
             server.shutdown()
             server.server_close()
@@ -758,6 +778,12 @@ class ServerTests(unittest.TestCase):
             self.assertIn("Capabilities", schema["components"]["schemas"])
             self.assertIn("Diagnostics", schema["components"]["schemas"])
             self.assertIn("Readiness", schema["components"]["schemas"])
+            self.assertIn("ReadinessAction", schema["components"]["schemas"])
+            readiness = schema["components"]["schemas"]["Readiness"]
+            self.assertEqual(
+                readiness["properties"]["actions"]["items"]["$ref"],
+                "#/components/schemas/ReadinessAction",
+            )
             self.assertIn("Devices", schema["components"]["schemas"])
             self.assertIn("History", schema["components"]["schemas"])
             self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])

@@ -157,7 +157,9 @@ surface without using the gated raw-frame endpoint.
 `GET /ready` is a dashboard/controller preflight that combines the same
 ACK-backed status read with non-scanning device discovery, the current requested
 bridge state, and explicit booleans for `read_status`, `control_requests`, and
-`confirmed_control`. It does not run a BLE scan or send write commands.
+`confirmed_control`. It does not run a BLE scan or send write commands. It also
+returns normalized `actions` with stable ids, readiness booleans, and endpoint or
+command hints for setup UIs.
 
 `POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
 it is deliberately behind the same control gate because arbitrary frames can be

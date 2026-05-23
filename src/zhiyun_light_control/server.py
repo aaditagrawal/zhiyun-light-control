@@ -1075,7 +1075,34 @@ def _openapi_schemas() -> dict[str, object]:
         },
         "Capabilities": {"type": "object", "additionalProperties": True},
         "Diagnostics": {"type": "object", "additionalProperties": True},
-        "Readiness": {"type": "object", "additionalProperties": True},
+        "ReadinessAction": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "id": {"type": "string"},
+                "label": {"type": "string"},
+                "ready": {"type": "boolean"},
+                "category": {"type": "string"},
+                "method": {"type": "string"},
+                "path": {"type": "string"},
+                "command": {"type": "string"},
+                "required_for": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["id", "label", "ready", "category", "required_for"],
+        },
+        "Readiness": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "ready_for": {"type": "object", "additionalProperties": True},
+                "actions": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/ReadinessAction"},
+                },
+                "warnings": {"type": "array", "items": {"type": "string"}},
+                "next_steps": {"type": "array", "items": {"type": "string"}},
+            },
+        },
         "Devices": {
             "type": "object",
             "additionalProperties": True,
@@ -1356,7 +1383,7 @@ def capabilities_response(
                 "path": "/ready",
                 "requires_control": False,
                 "confirmation": (
-                    "single preflight response for controller read/write readiness"
+                    "single preflight response with readiness booleans and actions"
                 ),
             },
             {
@@ -1552,6 +1579,13 @@ def readiness_response(
         error=error,
         state=state,
     )
+    actions = _readiness_actions(
+        allow_control=allow_control,
+        transport=transport,
+        connection_confirmed=connection_confirmed,
+        confirmed_control=confirmed_control,
+        error=error,
+    )
     return {
         "api": "zhiyun-light-control",
         "ok": connection_confirmed,
@@ -1584,6 +1618,7 @@ def readiness_response(
         },
         "warnings": warnings,
         "next_steps": next_steps,
+        "actions": actions,
     }
 
 
@@ -1614,6 +1649,90 @@ def _readiness_warnings(
         else:
             warnings.append("Last control request was not confirmed.")
     return warnings
+
+
+def _readiness_actions(
+    *,
+    allow_control: bool,
+    transport: str,
+    connection_confirmed: bool,
+    confirmed_control: bool,
+    error: str | None,
+) -> list[dict[str, object]]:
+    actions = [
+        {
+            "id": "read-status",
+            "label": "Read ACK-backed transport status",
+            "ready": connection_confirmed,
+            "category": "transport",
+            "method": "GET",
+            "path": "/status",
+            "required_for": ["read_status"],
+        },
+        {
+            "id": "discover-devices",
+            "label": "Discover local USB/BLE transport candidates",
+            "ready": True,
+            "category": "discovery",
+            "method": "GET",
+            "path": "/devices",
+            "required_for": ["device_discovery"],
+        },
+        {
+            "id": "state-events",
+            "label": "Subscribe to requested-state events",
+            "ready": True,
+            "category": "state",
+            "method": "GET",
+            "path": "/events",
+            "required_for": ["state_events"],
+        },
+        {
+            "id": "enable-control",
+            "label": "Start the bridge with write endpoints enabled",
+            "ready": allow_control,
+            "category": "control",
+            "command": "zlight serve --allow-control",
+            "required_for": ["control_requests"],
+        },
+        {
+            "id": "confirm-control",
+            "label": "Prove write primitives with ACK-backed validation",
+            "ready": confirmed_control,
+            "category": "control",
+            "method": "POST",
+            "path": "/validate",
+            "body": {"allow_control": True},
+            "requires_control": True,
+            "blocked_by": [] if allow_control else ["enable-control"],
+            "required_for": ["confirmed_control"],
+        },
+    ]
+    error_text = error.lower() if error else ""
+    if transport == "ble" and "unauthorized" in error_text:
+        actions.insert(
+            0,
+            {
+                "id": "authorize-bluetooth",
+                "label": "Allow the macOS BLE helper to use Bluetooth",
+                "ready": False,
+                "category": "transport",
+                "command": "zlight ble-helper --ensure --open-settings",
+                "required_for": ["read_status", "control_requests"],
+            },
+        )
+    elif not connection_confirmed:
+        actions.insert(
+            0,
+            {
+                "id": "check-transport",
+                "label": "Check cable, power, selected transport, and device id",
+                "ready": False,
+                "category": "transport",
+                "required_for": ["read_status", "control_requests"],
+            },
+        )
+    return actions
 
 
 def _diagnostic_next_steps(
