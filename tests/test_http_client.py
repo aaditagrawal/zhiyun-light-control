@@ -379,6 +379,50 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(plan["action"], "preset")
             self.assertEqual(plan["control_mode"], 1)
             self.assertEqual(plan["scene"]["brightness"], 44.0)
+            scene_plan = client.plan_scene(
+                {"brightness": 12},
+                obj=2,
+                first_word="0x0301",
+                start_seq=5,
+            )
+            preset_plan = client.plan_preset(
+                "key",
+                overrides={"brightness": 41},
+                start_seq=scene_plan["next_seq"],
+            )
+            transition_plan = client.plan_transition(
+                {"brightness": 24},
+                from_scene={"brightness": 12},
+                steps=2,
+                duration=0.5,
+                start_seq=9,
+            )
+            sequence_plan = client.plan_sequence(
+                [
+                    {"preset": "key"},
+                    {"to": {"brightness": 30}, "steps": 1},
+                ],
+                stop_on_unconfirmed=True,
+                start_seq=12,
+            )
+            self.assertEqual(scene_plan["action"], "scene")
+            self.assertEqual(scene_plan["scene"]["obj"], 2)
+            self.assertEqual(scene_plan["first_word_hex"], "0x0301")
+            self.assertEqual(preset_plan["action"], "preset")
+            self.assertEqual(preset_plan["scene"]["brightness"], 41.0)
+            self.assertEqual(preset_plan["command_plan"]["start_seq"], 6)
+            self.assertEqual(
+                [
+                    batch["scene"]["brightness"]
+                    for batch in transition_plan["command_batches"]
+                ],
+                [18.0, 24.0],
+            )
+            self.assertTrue(sequence_plan["stop_on_unconfirmed"])
+            self.assertEqual(
+                [step["action"] for step in sequence_plan["steps"]],
+                ["preset", "transition"],
+            )
             discovery = client.discover_usb(
                 object_ids=[1],
                 first_words=["0x0100"],

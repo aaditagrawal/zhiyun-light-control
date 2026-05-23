@@ -323,6 +323,105 @@ class LightBridgeClient:
     def plan(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self._post("/plan", dict(payload))
 
+    def plan_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        obj: int | None = None,
+        control_mode: int | None = None,
+        first_word: int | str | None = None,
+        start_seq: int | str | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "action": "scene",
+            "scene": _scene_payload(scene),
+        }
+        _set_plan_options(
+            payload,
+            obj=obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return self.plan(payload)
+
+    def plan_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int | None = None,
+        control_mode: int | None = None,
+        first_word: int | str | None = None,
+        start_seq: int | str | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {"action": "preset", "preset": name}
+        if overrides is not None:
+            payload["overrides"] = dict(overrides)
+        _set_plan_options(
+            payload,
+            obj=obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return self.plan(payload)
+
+    def plan_transition(
+        self,
+        to_scene: Scene | Mapping[str, object],
+        *,
+        from_scene: Scene | Mapping[str, object] | None = None,
+        obj: int | None = None,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+        control_mode: int | None = None,
+        first_word: int | str | None = None,
+        start_seq: int | str | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "action": "transition",
+            "to": _scene_payload(to_scene),
+            "steps": steps,
+            "duration": duration,
+            "easing": easing,
+        }
+        if from_scene is not None:
+            payload["from"] = _scene_payload(from_scene)
+        _set_plan_options(
+            payload,
+            obj=obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return self.plan(payload)
+
+    def plan_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        first_word: int | str | None = None,
+        start_seq: int | str | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "action": "sequence",
+            "steps": [dict(step) for step in steps],
+            "stop_on_unconfirmed": stop_on_unconfirmed,
+        }
+        _set_plan_options(
+            payload,
+            obj=obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return self.plan(payload)
+
     def inspect_ble(
         self,
         *,
@@ -1182,6 +1281,24 @@ def _with_control_mode(
     if control_mode is not None:
         payload["control_mode"] = control_mode
     return payload
+
+
+def _set_plan_options(
+    payload: dict[str, object],
+    *,
+    obj: int | None,
+    control_mode: int | None,
+    first_word: int | str | None,
+    start_seq: int | str | None,
+) -> None:
+    if obj is not None:
+        payload["obj"] = obj
+    if control_mode is not None:
+        payload["control_mode"] = control_mode
+    if first_word is not None:
+        payload["first_word"] = first_word
+    if start_seq is not None:
+        payload["start_seq"] = start_seq
 
 
 def _set_iterable(

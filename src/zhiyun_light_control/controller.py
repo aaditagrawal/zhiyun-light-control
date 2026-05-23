@@ -218,6 +218,108 @@ class LightController:
         )
         return {"cue": name, **response}
 
+    def plan_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_scene(
+            scene,
+            obj=obj,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int = 1,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_preset(
+            self._preset_library(),
+            name,
+            overrides=overrides,
+            obj=obj,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_transition(
+        self,
+        to_scene: Scene | Mapping[str, object],
+        *,
+        from_scene: Scene | Mapping[str, object] | None = None,
+        obj: int = 1,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_transition(
+            to_scene,
+            from_scene=from_scene,
+            obj=obj,
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        obj: int = 1,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_cue(
+            cue,
+            obj=obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            preset_library=self.preset_library,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_named_cue(
+        self,
+        name: str,
+        *,
+        obj: int = 1,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        response = self.plan_cue(
+            self._cue_library().get(name),
+            obj=obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return {"cue": name, **response}
+
     def plan_sequence(
         self,
         steps: Iterable[Mapping[str, object]],
@@ -607,6 +709,108 @@ class AsyncLightController:
         )
         return {"cue": name, **response}
 
+    def plan_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_scene(
+            scene,
+            obj=obj,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int = 1,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_preset(
+            self._preset_library(),
+            name,
+            overrides=overrides,
+            obj=obj,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_transition(
+        self,
+        to_scene: Scene | Mapping[str, object],
+        *,
+        from_scene: Scene | Mapping[str, object] | None = None,
+        obj: int = 1,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_transition(
+            to_scene,
+            from_scene=from_scene,
+            obj=obj,
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        obj: int = 1,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return _plan_cue(
+            cue,
+            obj=obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            preset_library=self._preset_library_or_none(),
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_named_cue(
+        self,
+        name: str,
+        *,
+        obj: int = 1,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        response = self.plan_cue(
+            self._cue_library().get(name),
+            obj=obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return {"cue": name, **response}
+
     def plan_sequence(
         self,
         steps: Iterable[Mapping[str, object]],
@@ -871,6 +1075,142 @@ def _cue_steps(raw_steps: object) -> list[dict[str, object]]:
     return steps
 
 
+def _plan_scene(
+    scene: Scene | Mapping[str, object],
+    *,
+    obj: int,
+    control_mode: int,
+    first_word: int,
+    start_seq: int,
+) -> dict[str, object]:
+    resolved = _plan_scene_payload(scene, obj=obj)
+    command_plan = scene_command_plan(
+        resolved,
+        control_mode=control_mode,
+        first_word=first_word,
+        start_seq=start_seq,
+    )
+    return {
+        "dry_run": True,
+        "action": "scene",
+        "scene": resolved.to_dict(),
+        "command_plan": command_plan.to_dict(),
+        "control_mode": control_mode,
+        "first_word": first_word,
+        "first_word_hex": f"0x{first_word:04x}",
+        "start_seq": start_seq,
+        "next_seq": command_plan.next_seq,
+    }
+
+
+def _plan_preset(
+    library: ScenePresetLibrary,
+    name: str,
+    *,
+    overrides: Mapping[str, object] | None,
+    obj: int,
+    control_mode: int,
+    first_word: int,
+    start_seq: int,
+) -> dict[str, object]:
+    scene = _preset_scene(library, name, overrides=overrides, obj=obj)
+    command_plan = scene_command_plan(
+        scene,
+        control_mode=control_mode,
+        first_word=first_word,
+        start_seq=start_seq,
+    )
+    return {
+        "dry_run": True,
+        "action": "preset",
+        "preset": name,
+        "scene": scene.to_dict(),
+        "command_plan": command_plan.to_dict(),
+        "control_mode": control_mode,
+        "first_word": first_word,
+        "first_word_hex": f"0x{first_word:04x}",
+        "start_seq": start_seq,
+        "next_seq": command_plan.next_seq,
+    }
+
+
+def _plan_transition(
+    to_scene: Scene | Mapping[str, object],
+    *,
+    from_scene: Scene | Mapping[str, object] | None,
+    obj: int,
+    steps: int,
+    duration: float,
+    easing: str,
+    control_mode: int,
+    first_word: int,
+    start_seq: int,
+) -> dict[str, object]:
+    scene = _plan_scene_payload(to_scene, obj=obj)
+    start = (
+        Scene(obj=scene.obj)
+        if from_scene is None
+        else _plan_scene_payload(from_scene, obj=scene.obj)
+    )
+    command_plans = transition_command_plans(
+        start,
+        scene,
+        steps=steps,
+        easing=easing,
+        control_mode=control_mode,
+        first_word=first_word,
+        start_seq=start_seq,
+    )
+    next_seq = command_plans[-1].next_seq if command_plans else start_seq
+    return {
+        "dry_run": True,
+        "action": "transition",
+        "from": start.to_dict(),
+        "scene": scene.to_dict(),
+        "steps": steps,
+        "duration": duration,
+        "easing": easing,
+        "command_batches": [plan.to_dict() for plan in command_plans],
+        "control_mode": control_mode,
+        "first_word": first_word,
+        "first_word_hex": f"0x{first_word:04x}",
+        "start_seq": start_seq,
+        "next_seq": next_seq,
+    }
+
+
+def _plan_cue(
+    cue: Mapping[str, object],
+    *,
+    obj: int,
+    stop_on_unconfirmed: bool | None,
+    preset_library: ScenePresetLibrary | None,
+    control_mode: int,
+    first_word: int,
+    start_seq: int,
+) -> dict[str, object]:
+    sequence_stop = (
+        bool(cue.get("stop_on_unconfirmed"))
+        if stop_on_unconfirmed is None
+        else stop_on_unconfirmed
+    )
+    return _plan_sequence(
+        _cue_steps(cue.get("steps")),
+        obj=obj,
+        stop_on_unconfirmed=sequence_stop,
+        preset_library=preset_library,
+        control_mode=control_mode,
+        first_word=first_word,
+        start_seq=start_seq,
+    )
+
+
+def _plan_scene_payload(scene: Scene | Mapping[str, object], *, obj: int) -> Scene:
+    if isinstance(scene, Scene):
+        return scene
+    return scene_from_optional_mapping(scene, obj=obj)
+
+
 def _plan_sequence(
     steps: Iterable[Mapping[str, object]],
     *,
@@ -900,10 +1240,12 @@ def _plan_sequence(
         )
         planned_steps.append(response)
     return {
+        "dry_run": True,
         "action": "sequence",
         "steps": planned_steps,
         "scene": None if current_scene is None else current_scene.to_dict(),
         "stop_on_unconfirmed": stop_on_unconfirmed,
+        "control_mode": control_mode,
         "first_word": first_word,
         "first_word_hex": f"0x{first_word:04x}",
         "start_seq": start_seq,

@@ -119,6 +119,68 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(len(sequence["steps"]), 1)
         self.assertEqual(light.scenes[0].brightness, 10)
 
+    def test_controller_plans_sdk_primitives_without_opening_light(self) -> None:
+        light = FakeLight()
+        presets = ScenePresetLibrary.from_mapping(
+            {"key": {"brightness": 25, "kelvin": 5600}}
+        )
+        cues = CueLibrary.from_mapping(
+            {"intro": {"steps": [{"preset": "key"}], "stop_on_unconfirmed": True}}
+        )
+        controller = LightController(
+            light_factory=FakeFactory(light),
+            preset_library=presets,
+            cue_library=cues,
+        )
+
+        scene = controller.plan_scene(
+            {"brightness": 12},
+            obj=2,
+            control_mode=0x01,
+            first_word=0x0301,
+            start_seq=3,
+        )
+        preset = controller.plan_preset(
+            "key",
+            overrides={"brightness": 30},
+            start_seq=scene["next_seq"],
+        )
+        transition = controller.plan_transition(
+            {"brightness": 40},
+            from_scene={"brightness": 20},
+            steps=2,
+            duration=0.5,
+            start_seq=7,
+        )
+        cue = controller.plan_named_cue(
+            "intro",
+            stop_on_unconfirmed=False,
+            start_seq=11,
+        )
+
+        self.assertTrue(scene["dry_run"])
+        self.assertEqual(scene["action"], "scene")
+        self.assertEqual(scene["scene"]["obj"], 2)
+        self.assertEqual(scene["control_mode"], 0x01)
+        self.assertEqual(scene["first_word_hex"], "0x0301")
+        self.assertEqual(scene["next_seq"], 4)
+        self.assertEqual(preset["action"], "preset")
+        self.assertEqual(preset["scene"]["brightness"], 30.0)
+        self.assertEqual(preset["command_plan"]["start_seq"], 4)
+        self.assertEqual(transition["action"], "transition")
+        self.assertEqual(
+            [
+                batch["scene"]["brightness"]
+                for batch in transition["command_batches"]
+            ],
+            [30.0, 40.0],
+        )
+        self.assertEqual(cue["cue"], "intro")
+        self.assertFalse(cue["stop_on_unconfirmed"])
+        self.assertEqual(cue["steps"][0]["action"], "preset")
+        self.assertEqual(light.scenes, [])
+        self.assertEqual(light.transitions, [])
+
     def test_controller_runs_named_cues_and_transitions(self) -> None:
         light = FakeLight()
         cues = CueLibrary.from_mapping(

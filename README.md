@@ -848,12 +848,26 @@ controller = LightController(
     cue_library=cues,
 )
 
-print(controller.plan_sequence(cues.get("intro")["steps"], start_seq=1))
+scene_plan = controller.plan_scene({"brightness": 20, "kelvin": 5600}, start_seq=1)
+transition_plan = controller.plan_transition(
+    {"brightness": 35, "kelvin": 5600},
+    from_scene={"brightness": 20, "kelvin": 5600},
+    steps=5,
+    start_seq=scene_plan["next_seq"],
+)
+cue_plan = controller.plan_named_cue("intro", start_seq=transition_plan["next_seq"])
+print(scene_plan["command_plan"]["frames"])
+print(cue_plan["steps"])
 result = controller.run_named_cue("intro", require_acknowledged=True)
 print(result["applied"], result["reason"])
 print(controller.state_snapshot())
 print(controller.state_history(limit=5))
 ```
+
+When driving a running HTTP bridge from another process, the same dry-run
+planning surface is available through `LightBridgeClient.plan_scene()`,
+`plan_preset()`, `plan_transition()`, and `plan_sequence()`. These methods only
+resolve serialized runtime frames; they do not open the light or issue writes.
 
 For multi-light setups, use named fixtures and a rig controller. Each fixture can
 use its own USB or BLE `LightConnectionConfig`, and scene mappings without `obj`
