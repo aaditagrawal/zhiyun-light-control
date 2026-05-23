@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
-from .macos_ble_app import macos_ble_app_info
+from .macos_ble_app import macos_ble_app_info, macos_ble_app_status
 from .models import CommandResult
 from .protocol import (
     RuntimeCommand,
@@ -116,6 +116,7 @@ def discover_transport_devices(
     configured_transport: str = "usb",
     configured_usb_port: str | None = None,
     include_ble: bool = False,
+    include_ble_status: bool = False,
     ble_backend: str = "worker",
     ble_timeout: float = 5.0,
     ble_name_contains: str | None = None,
@@ -146,9 +147,12 @@ def discover_transport_devices(
             "name_contains": ble_name_contains,
             "profiles": [profile.to_dict() for profile in BLE_PROFILES.values()],
             "macos_helper": macos_ble_app_info(),
+            "macos_status": None,
             "scan": None,
         },
     }
+    if include_ble_status:
+        response["ble"]["macos_status"] = macos_ble_app_status(timeout=ble_timeout)
     if include_ble:
         response["ble"]["scan"] = scan_ble_devices(
             backend=ble_backend,

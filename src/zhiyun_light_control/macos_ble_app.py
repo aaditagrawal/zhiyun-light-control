@@ -68,8 +68,39 @@ def macos_ble_app_info(
             f"Allow {bundle_name} in macOS Privacy & Security > Bluetooth, "
             "then rerun the BLE scan."
         ),
+        "status_command": "zlight ble-helper --status --json",
+        "authorize_command": "zlight ble-helper --ensure --open-settings",
         "error": error,
     }
+
+
+def macos_ble_app_status(
+    *,
+    timeout: float = 3.0,
+    bundle_name: str = APP_BUNDLE_NAME,
+) -> dict[str, object]:
+    run = run_macos_ble_app(["status"], timeout=timeout, bundle_name=bundle_name)
+    status = dict(run.payload)
+    if "ok" not in status:
+        status["ok"] = bool(run.ok)
+    if run.error is not None and status.get("error") is None:
+        status["error"] = run.error
+    status.update(
+        {
+            "bundle_name": bundle_name,
+            "bundle_id": APP_BUNDLE_ID,
+            "app_path": str(_bundle_root(bundle_name)),
+            "returncode": run.returncode,
+            "settings_url": BLUETOOTH_SETTINGS_URL,
+            "settings_hint": (
+                f"Allow {bundle_name} in macOS Privacy & Security > Bluetooth, "
+                "then rerun the BLE scan."
+            ),
+        }
+    )
+    if run.command:
+        status["command"] = list(run.command)
+    return status
 
 
 def open_macos_bluetooth_settings() -> dict[str, object]:
@@ -291,6 +322,15 @@ struct ExchangeOutput: Encodable {{
     let error: String?
 }}
 
+struct StatusOutput: Encodable {{
+    let ok: Bool
+    let state: String?
+    let state_raw: Int?
+    let authorization: String?
+    let authorization_raw: Int?
+    let error: String?
+}}
+
 func argument(_ name: String, default defaultValue: String? = nil) -> String? {{
     let args = CommandLine.arguments
     var index = 0
@@ -367,6 +407,27 @@ func centralStateDescription(_ state: CBManagerState) -> String {{
     }}
 }}
 
+func bluetoothAuthorizationStatus() -> (String, Int)? {{
+    if #available(macOS 10.15, *) {{
+        let value = CBCentralManager.authorization
+        let label: String
+        switch value {{
+        case .notDetermined:
+            label = "not_determined"
+        case .restricted:
+            label = "restricted"
+        case .denied:
+            label = "denied"
+        case .allowedAlways:
+            label = "allowed"
+        @unknown default:
+            label = "unrecognized"
+        }}
+        return (label, Int(value.rawValue))
+    }}
+    return nil
+}}
+
 final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     private var central: CBCentralManager!
     private let mode: String
@@ -403,6 +464,17 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     }}
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {{
+        if mode == "status" {{
+            if central.state == .unknown || central.state == .resetting {{
+                return
+            }}
+            let state = centralStateDescription(central.state)
+            let error = central.state == .poweredOn
+                ? nil
+                : "Bluetooth state \\(state): \\(central.state.rawValue)"
+            finish(error: error)
+            return
+        }}
         guard central.state == .poweredOn else {{
             if central.state != .unknown && central.state != .resetting {{
                 let state = centralStateDescription(central.state)
@@ -648,6 +720,9 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     }}
 
     private func timeoutError() -> String? {{
+        if mode == "status" {{
+            return "Bluetooth status timed out"
+        }}
         if mode == "inspect" {{
             if peripheral == nil {{
                 return "no matching BLE device found"
@@ -668,7 +743,18 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         if let peripheral = peripheral {{
             central?.cancelPeripheralConnection(peripheral)
         }}
-        if mode == "scan" {{
+        if mode == "status" {{
+            let authorization = bluetoothAuthorizationStatus()
+            let state = centralStateDescription(central.state)
+            writeJson(StatusOutput(
+                ok: error == nil && central.state == .poweredOn,
+                state: state,
+                state_raw: central.state.rawValue,
+                authorization: authorization?.0,
+                authorization_raw: authorization?.1,
+                error: error
+            ))
+        }} else if mode == "scan" {{
             writeJson(ScanOutput(
                 devices: Array(devices.values).sorted {{ $0.address < $1.address }},
                 error: error

@@ -909,11 +909,20 @@ class ServerTests(unittest.TestCase):
                     "zhiyun_light_control.devices.scan_zhiyun_devices_macos_app",
                     return_value=scan,
                 ) as scan_macos,
+                patch(
+                    "zhiyun_light_control.devices.macos_ble_app_status",
+                    return_value={
+                        "ok": False,
+                        "state": "unauthorized",
+                        "authorization": "denied",
+                    },
+                ) as ble_status,
             ):
                 devices = json.loads(
                     urlopen(
                         (
                             f"{base}/devices?include_ble=true"
+                            "&include_ble_status=true"
                             "&ble_backend=macos-app&timeout=1.25"
                             "&name_contains=PL103"
                         ),
@@ -938,7 +947,10 @@ class ServerTests(unittest.TestCase):
                 devices["ble"]["scan"]["devices"][0]["suggested_profile"],
                 "legacy",
             )
+            self.assertEqual(devices["ble"]["macos_status"]["state"], "unauthorized")
+            self.assertEqual(devices["ble"]["macos_status"]["authorization"], "denied")
             scan_macos.assert_called_once_with(timeout=1.25, name_contains="PL103")
+            ble_status.assert_called_once_with(timeout=1.25)
         finally:
             server.shutdown()
             server.server_close()

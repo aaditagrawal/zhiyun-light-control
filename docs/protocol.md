@@ -221,12 +221,14 @@ metadata from IOKit such as `vendor_id_hex`, `product_id_hex`, `product_name`,
 `Zhiyun Virtual ComPort` at `VID 0xfff8`, `PID 0x0180`. Add `include_ble=true`
 to run a bounded BLE scan with `ble_backend=worker`, `macos-app`, or `direct`;
 BLE scan errors are returned in the `ble.scan` object with the same `ok`,
-`error`, `returncode`, and `signal` fields as `zlight scan-ble`. Scan devices
+`error`, `returncode`, and `signal` fields as `zlight scan-ble`. Add
+`include_ble_status=true` to run the macOS helper status check and return
+`ble.macos_status` with Bluetooth state and authorization fields. Scan devices
 include advertised service UUIDs in `services` when the selected backend reports
 them, plus `suggested_profile` when those services match `direct`, `legacy`, or
 `yc`. The response also includes `ble.macos_helper`, which names the cached
-`ZhiyunBleScan.app`, bundle id, app path, and settings hint needed for macOS
-Bluetooth authorization.
+`ZhiyunBleScan.app`, bundle id, app path, status command, and settings hint
+needed for macOS Bluetooth authorization.
 
 HTTP `/discover-usb` exposes the same bounded primitive matrix as
 `zlight discover-usb` for dashboard-driven bench work. The endpoint returns the
@@ -413,7 +415,10 @@ frames to `1827/2ADB` disconnected immediately. Direct Swift/Python processes
 without an app bundle were killed by macOS TCC before scan results were
 returned, which matches the bleak worker `SIGABRT` diagnostics below. Use
 `zlight ble-helper --ensure --open-settings` to build the cached helper and open
-the Bluetooth privacy settings for the exact bundle id used by scans.
+the Bluetooth privacy settings for the exact bundle id used by scans. Use
+`zlight ble-helper --status --json` or
+`GET /devices?include_ble_status=true` to report the current helper Bluetooth
+state and authorization status without starting GATT inspection.
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
 

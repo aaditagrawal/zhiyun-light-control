@@ -23,7 +23,11 @@ from .discovery import (
     discover_usb_primitives,
 )
 from .http_client import LightBridgeClient, LightBridgeError
-from .macos_ble_app import macos_ble_app_info, open_macos_bluetooth_settings
+from .macos_ble_app import (
+    macos_ble_app_info,
+    macos_ble_app_status,
+    open_macos_bluetooth_settings,
+)
 from .models import CommandResult, Scene
 from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
@@ -285,6 +289,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--open-settings",
         action="store_true",
         help="Open macOS Privacy & Security Bluetooth settings.",
+    )
+    helper.add_argument(
+        "--status",
+        action="store_true",
+        help="Run the helper and report macOS Bluetooth authorization/state.",
+    )
+    helper.add_argument(
+        "--timeout",
+        type=float,
+        default=3.0,
+        help="Seconds to wait for --status.",
     )
     helper.add_argument("--json", action="store_true", help="Print compact JSON.")
     helper.set_defaults(func=cmd_ble_helper)
@@ -801,6 +816,11 @@ def cmd_ble_helper(args: argparse.Namespace) -> int:
     code = 0
     if args.ensure and not payload["helper"]["ok"]:
         code = 2
+    if args.status:
+        status = macos_ble_app_status(timeout=args.timeout)
+        payload["status"] = status
+        if not status["ok"]:
+            code = 2
     if args.open_settings:
         settings = open_macos_bluetooth_settings()
         payload["open_settings"] = settings

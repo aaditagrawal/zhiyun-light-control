@@ -12,6 +12,7 @@ from zhiyun_light_control.macos_ble_app import (
     BLUETOOTH_USAGE,
     MacosBleAppRun,
     macos_ble_app_info,
+    macos_ble_app_status,
 )
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
@@ -90,6 +91,40 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(info["app_path"], str(app_path))
         self.assertFalse(info["exists"])
         self.assertIn("Privacy & Security", info["settings_hint"])
+        self.assertEqual(info["status_command"], "zlight ble-helper --status --json")
+
+    def test_macos_ble_app_status_runs_status_mode(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=False,
+            payload={
+                "ok": False,
+                "state": "unauthorized",
+                "state_raw": 3,
+                "authorization": "denied",
+                "authorization_raw": 2,
+                "error": "Bluetooth state unauthorized: 3",
+            },
+            returncode=1,
+            command=("open", "-W", "ZhiyunBleScan.app"),
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ) as run:
+            status = macos_ble_app_status(timeout=1.25)
+
+        self.assertFalse(status["ok"])
+        self.assertEqual(status["state"], "unauthorized")
+        self.assertEqual(status["authorization"], "denied")
+        self.assertEqual(status["bundle_id"], APP_BUNDLE_ID)
+        self.assertIn("Privacy & Security", status["settings_hint"])
+        self.assertEqual(status["command"], ["open", "-W", "ZhiyunBleScan.app"])
+        run.assert_called_once_with(
+            ["status"],
+            timeout=1.25,
+            bundle_name="ZhiyunBleScan",
+        )
 
     def test_safe_scan_parses_worker_devices(self) -> None:
         payload = {

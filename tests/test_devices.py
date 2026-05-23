@@ -121,6 +121,35 @@ class DeviceDiscoveryTests(unittest.TestCase):
         )
         scan_macos.assert_called_once_with(timeout=1.25, name_contains="PL103")
 
+    def test_discovers_optional_macos_ble_status(self) -> None:
+        with (
+            patch(
+                "zhiyun_light_control.devices.list_usb_ports",
+                return_value=("/dev/cu.usbmodem21301",),
+            ),
+            patch(
+                "zhiyun_light_control.devices.list_usb_port_metadata",
+                return_value={},
+            ),
+            patch(
+                "zhiyun_light_control.devices.macos_ble_app_status",
+                return_value={
+                    "ok": False,
+                    "state": "unauthorized",
+                    "authorization": "denied",
+                },
+            ) as status,
+        ):
+            payload = discover_transport_devices(
+                configured_transport="ble",
+                include_ble_status=True,
+                ble_timeout=1.25,
+            )
+
+        self.assertEqual(payload["ble"]["macos_status"]["state"], "unauthorized")
+        self.assertEqual(payload["ble"]["macos_status"]["authorization"], "denied")
+        status.assert_called_once_with(timeout=1.25)
+
     def test_worker_scan_passes_python_override(self) -> None:
         scan = BleScanResult(
             ok=False,

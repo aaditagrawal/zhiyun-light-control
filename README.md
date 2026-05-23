@@ -161,6 +161,7 @@ uv run zlight scan-ble --backend macos-app --name-contains PL103 --timeout 8
 uv run zlight inspect-ble --backend macos-app --name-contains PL103 --timeout 8
 uv run zlight test-ble-endpoints --backend macos-app --name-contains PL103 --timeout 5 --max-candidates 4 --json
 uv run zlight ble-helper --ensure --open-settings
+uv run zlight ble-helper --status --json
 ```
 
 BLE `probe`, `status`, `register`, `read`, `set`, and `apply` run through a worker
@@ -172,6 +173,8 @@ commands to use the bundled CoreBluetooth app helper instead of bleak. macOS
 must allow `ZhiyunBleScan` under Bluetooth privacy; otherwise the helper reports
 `Bluetooth state unauthorized: 3`. `zlight ble-helper --ensure` prints the
 exact cached helper app path, bundle id, and Bluetooth settings hint.
+`zlight ble-helper --status` runs the helper and returns the current Bluetooth
+state plus macOS authorization status without starting endpoint discovery.
 `zlight inspect-ble` connects to the matching BLE device and returns GATT
 services, characteristics, and properties so unknown write/notify endpoints can
 be selected without guessing. Its `endpoint_candidates` field ranks exact
@@ -381,11 +384,13 @@ On macOS it also attaches best-effort USB descriptor metadata such as
 is the Zhiyun Virtual ComPort. Add `include_ble=true` to run a bounded BLE scan
 through the selected `ble_backend` (`worker`, `macos-app`, or `direct`); scan
 failures such as macOS Bluetooth authorization errors are returned as JSON
-diagnostics. BLE scan devices include advertised `services` when the backend
-reports them and a best-effort `suggested_profile` (`direct`, `legacy`, or
-`yc`) when those services match a supported command profile. The response also
-includes `ble.macos_helper` so local dashboards can point users at the exact
-helper bundle that needs Bluetooth permission.
+diagnostics. Add `include_ble_status=true` to run the macOS helper status check
+and include `ble.macos_status` with Bluetooth state and authorization fields.
+BLE scan devices include advertised `services` when the backend reports them and
+a best-effort `suggested_profile` (`direct`, `legacy`, or `yc`) when those
+services match a supported command profile. The response also includes
+`ble.macos_helper` so local dashboards can point users at the exact helper
+bundle that needs Bluetooth permission.
 
 `POST /discover-usb` runs the same bounded USB protocol matrix as
 `zlight discover-usb` and returns every attempt with ACK/timeout evidence.
@@ -664,7 +669,9 @@ The `macos-app` backend builds a cached `ZhiyunBleScan.app` with
 `NSBluetoothAlwaysUsageDescription` and runs a Swift CoreBluetooth helper inside
 that bundle. A standalone native probe previously found the G60 as
 `PL103_EDFE`; current `macos-app` scans are blocked until macOS Bluetooth
-privacy authorizes `ZhiyunBleScan`.
+privacy authorizes `ZhiyunBleScan`. Use `zlight ble-helper --status --json` or
+`GET /devices?include_ble_status=true` to expose the current helper
+authorization state to local setup tools.
 Use `inspect-ble --backend macos-app` after authorization to capture the live
 GATT surface, including characteristic properties, before trying custom profile
 overrides. Use `endpoint_candidates[0]["cli_args"]` as the first generated

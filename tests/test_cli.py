@@ -1179,6 +1179,36 @@ class CliTests(unittest.TestCase):
         info.assert_called_once_with(ensure=True)
         open_settings.assert_called_once_with()
 
+    def test_ble_helper_status_reports_authorization_state(self) -> None:
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.macos_ble_app_info",
+                return_value={
+                    "ok": True,
+                    "bundle_id": "local.zhiyun-light-control.ble-scan",
+                    "app_path": "/tmp/ZhiyunBleScan.app",
+                },
+            ),
+            patch(
+                "zhiyun_light_control.cli.macos_ble_app_status",
+                return_value={
+                    "ok": False,
+                    "state": "unauthorized",
+                    "authorization": "denied",
+                    "error": "Bluetooth state unauthorized: 3",
+                },
+            ) as status,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["ble-helper", "--status", "--timeout", "1.25", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["status"]["state"], "unauthorized")
+        self.assertEqual(payload["status"]["authorization"], "denied")
+        status.assert_called_once_with(timeout=1.25)
+
     def test_ble_probe_worker_failure_returns_json_error(self) -> None:
         class FakeAsyncLight:
             async def __aenter__(self):

@@ -956,6 +956,11 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             configured_transport=self.server.transport,
             configured_usb_port=self.server.light_port,
             include_ble=_query_bool(params, "include_ble", default=False),
+            include_ble_status=_query_bool(
+                params,
+                "include_ble_status",
+                default=False,
+            ),
             ble_backend=backend,
             ble_timeout=_query_float(params, "timeout", default=5.0),
             ble_name_contains=_query_text(
@@ -1723,11 +1728,15 @@ def capabilities_response(
                 "requires_control": False,
                 "fields": [
                     "include_ble",
+                    "include_ble_status",
                     "ble_backend",
                     "timeout",
                     "name_contains",
                 ],
-                "confirmation": "USB port list plus optional BLE scan diagnostics",
+                "confirmation": (
+                    "USB port list plus optional BLE scan and authorization "
+                    "diagnostics"
+                ),
                 "ble_backends": list(BLE_BACKENDS),
             },
             {
