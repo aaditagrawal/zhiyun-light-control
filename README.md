@@ -563,6 +563,10 @@ It also includes `readiness_actions()`, `readiness_action(id)`, and
 Use `bridge_response_applied()`, `bridge_response_statuses()`, and
 `bridge_response_reason()` to normalize ACK evidence across single commands,
 scenes, transitions, sequences, and state/history responses.
+Validation reports also have `validation_summary()`, `validation_ready_for()`,
+`validation_ready()`, `validation_category()`, and
+`validation_unconfirmed_names()` helpers for consuming `summary.ready_for` and
+per-category evidence without hand-parsing the nested JSON.
 
 ```python
 from zhiyun_light_control import Scene, ZhiyunLight

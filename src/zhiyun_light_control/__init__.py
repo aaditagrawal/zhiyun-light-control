@@ -38,6 +38,11 @@ from .http_client import (
     command_result_acknowledged,
     command_result_status,
     readiness_actions_by_id,
+    validation_category,
+    validation_ready,
+    validation_ready_for,
+    validation_summary,
+    validation_unconfirmed_names,
 )
 from .macos_ble_app import (
     macos_ble_app_info,
@@ -141,6 +146,11 @@ __all__ = [
     "bridge_response_statuses",
     "command_result_acknowledged",
     "command_result_status",
+    "validation_category",
+    "validation_ready",
+    "validation_ready_for",
+    "validation_summary",
+    "validation_unconfirmed_names",
     "cue_from_mapping",
     "decode_artdmx",
     "decode_sacn",

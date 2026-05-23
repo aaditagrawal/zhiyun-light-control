@@ -14,6 +14,11 @@ from zhiyun_light_control import (
     command_result_acknowledged,
     command_result_status,
     readiness_actions_by_id,
+    validation_category,
+    validation_ready,
+    validation_ready_for,
+    validation_summary,
+    validation_unconfirmed_names,
 )
 from zhiyun_light_control.cues import CueLibrary
 from zhiyun_light_control.models import CommandResult, Scene
@@ -345,6 +350,11 @@ class HttpClientTests(unittest.TestCase):
 
             validation = client.validate(allow_control=True, values={"brightness": 32})
             self.assertTrue(validation["connection_confirmed"])
+            self.assertTrue(validation_ready(validation, "control_writes"))
+            self.assertTrue(validation_ready_for(validation)["control_setup"])
+            self.assertEqual(validation_category(validation, "control")["confirmed"], 4)
+            self.assertEqual(validation_unconfirmed_names(validation), [])
+            self.assertEqual(validation_summary(validation)["unconfirmed"], 0)
         finally:
             server.shutdown()
             server.server_close()
@@ -369,6 +379,45 @@ class HttpClientTests(unittest.TestCase):
         echoed = {"results": [{"transport_status": "echoed_write"}]}
         self.assertFalse(bridge_response_applied(echoed))
         self.assertEqual(bridge_response_reason(echoed), "echoed_write")
+
+    def test_validation_helpers_normalize_summary_payloads(self) -> None:
+        payload = {
+            "unconfirmed": ["set_sleep"],
+            "summary": {
+                "unconfirmed": 1,
+                "ready_for": {
+                    "read_status": True,
+                    "control_setup": True,
+                    "control_writes": False,
+                    "ignored": "yes",
+                },
+                "categories": {
+                    "control": {
+                        "confirmed": 1,
+                        "unconfirmed_names": ["set_sleep"],
+                    }
+                },
+            },
+        }
+
+        self.assertEqual(validation_summary(payload)["unconfirmed"], 1)
+        self.assertEqual(
+            validation_ready_for(payload),
+            {
+                "read_status": True,
+                "control_setup": True,
+                "control_writes": False,
+            },
+        )
+        self.assertTrue(validation_ready(payload, "read_status"))
+        self.assertFalse(validation_ready(payload, "control_writes"))
+        self.assertFalse(validation_ready(payload, "object_reads"))
+        self.assertEqual(validation_category(payload, "control")["confirmed"], 1)
+        self.assertEqual(
+            validation_unconfirmed_names(payload, category="control"),
+            ["set_sleep"],
+        )
+        self.assertEqual(validation_unconfirmed_names(payload), ["set_sleep"])
 
     def test_client_iterates_state_events(self) -> None:
         light = FakeLight()

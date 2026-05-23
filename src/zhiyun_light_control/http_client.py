@@ -506,6 +506,63 @@ def bridge_response_reason(payload: Mapping[str, object]) -> str | None:
     return None
 
 
+def validation_summary(payload: Mapping[str, object]) -> dict[str, object]:
+    summary = payload.get("summary")
+    if not isinstance(summary, Mapping):
+        return {}
+    return {
+        str(key): value
+        for key, value in summary.items()
+        if isinstance(key, str)
+    }
+
+
+def validation_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:
+    ready_for = validation_summary(payload).get("ready_for")
+    if not isinstance(ready_for, Mapping):
+        return {}
+    return {
+        str(key): value
+        for key, value in ready_for.items()
+        if isinstance(key, str) and isinstance(value, bool)
+    }
+
+
+def validation_ready(payload: Mapping[str, object], capability: str) -> bool:
+    return validation_ready_for(payload).get(capability, False)
+
+
+def validation_category(
+    payload: Mapping[str, object],
+    category: str,
+) -> dict[str, object]:
+    categories = validation_summary(payload).get("categories")
+    if not isinstance(categories, Mapping):
+        return {}
+    value = categories.get(category)
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(key): item
+        for key, item in value.items()
+        if isinstance(key, str)
+    }
+
+
+def validation_unconfirmed_names(
+    payload: Mapping[str, object],
+    *,
+    category: str | None = None,
+) -> list[str]:
+    if category is not None:
+        raw_names = validation_category(payload, category).get("unconfirmed_names")
+    else:
+        raw_names = payload.get("unconfirmed")
+    if not isinstance(raw_names, list):
+        return []
+    return [str(item) for item in raw_names if item is not None]
+
+
 def readiness_actions_by_id(
     payload: Mapping[str, object],
     *,
