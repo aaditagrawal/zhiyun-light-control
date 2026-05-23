@@ -87,7 +87,10 @@ uv run zlight validate --transport usb --allow-control --include-object-reads
 
 The validation report separates ACK-confirmed primitives from frames that were
 sent but not acknowledged by the device. Use `--strict` when you want a non-zero
-exit unless every attempted command was ACK-confirmed.
+exit unless every attempted command was ACK-confirmed. Its `summary` field is
+designed for controllers and setup dashboards: it includes aggregate counts,
+status counts, per-category confirmation summaries, and `ready_for` booleans for
+`read_status`, `object_reads`, `control_setup`, and `control_writes`.
 
 Direct `register`, `read`, `set`, and `apply` commands also exit non-zero when
 the transmitted command does not receive an ACK, so shell scripts can distinguish
@@ -428,7 +431,10 @@ files can be top-level cue mappings or contain a `cues` object; see
 without transmitting control writes. `POST /validate` accepts
 `allow_control`, `include_object_reads`, `include_color`, `obj`, and the same
 test values as the CLI. Write checks only run when the bridge was started with
-`--allow-control`.
+`--allow-control`. The response includes `summary.ready_for` and
+`summary.categories` so setup tools can decide whether identity reads, object
+reads, control setup, or control writes are actually confirmed without parsing
+every raw check.
 
 OSC bridge:
 

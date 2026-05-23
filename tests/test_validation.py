@@ -74,6 +74,14 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(payload["connection_confirmed"])
         self.assertFalse(payload["all_attempted_confirmed"])
         self.assertIn("set_brightness", payload["unconfirmed"])
+        self.assertEqual(payload["summary"]["status_counts"]["sent_no_response"], 10)
+        self.assertFalse(payload["summary"]["ready_for"]["object_reads"])
+        self.assertFalse(payload["summary"]["ready_for"]["control_writes"])
+        self.assertFalse(payload["summary"]["categories"]["control"]["all_confirmed"])
+        self.assertIn(
+            "set_sleep",
+            payload["summary"]["categories"]["control"]["unconfirmed_names"],
+        )
         self.assertEqual(
             next(
                 check
@@ -95,6 +103,10 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(payload["connection_confirmed"])
         self.assertTrue(payload["all_attempted_confirmed"])
         self.assertEqual(payload["unconfirmed"], [])
+        self.assertTrue(payload["summary"]["ready_for"]["object_reads"])
+        self.assertTrue(payload["summary"]["ready_for"]["control_setup"])
+        self.assertTrue(payload["summary"]["ready_for"]["control_writes"])
+        self.assertEqual(payload["summary"]["categories"]["control"]["confirmed"], 6)
         self.assertIn("set_rgb", [check["name"] for check in payload["checks"]])
 
     def test_validation_control_mode_is_sent_to_write_checks(self) -> None:

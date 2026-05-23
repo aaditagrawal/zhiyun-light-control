@@ -64,6 +64,31 @@ class HardwareValidationReport:
             check for check in self.checks if check.sent and not check.confirmed
         )
 
+    @property
+    def summary(self) -> dict[str, object]:
+        attempted = tuple(check for check in self.checks if check.sent)
+        confirmed = tuple(check for check in attempted if check.confirmed)
+        unconfirmed = tuple(check for check in attempted if not check.confirmed)
+        return {
+            "attempted": len(attempted),
+            "confirmed": len(confirmed),
+            "unconfirmed": len(unconfirmed),
+            "status_counts": _status_counts(attempted),
+            "categories": _category_summary(attempted),
+            "ready_for": {
+                "read_status": self.connection_confirmed,
+                "object_reads": _all_attempted_category_confirmed(
+                    attempted,
+                    "object_read",
+                ),
+                "control_setup": _all_attempted_named_confirmed(
+                    attempted,
+                    ("register_default_group",),
+                ),
+                "control_writes": _all_control_writes_confirmed(attempted),
+            },
+        }
+
     def to_dict(self) -> dict[str, object]:
         return {
             "transport": self.transport,
@@ -72,6 +97,7 @@ class HardwareValidationReport:
             "connection_confirmed": self.connection_confirmed,
             "all_attempted_confirmed": self.all_attempted_confirmed,
             "unconfirmed": [check.name for check in self.unconfirmed],
+            "summary": self.summary,
             "checks": [check.to_dict() for check in self.checks],
             "notes": list(self.notes),
         }
@@ -510,6 +536,55 @@ def _probe_confirmed(probe: dict[str, object]) -> bool:
         probe.get(key) is not None
         for key in ("device_identifier", "generation", "firmware", "device_id")
     )
+
+
+def _status_counts(checks: tuple[PrimitiveCheck, ...]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for check in checks:
+        counts[check.status] = counts.get(check.status, 0) + 1
+    return counts
+
+
+def _category_summary(checks: tuple[PrimitiveCheck, ...]) -> dict[str, object]:
+    categories: dict[str, object] = {}
+    for category in sorted({check.category for check in checks}):
+        matching = tuple(check for check in checks if check.category == category)
+        confirmed = tuple(check for check in matching if check.confirmed)
+        unconfirmed = tuple(check for check in matching if not check.confirmed)
+        categories[category] = {
+            "attempted": len(matching),
+            "confirmed": len(confirmed),
+            "unconfirmed": len(unconfirmed),
+            "all_confirmed": bool(matching) and len(unconfirmed) == 0,
+            "unconfirmed_names": [check.name for check in unconfirmed],
+            "status_counts": _status_counts(matching),
+        }
+    return categories
+
+
+def _all_attempted_category_confirmed(
+    checks: tuple[PrimitiveCheck, ...],
+    category: str,
+) -> bool:
+    matching = tuple(check for check in checks if check.category == category)
+    return bool(matching) and all(check.confirmed for check in matching)
+
+
+def _all_attempted_named_confirmed(
+    checks: tuple[PrimitiveCheck, ...],
+    names: tuple[str, ...],
+) -> bool:
+    matching = tuple(check for check in checks if check.name in names)
+    return bool(matching) and all(check.confirmed for check in matching)
+
+
+def _all_control_writes_confirmed(checks: tuple[PrimitiveCheck, ...]) -> bool:
+    writes = tuple(
+        check
+        for check in checks
+        if check.category == "control" and check.name != "register_default_group"
+    )
+    return bool(writes) and all(check.confirmed for check in writes)
 
 
 def _notes(

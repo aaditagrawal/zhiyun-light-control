@@ -91,7 +91,10 @@ returns a matching ACK frame with a valid CRC. A transmitted object-control fram
 that receives no response remains `sent_no_response`, not confirmed. An exact
 write echo is reported as `echoed_write` and is also not confirmed. Use
 `zlight validate --strict` in automation when unconfirmed attempted primitives
-should fail the run.
+should fail the run. Validation responses include `summary.status_counts`,
+`summary.categories`, and `summary.ready_for` so controllers can decide whether
+identity reads, object reads, control setup, and control writes are confirmed
+without parsing every raw command result.
 
 The direct CLI commands `register`, `read`, `set`, and `apply` use the same ACK
 definition for their process exit status. They print the full `CommandResult`
