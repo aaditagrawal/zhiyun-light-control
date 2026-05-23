@@ -20,6 +20,7 @@ Implemented but still experimental:
 - Object-scoped brightness, CCT, sleep/power, RGB, HSI, and related controls.
 - BLE transport using the direct ZY service and characteristics found in ZY Vega.
 - Local JSON HTTP bridge for wider media-production automation.
+- Scene application for media workflows that need to set several light properties together.
 
 Firmware flashing is intentionally not part of this package. Use Zhiyun's official updater for firmware writes.
 
@@ -64,6 +65,12 @@ Send an experimental brightness command:
 zlight set brightness --obj 1 --value 35 --yes
 ```
 
+Apply a simple scene:
+
+```sh
+zlight apply --obj 1 --sleep 0 --brightness 35 --kelvin 5600 --yes
+```
+
 Start the local HTTP bridge:
 
 ```sh
@@ -74,32 +81,41 @@ Example HTTP calls:
 
 ```sh
 curl http://127.0.0.1:8765/probe
+curl http://127.0.0.1:8765/commands
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
+curl -X POST http://127.0.0.1:8765/scene \
+  -H 'content-type: application/json' \
+  -d '{"obj": 1, "sleep": 0, "brightness": 35, "kelvin": 5600}'
 ```
 
 ## Python API
 
 ```python
-from zhiyun_light_control import ZhiyunLight
+from zhiyun_light_control import Scene, ZhiyunLight
 
 with ZhiyunLight.usb() as light:
     print(light.probe())
     light.register(device_id=0)
     light.set_brightness(obj=1, value=35)
     light.set_cct(obj=1, kelvin=5600)
+    results = light.apply_scene(Scene(obj=1, sleep=0, brightness=35, kelvin=5600))
+    print([result.to_dict() for result in results])
 ```
+
+For integration debugging, use `exchange_runtime()` instead of the convenience methods. It returns a `CommandResult` with the transmitted frame, raw response bytes, parsed frames, and matching ACK if one arrived.
 
 BLE is async:
 
 ```python
 import asyncio
-from zhiyun_light_control import AsyncZhiyunLight
+from zhiyun_light_control import AsyncZhiyunLight, Scene
 
 async def main():
     async with AsyncZhiyunLight.ble(name_contains="MOLUS") as light:
         print(await light.probe())
+        await light.apply_scene(Scene(obj=1, brightness=35, kelvin=5600))
 
 asyncio.run(main())
 ```

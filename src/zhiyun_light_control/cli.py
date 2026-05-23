@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import sys
 
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
+from .models import CommandResult, Scene
 from .protocol import (
     RuntimeCommand,
     build_runtime_frame,
@@ -16,6 +16,7 @@ from .protocol import (
     cct_payload,
     first_frame,
     object_id_payload,
+    register_payload,
     rgb_payload,
     sleep_payload,
 )
@@ -71,6 +72,21 @@ def build_parser() -> argparse.ArgumentParser:
     set_cmd.add_argument("--blue", type=int)
     set_cmd.add_argument("--yes", action="store_true")
     set_cmd.set_defaults(func=cmd_set)
+
+    apply = sub.add_parser("apply", help="Apply a small lighting scene.")
+    add_transport_args(apply)
+    apply.add_argument("--obj", type=parse_int, default=1)
+    apply.add_argument("--brightness", type=float)
+    apply.add_argument("--kelvin", type=int)
+    apply.add_argument("--sleep", type=int)
+    apply.add_argument("--red", type=int)
+    apply.add_argument("--green", type=int)
+    apply.add_argument("--blue", type=int)
+    apply.add_argument("--hue", type=float)
+    apply.add_argument("--saturation", type=float)
+    apply.add_argument("--intensity", type=int)
+    apply.add_argument("--yes", action="store_true")
+    apply.set_defaults(func=cmd_apply)
 
     server = sub.add_parser("serve", help="Run a local JSON HTTP bridge.")
     server.add_argument("--host", default="127.0.0.1")
@@ -131,11 +147,14 @@ def cmd_scan_ble(args: argparse.Namespace) -> int:
 def cmd_register(args: argparse.Namespace) -> int:
     require_yes(args, "register changes the light/group runtime state")
     if args.transport == "ble":
-        frame = asyncio.run(_register_ble(args))
+        result = asyncio.run(_register_ble(args))
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
-            frame = light.register(device_id=args.device_id)
-    print_json({"ack": frame.to_dict() if frame else None})
+            result = light.exchange_runtime(
+                RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                register_payload(args.device_id),
+            )
+    print_json(result.to_dict())
     return 0
 
 
@@ -145,55 +164,94 @@ async def _register_ble(args: argparse.Namespace):
         name_contains=args.name_contains,
         timeout=args.timeout,
     ) as light:
-        return await light.register(device_id=args.device_id)
+        return await light.exchange_runtime(
+            RuntimeCommand.REGISTER_DEFAULT_GROUP,
+            register_payload(args.device_id),
+        )
 
 
 def cmd_read(args: argparse.Namespace) -> int:
     if args.transport == "ble":
-        raise SystemExit("BLE object reads are not wired in the CLI yet.")
-    with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
-        if args.kind == "brightness":
-            frame = light.read_brightness(obj=args.obj)
-        elif args.kind == "cct":
-            frame = light.read_cct(obj=args.obj)
-        elif args.kind == "sleep":
-            frame = light.read_sleep(obj=args.obj)
-        elif args.kind == "firmware-by-id":
-            frame = light.get_object_firmware(obj=args.obj)
-        elif args.kind == "voltage-by-id":
-            frame = light.get_object_voltage(obj=args.obj)
-        elif args.kind == "mode":
-            frame = light.get_object_mode(obj=args.obj)
-        else:
-            raise AssertionError(args.kind)
-    print_json({"frame": frame.to_dict() if frame else None})
+        result = asyncio.run(_read_ble(args))
+    else:
+        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+            result = _read_usb(light, args)
+    print_json(result.to_dict())
     return 0
+
+
+def _read_usb(light: ZhiyunLight, args: argparse.Namespace) -> CommandResult:
+    cmd, payload = object_read_request(args.kind, args.obj)
+    return light.exchange_runtime(cmd, payload)
+
+
+async def _read_ble(args: argparse.Namespace) -> CommandResult:
+    cmd, payload = object_read_request(args.kind, args.obj)
+    async with AsyncZhiyunLight.ble(
+        address=args.address,
+        name_contains=args.name_contains,
+        timeout=args.timeout,
+    ) as light:
+        return await light.exchange_runtime(cmd, payload)
+
+
+def object_read_request(kind: str, obj: int) -> tuple[RuntimeCommand, bytes]:
+    if kind == "brightness":
+        return RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True)
+    if kind == "cct":
+        return RuntimeCommand.CCT, cct_payload(obj, read=True)
+    if kind == "sleep":
+        return RuntimeCommand.SLEEP, sleep_payload(obj, read=True)
+    if kind == "firmware-by-id":
+        return RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj)
+    if kind == "voltage-by-id":
+        return RuntimeCommand.VOLTAGE_BY_OBJECT, object_id_payload(obj)
+    if kind == "mode":
+        return RuntimeCommand.DEVICE_MODE, object_id_payload(obj)
+    raise AssertionError(kind)
 
 
 def cmd_set(args: argparse.Namespace) -> int:
     require_yes(args, "set sends a control command to the light")
     if args.transport == "ble":
-        frame = asyncio.run(_set_ble(args))
+        result = asyncio.run(_set_ble(args))
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
-            frame = _set_usb(light, args)
-    print_json({"ack": frame.to_dict() if frame else None})
+            result = _set_usb(light, args)
+    print_json(result.to_dict())
     return 0
 
 
 def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
     if args.kind == "brightness":
         value = require_value(args.value, "--value is required for brightness")
-        return light.set_brightness(obj=args.obj, value=value)
+        return light.exchange_runtime(
+            RuntimeCommand.BRIGHTNESS,
+            brightness_payload(args.obj, value, read=False),
+        )
     if args.kind == "cct":
-        kelvin = args.kelvin if args.kelvin is not None else int(require_value(args.value, "--kelvin or --value is required for cct"))
-        return light.set_cct(obj=args.obj, kelvin=kelvin)
+        kelvin = (
+            args.kelvin
+            if args.kelvin is not None
+            else int(require_value(args.value, "--kelvin or --value is required for cct"))
+        )
+        return light.exchange_runtime(
+            RuntimeCommand.CCT,
+            cct_payload(args.obj, kelvin, read=False),
+        )
     if args.kind == "sleep":
-        return light.set_sleep(obj=args.obj, value=int(require_value(args.value, "--value is required for sleep")))
+        value = int(require_value(args.value, "--value is required for sleep"))
+        return light.exchange_runtime(
+            RuntimeCommand.SLEEP,
+            sleep_payload(args.obj, value, read=False),
+        )
     if args.kind == "rgb":
         if args.red is None or args.green is None or args.blue is None:
             raise SystemExit("--red, --green, and --blue are required for rgb")
-        return light.set_rgb(obj=args.obj, red=args.red, green=args.green, blue=args.blue)
+        return light.exchange_runtime(
+            RuntimeCommand.RGB,
+            rgb_payload(args.obj, args.red, args.green, args.blue),
+        )
     raise AssertionError(args.kind)
 
 
@@ -204,17 +262,71 @@ async def _set_ble(args: argparse.Namespace):
         timeout=args.timeout,
     ) as light:
         if args.kind == "brightness":
-            return await light.set_brightness(args.obj, require_value(args.value, "--value is required for brightness"))
+            value = require_value(args.value, "--value is required for brightness")
+            return await light.exchange_runtime(
+                RuntimeCommand.BRIGHTNESS,
+                brightness_payload(args.obj, value),
+            )
         if args.kind == "cct":
-            kelvin = args.kelvin if args.kelvin is not None else int(require_value(args.value, "--kelvin or --value is required for cct"))
-            return await light.set_cct(args.obj, kelvin)
+            kelvin = (
+                args.kelvin
+                if args.kelvin is not None
+                else int(require_value(args.value, "--kelvin or --value is required for cct"))
+            )
+            return await light.exchange_runtime(
+                RuntimeCommand.CCT,
+                cct_payload(args.obj, kelvin),
+            )
         if args.kind == "sleep":
-            return await light.set_sleep(args.obj, int(require_value(args.value, "--value is required for sleep")))
+            value = int(require_value(args.value, "--value is required for sleep"))
+            return await light.exchange_runtime(
+                RuntimeCommand.SLEEP,
+                sleep_payload(args.obj, value),
+            )
         if args.kind == "rgb":
             if args.red is None or args.green is None or args.blue is None:
                 raise SystemExit("--red, --green, and --blue are required for rgb")
-            return await light.set_rgb(args.obj, args.red, args.green, args.blue)
+            return await light.exchange_runtime(
+                RuntimeCommand.RGB,
+                rgb_payload(args.obj, args.red, args.green, args.blue),
+            )
     raise AssertionError(args.kind)
+
+
+def cmd_apply(args: argparse.Namespace) -> int:
+    require_yes(args, "apply sends one or more control commands to the light")
+    scene = scene_from_args(args)
+    if args.transport == "ble":
+        results = asyncio.run(_apply_ble(args, scene))
+    else:
+        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+            results = light.apply_scene(scene)
+    print_json({"scene": scene.to_dict(), "results": [result.to_dict() for result in results]})
+    return 0
+
+
+async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResult]:
+    async with AsyncZhiyunLight.ble(
+        address=args.address,
+        name_contains=args.name_contains,
+        timeout=args.timeout,
+    ) as light:
+        return await light.apply_scene(scene)
+
+
+def scene_from_args(args: argparse.Namespace) -> Scene:
+    return Scene(
+        obj=args.obj,
+        brightness=args.brightness,
+        kelvin=args.kelvin,
+        sleep=args.sleep,
+        red=args.red,
+        green=args.green,
+        blue=args.blue,
+        hue=args.hue,
+        saturation=args.saturation,
+        intensity=args.intensity,
+    )
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -244,19 +356,8 @@ def print_json(payload, *, compact: bool = False) -> None:
 
 
 def build_object_read_frame(kind: str, obj: int, seq: int) -> bytes:
-    if kind == "brightness":
-        return build_runtime_frame(seq, RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True))
-    if kind == "cct":
-        return build_runtime_frame(seq, RuntimeCommand.CCT, cct_payload(obj, read=True))
-    if kind == "sleep":
-        return build_runtime_frame(seq, RuntimeCommand.SLEEP, sleep_payload(obj, read=True))
-    if kind == "firmware-by-id":
-        return build_runtime_frame(seq, RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj))
-    if kind == "voltage-by-id":
-        return build_runtime_frame(seq, RuntimeCommand.VOLTAGE_BY_OBJECT, object_id_payload(obj))
-    if kind == "mode":
-        return build_runtime_frame(seq, RuntimeCommand.DEVICE_MODE, object_id_payload(obj))
-    raise AssertionError(kind)
+    cmd, payload = object_read_request(kind, obj)
+    return build_runtime_frame(seq, cmd, payload)
 
 
 def parse_object_read_response(kind: str, rx: bytes):

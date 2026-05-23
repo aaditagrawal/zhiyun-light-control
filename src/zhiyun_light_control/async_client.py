@@ -6,12 +6,14 @@ import itertools
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from .models import CommandResult, Scene
 from .protocol import (
     RuntimeCommand,
     build_runtime_frame,
     brightness_payload,
     cct_payload,
     first_frame,
+    iter_frames,
     hsi_payload,
     object_id_payload,
     parse_device_id,
@@ -69,10 +71,26 @@ class AsyncZhiyunLight:
         if hasattr(self.transport, "close"):
             await self.transport.close()
 
-    async def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 1.5):
+    async def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
         tx = build_runtime_frame(next(self._seq), cmd, payload)
         rx = await self.transport.exchange(tx, timeout=timeout)
-        return first_frame(rx, cmd=cmd)
+        frames = tuple(iter_frames(rx))
+        return CommandResult(
+            command=cmd & 0xFFFF,
+            tx=tx,
+            rx=rx,
+            frames=frames,
+            ack=first_frame(rx, cmd=cmd),
+        )
+
+    async def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 1.5):
+        return (await self.exchange_runtime(cmd, payload, timeout=timeout)).ack
 
     async def get_device_info(self):
         frame = await self.command(RuntimeCommand.DEVICE_INFO)
@@ -134,3 +152,54 @@ class AsyncZhiyunLight:
     async def get_object_firmware(self, obj: int = 0):
         return await self.command(RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj))
 
+    async def apply_scene(self, scene: Scene) -> list[CommandResult]:
+        results: list[CommandResult] = []
+        if scene.sleep is not None:
+            results.append(
+                await self.exchange_runtime(
+                    RuntimeCommand.SLEEP,
+                    sleep_payload(scene.obj, scene.sleep),
+                )
+            )
+        if scene.brightness is not None:
+            results.append(
+                await self.exchange_runtime(
+                    RuntimeCommand.BRIGHTNESS,
+                    brightness_payload(scene.obj, scene.brightness),
+                )
+            )
+        if scene.kelvin is not None:
+            results.append(
+                await self.exchange_runtime(
+                    RuntimeCommand.CCT,
+                    cct_payload(scene.obj, scene.kelvin),
+                )
+            )
+        if scene.red is not None or scene.green is not None or scene.blue is not None:
+            if scene.red is None or scene.green is None or scene.blue is None:
+                raise ValueError("scene RGB requires red, green, and blue")
+            results.append(
+                await self.exchange_runtime(
+                    RuntimeCommand.RGB,
+                    rgb_payload(scene.obj, scene.red, scene.green, scene.blue),
+                )
+            )
+        if (
+            scene.hue is not None
+            or scene.saturation is not None
+            or scene.intensity is not None
+        ):
+            if scene.hue is None or scene.saturation is None or scene.intensity is None:
+                raise ValueError("scene HSI requires hue, saturation, and intensity")
+            results.append(
+                await self.exchange_runtime(
+                    RuntimeCommand.HSI,
+                    hsi_payload(
+                        scene.obj,
+                        scene.hue,
+                        scene.saturation,
+                        scene.intensity,
+                    ),
+                )
+            )
+        return results

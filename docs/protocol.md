@@ -40,6 +40,27 @@ Known object commands:
 
 Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0` and `1` did not respond.
 
+The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE.
+
+## Media Integration Surface
+
+The local HTTP bridge is intentionally small and JSON-only:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health` | Process health |
+| `GET` | `/probe` | Global light probe |
+| `GET` | `/commands` | List bridge commands |
+| `POST` | `/register` | Register default group |
+| `POST` | `/brightness` | Set brightness |
+| `POST` | `/cct` | Set color temperature |
+| `POST` | `/sleep` | Set sleep/power value |
+| `POST` | `/rgb` | Set RGB values |
+| `POST` | `/hsi` | Set HSI values |
+| `POST` | `/scene` | Apply several properties in order |
+
+Control endpoints require `zlight serve --allow-control`. Responses include command result details instead of hiding timeouts, because some endpoints are still experimental on the current G60.
+
 ## Updater Identity Frame
 
 Updater identity uses the same envelope with a different first word:

@@ -6,6 +6,7 @@ import itertools
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from .models import CommandResult, Scene
 from .protocol import (
     RuntimeCommand,
     UpdaterCommand,
@@ -14,6 +15,7 @@ from .protocol import (
     brightness_payload,
     cct_payload,
     first_frame,
+    iter_frames,
     hsi_payload,
     object_id_payload,
     parse_chip_sync,
@@ -68,15 +70,47 @@ class ZhiyunLight:
         if hasattr(self.transport, "close"):
             self.transport.close()
 
-    def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
+    def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
         tx = build_runtime_frame(next(self._seq), cmd, payload)
         rx = self.transport.exchange(tx, timeout=timeout)
-        return first_frame(rx, cmd=cmd)
+        frames = tuple(iter_frames(rx))
+        return CommandResult(
+            command=cmd & 0xFFFF,
+            tx=tx,
+            rx=rx,
+            frames=frames,
+            ack=first_frame(rx, cmd=cmd),
+        )
 
-    def updater_command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
+    def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
+        return self.exchange_runtime(cmd, payload, timeout=timeout).ack
+
+    def exchange_updater(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
         tx = build_updater_frame(next(self._seq), cmd, payload)
         rx = self.transport.exchange(tx, timeout=timeout)
-        return first_frame(rx, cmd=cmd)
+        frames = tuple(iter_frames(rx))
+        return CommandResult(
+            command=cmd & 0xFFFF,
+            tx=tx,
+            rx=rx,
+            frames=frames,
+            ack=first_frame(rx, cmd=cmd),
+        )
+
+    def updater_command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
+        return self.exchange_updater(cmd, payload, timeout=timeout).ack
 
     def get_device_info(self):
         frame = self.command(RuntimeCommand.DEVICE_INFO)
@@ -141,6 +175,58 @@ class ZhiyunLight:
     def set_sleep(self, obj: int, value: int):
         return self.command(RuntimeCommand.SLEEP, sleep_payload(obj, value, read=False))
 
+    def apply_scene(self, scene: Scene) -> list[CommandResult]:
+        results: list[CommandResult] = []
+        if scene.sleep is not None:
+            results.append(
+                self.exchange_runtime(
+                    RuntimeCommand.SLEEP,
+                    sleep_payload(scene.obj, scene.sleep, read=False),
+                )
+            )
+        if scene.brightness is not None:
+            results.append(
+                self.exchange_runtime(
+                    RuntimeCommand.BRIGHTNESS,
+                    brightness_payload(scene.obj, scene.brightness, read=False),
+                )
+            )
+        if scene.kelvin is not None:
+            results.append(
+                self.exchange_runtime(
+                    RuntimeCommand.CCT,
+                    cct_payload(scene.obj, scene.kelvin, read=False),
+                )
+            )
+        if scene.red is not None or scene.green is not None or scene.blue is not None:
+            if scene.red is None or scene.green is None or scene.blue is None:
+                raise ValueError("scene RGB requires red, green, and blue")
+            results.append(
+                self.exchange_runtime(
+                    RuntimeCommand.RGB,
+                    rgb_payload(scene.obj, scene.red, scene.green, scene.blue),
+                )
+            )
+        if (
+            scene.hue is not None
+            or scene.saturation is not None
+            or scene.intensity is not None
+        ):
+            if scene.hue is None or scene.saturation is None or scene.intensity is None:
+                raise ValueError("scene HSI requires hue, saturation, and intensity")
+            results.append(
+                self.exchange_runtime(
+                    RuntimeCommand.HSI,
+                    hsi_payload(
+                        scene.obj,
+                        scene.hue,
+                        scene.saturation,
+                        scene.intensity,
+                    ),
+                )
+            )
+        return results
+
     def get_object_firmware(self, obj: int = 0):
         return self.command(RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj))
 
@@ -159,4 +245,3 @@ class ZhiyunLight:
 
     def read_sn(self):
         return self.updater_command(UpdaterCommand.READ_SN)
-
