@@ -36,6 +36,7 @@ from .protocol import (
 )
 from .sacn import serve_sacn
 from .server import serve
+from .status import read_async_status, read_sync_status
 from .transports.ble import (
     BLE_PROFILE_NAMES,
     DEFAULT_BLE_PROFILE,
@@ -65,6 +66,15 @@ def build_parser() -> argparse.ArgumentParser:
     add_ble_execution_args(probe)
     probe.add_argument("--json", action="store_true", help="Print compact JSON.")
     probe.set_defaults(func=cmd_probe)
+
+    status = sub.add_parser(
+        "status",
+        help="Read ACK-backed global status and command evidence.",
+    )
+    add_transport_args(status)
+    add_ble_execution_args(status)
+    status.add_argument("--json", action="store_true", help="Print compact JSON.")
+    status.set_defaults(func=cmd_status)
 
     validate = sub.add_parser(
         "validate",
@@ -467,6 +477,32 @@ def cmd_probe(args: argparse.Namespace) -> int:
                 }
     print_json(result, compact=args.json)
     return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    if args.transport == "ble":
+        try:
+            report = asyncio.run(_status_ble(args))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc, compact=args.json)
+    else:
+        with sync_usb_light_from_args(args) as light:
+            report = read_sync_status(
+                light,
+                transport=args.transport,
+                timeout=args.timeout,
+            )
+    print_json(report.to_dict(), compact=args.json)
+    return 0 if report.connection_confirmed else 1
+
+
+async def _status_ble(args: argparse.Namespace):
+    async with async_ble_light_from_args(args) as light:
+        return await read_async_status(
+            light,
+            transport=args.transport,
+            timeout=args.timeout,
+        )
 
 
 def cmd_validate(args: argparse.Namespace) -> int:

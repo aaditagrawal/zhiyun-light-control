@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import cast
 
@@ -89,6 +89,46 @@ def read_sync_status(
     )
 
 
+async def read_async_status(
+    light: object,
+    *,
+    transport: str = "ble",
+    timeout: float = 1.5,
+) -> LightStatusReport:
+    """Read confirmed global status primitives from an opened async light."""
+
+    exchange_runtime = _required_async_exchange(light, "exchange_runtime")
+    commands: dict[str, CommandResult] = {
+        "device_info": await exchange_runtime(
+            RuntimeCommand.DEVICE_INFO, timeout=timeout
+        ),
+        "firmware": await exchange_runtime(RuntimeCommand.FIRMWARE, timeout=timeout),
+        "voltage": await exchange_runtime(RuntimeCommand.VOLTAGE, timeout=timeout),
+        "device_id": await exchange_runtime(RuntimeCommand.DEVICE_ID, timeout=timeout),
+    }
+
+    chip_sync: dict[str, object] | None = None
+    exchange_updater = _optional_async_exchange(light, "exchange_updater")
+    if exchange_updater is not None:
+        commands["updater_chip_sync"] = await exchange_updater(
+            UpdaterCommand.CHIP_SYNC,
+            timeout=timeout,
+        )
+        chip_sync = _parse_chip_sync(commands["updater_chip_sync"])
+
+    device_info = _parse_device_info(commands["device_info"])
+    return LightStatusReport(
+        transport=transport,
+        device_identifier=device_info[0],
+        generation=device_info[1],
+        firmware=_parse_version(commands["firmware"]),
+        voltage_status=_parse_voltage(commands["voltage"]),
+        device_id=_parse_device_id(commands["device_id"]),
+        chip_sync=chip_sync,
+        commands=commands,
+    )
+
+
 def _required_exchange(light: object, name: str) -> Callable[..., CommandResult]:
     exchange = _optional_exchange(light, name)
     if exchange is None:
@@ -106,6 +146,28 @@ def _optional_exchange(
     if not callable(exchange):
         raise TypeError(f"light attribute {name} is not callable")
     return cast(Callable[..., CommandResult], exchange)
+
+
+def _required_async_exchange(
+    light: object,
+    name: str,
+) -> Callable[..., Awaitable[CommandResult]]:
+    exchange = _optional_async_exchange(light, name)
+    if exchange is None:
+        raise TypeError(f"light does not expose {name}()")
+    return exchange
+
+
+def _optional_async_exchange(
+    light: object,
+    name: str,
+) -> Callable[..., Awaitable[CommandResult]] | None:
+    exchange = getattr(light, name, None)
+    if exchange is None:
+        return None
+    if not callable(exchange):
+        raise TypeError(f"light attribute {name} is not callable")
+    return cast(Callable[..., Awaitable[CommandResult]], exchange)
 
 
 def _parse_device_info(result: CommandResult) -> tuple[str | None, str | None]:

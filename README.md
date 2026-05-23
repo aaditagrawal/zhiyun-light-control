@@ -48,6 +48,7 @@ From this repository:
 cd /Users/mav/Documents/aurion/zhiyun-light-control
 uv sync --extra ble --extra dev
 uv run zlight probe --transport usb
+uv run zlight status --transport usb
 ```
 
 USB-only operation has no runtime dependencies, so this also works for the
@@ -56,6 +57,7 @@ smallest environment:
 ```sh
 uv sync
 uv run zlight probe --transport usb
+uv run zlight status --transport usb
 ```
 
 If the light is not found automatically, pass the serial port explicitly:
@@ -143,13 +145,20 @@ uv run zlight probe --transport usb
 uv run zlight probe --transport ble --name-contains MOLUS
 ```
 
+Read ACK-backed status with raw command evidence:
+
+```sh
+uv run zlight status --transport usb
+uv run --extra ble zlight status --transport ble --name-contains MOLUS
+```
+
 Scan BLE devices:
 
 ```sh
 uv run --extra ble zlight scan-ble --timeout 8
 ```
 
-BLE `probe`, `register`, `read`, `set`, and `apply` run through a worker
+BLE `probe`, `status`, `register`, `read`, `set`, and `apply` run through a worker
 process by default. That keeps the parent CLI/API process alive if
 CoreBluetooth aborts below Python. Pass `--unsafe-in-process` only when you
 want direct bleak execution on a stable Bluetooth runtime.
@@ -373,15 +382,17 @@ For bench testing and release checks, use the same evidence model through the
 validation API:
 
 ```python
-from zhiyun_light_control import ZhiyunLight, validate_sync_light
+from zhiyun_light_control import ZhiyunLight, read_sync_status, validate_sync_light
 
 with ZhiyunLight.usb() as light:
+    status = read_sync_status(light)
     report = validate_sync_light(
         light,
         allow_control=True,
         include_object_reads=True,
     )
 
+print(status.to_dict()["connection_confirmed"])
 print(report.to_dict()["unconfirmed"])
 ```
 
@@ -390,14 +401,14 @@ the CLI, or `ble()` when you explicitly want direct bleak execution:
 
 ```python
 import asyncio
-from zhiyun_light_control import AsyncZhiyunLight, Scene
+from zhiyun_light_control import AsyncZhiyunLight, Scene, read_async_status
 
 async def main():
     async with AsyncZhiyunLight.isolated_ble(
         name_contains="MOLUS",
         profile="legacy",
     ) as light:
-        print(await light.probe())
+        print((await read_async_status(light)).to_dict())
         await light.transition_scene(
             Scene(obj=1, brightness=10),
             Scene(obj=1, brightness=35, kelvin=5600),
@@ -432,8 +443,10 @@ deliberate: on this Mac, fresh Python `3.13` and `3.12` virtualenvs with
 `bleak 3.0.2` and PyObjC `12.1` both terminate CoreBluetooth scanning with
 `SIGABRT` before Python can raise an exception. The worker wrapper keeps the main
 process alive and reports `worker_python`, `returncode`, and `signal` fields.
-One-shot BLE probe/control commands use the same worker isolation by default;
-`--unsafe-in-process` is available for direct bleak runs on stable runtimes.
+One-shot BLE probe/status/control commands use the same worker isolation by
+default; `--unsafe-in-process` is available for direct bleak runs on stable
+runtimes. On the local Mac, `zlight status --transport ble` also returns a
+structured `SIGABRT` worker diagnostic before any BLE ACK is received.
 
 BLE command exchange supports three named characteristic profiles:
 
@@ -470,8 +483,10 @@ updater firmware: 1.64
 
 The latest local hardware pass, run against `/dev/cu.usbmodem21301`, confirmed
 probe, global firmware/voltage/device-id reads, register-default-group, and
-updater chip sync. It did not confirm USB brightness, CCT, sleep, RGB, HSI, or
-object reads; normal runtime writes returned `sent_no_response`. A bounded
+updater chip sync. `zlight status --transport usb` also returned ACK-backed
+status for firmware `1.6.4`, generation `pl103`, device id `0`, and
+voltage/status `101`. It did not confirm USB brightness, CCT, sleep, RGB, HSI,
+or object reads; normal runtime writes returned `sent_no_response`. A bounded
 `discover-usb --control-first-words 0x0301` run produced exact echoed write
 frames for sleep, brightness, CCT, and brightness-plus-mode probes, but those
 are not ACKs and are not treated as applied control. Live HTTP bridge checks

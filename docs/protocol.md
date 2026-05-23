@@ -84,6 +84,8 @@ payload either way, but unacknowledged transmissions return exit code `1`.
 `zlight frame` exposes the lower-level `exchange_frame()` primitive for direct
 bench checks; it requires `--yes` and exits non-zero unless the light returns a
 matching ACK.
+`zlight status` exposes the same ACK-backed global reads as HTTP `/status` and
+is read-only on both USB and BLE transports.
 
 USB transports take an advisory file lock before opening the serial device and
 hold it until close. This serializes independent CLI or bridge processes that
@@ -121,9 +123,10 @@ Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
 also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
-`GET /status` is read-only and returns parsed identity/status fields alongside
-the raw `CommandResult` for each global read, which gives integrations a stable
-polling surface without using the gated raw-frame endpoint.
+`GET /status`, `zlight status`, `read_sync_status()`, and `read_async_status()`
+are read-only and return parsed identity/status fields alongside the raw
+`CommandResult` for each global read. This gives integrations a stable polling
+surface without using the gated raw-frame endpoint.
 `POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
 it is deliberately behind the same control gate because arbitrary frames can be
 state-changing. The matching CLI form is:
@@ -274,7 +277,14 @@ arguments.
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
 
-One-shot BLE command primitives (`probe`, `register`, `read`, `set`, and `apply`) also use worker-isolated raw exchanges by default. The worker connects, writes one frame to the selected profile's write characteristic, waits for notification data, and returns `{address, rx_hex}` to the parent process. The parent then parses that response through the same `CommandResult` path used by USB, so ACKs, timeouts, and echo detection keep the same semantics. Use `--unsafe-in-process` only when you want the direct bleak transport in the parent process.
+One-shot BLE command primitives (`probe`, `status`, `register`, `read`, `set`,
+and `apply`) also use worker-isolated raw exchanges by default. The worker
+connects, writes one frame to the selected profile's write characteristic, waits
+for notification data, and returns `{address, rx_hex}` to the parent process.
+The parent then parses that response through the same `CommandResult` path used
+by USB, so ACKs, timeouts, and echo detection keep the same semantics. Use
+`--unsafe-in-process` only when you want the direct bleak transport in the
+parent process.
 
 `zlight validate --transport ble` is intentionally guarded by
 `--unsafe-in-process` because direct bleak validation runs in the main process.

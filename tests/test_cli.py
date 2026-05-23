@@ -98,6 +98,72 @@ class CliTests(unittest.TestCase):
         self.assertFalse(payload["all_attempted_confirmed"])
         self.assertIn("set_brightness", payload["unconfirmed"])
 
+    def test_status_cli_reports_ack_backed_usb_status(self) -> None:
+        class FakeLight:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.8):
+                del payload, timeout
+                payload_by_cmd = {
+                    RuntimeCommand.DEVICE_INFO: b"device-test\x00pl103\x00",
+                    RuntimeCommand.FIRMWARE: b"1.6.4\x00",
+                    RuntimeCommand.VOLTAGE: b"\x65",
+                    RuntimeCommand.DEVICE_ID: b"\x00\x00",
+                }
+                tx = build_runtime_frame(1, cmd)
+                rx = build_runtime_frame(1, cmd, payload_by_cmd[cmd])
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+            def exchange_updater(self, cmd, payload=b"", *, timeout=0.8):
+                del payload, timeout
+                tx = build_frame(0x0103, 1, cmd)
+                rx = build_frame(
+                    0x0103,
+                    1,
+                    cmd,
+                    bytes.fromhex("0048444c0000010010030041054008a40065a36075"),
+                )
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["status", "--transport", "usb", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["connection_confirmed"])
+        self.assertEqual(payload["device_identifier"], "device-test")
+        self.assertEqual(payload["generation"], "pl103")
+        self.assertEqual(payload["firmware"], "1.6.4")
+        self.assertEqual(payload["voltage_status"], 101)
+        self.assertEqual(payload["device_id"], 0)
+        self.assertEqual(payload["chip_sync"]["updater_firmware"], "1.64")
+        self.assertTrue(payload["commands"]["device_info"]["acknowledged"])
+
     def test_set_returns_nonzero_when_command_is_unacknowledged(self) -> None:
         class FakeLight:
             def __enter__(self):
@@ -410,6 +476,73 @@ class CliTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(payload["firmware"], "test")
+        direct.assert_not_called()
+        isolated.assert_called_once_with(
+            address=None,
+            name_contains="MOLUS",
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
+            timeout=1.5,
+            python="python-test",
+        )
+
+    def test_ble_status_uses_crash_isolated_client_by_default(self) -> None:
+        class FakeAsyncLight:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+                return
+
+            async def exchange_runtime(self, cmd, payload=b"", *, timeout=1.5):
+                del payload, timeout
+                payload_by_cmd = {
+                    RuntimeCommand.DEVICE_INFO: b"device-test\x00pl103\x00",
+                    RuntimeCommand.FIRMWARE: b"1.6.4\x00",
+                    RuntimeCommand.VOLTAGE: b"\x65",
+                    RuntimeCommand.DEVICE_ID: b"\x00\x00",
+                }
+                tx = build_runtime_frame(1, cmd)
+                rx = build_runtime_frame(1, cmd, payload_by_cmd[cmd])
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.AsyncZhiyunLight.isolated_ble",
+                return_value=FakeAsyncLight(),
+            ) as isolated,
+            patch("zhiyun_light_control.cli.AsyncZhiyunLight.ble") as direct,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "status",
+                    "--transport",
+                    "ble",
+                    "--name-contains",
+                    "MOLUS",
+                    "--python",
+                    "python-test",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["transport"], "ble")
+        self.assertEqual(payload["device_identifier"], "device-test")
+        self.assertEqual(payload["firmware"], "1.6.4")
+        self.assertIsNone(payload["chip_sync"])
         direct.assert_not_called()
         isolated.assert_called_once_with(
             address=None,
