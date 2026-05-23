@@ -21,7 +21,7 @@ from .protocol import (
     sleep_payload,
 )
 from .server import serve
-from .transports.ble import scan_zhiyun_devices
+from .transports.ble import scan_zhiyun_devices, scan_zhiyun_devices_safe
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,6 +44,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = sub.add_parser("scan-ble", help="Scan for likely Zhiyun BLE devices.")
     scan.add_argument("--timeout", type=float, default=5.0)
+    scan.add_argument(
+        "--python",
+        help="Python executable for the crash-isolated BLE worker.",
+    )
+    scan.add_argument(
+        "--unsafe-in-process",
+        action="store_true",
+        help="Run bleak scan in this process instead of the crash-isolated worker.",
+    )
     scan.set_defaults(func=cmd_scan_ble)
 
     register = sub.add_parser("register", help="Register to the default group.")
@@ -139,9 +148,13 @@ async def _probe_ble(args: argparse.Namespace):
 
 
 def cmd_scan_ble(args: argparse.Namespace) -> int:
-    devices = asyncio.run(scan_zhiyun_devices(timeout=args.timeout))
-    print_json([device.__dict__ for device in devices])
-    return 0
+    if args.unsafe_in_process:
+        devices = asyncio.run(scan_zhiyun_devices(timeout=args.timeout))
+        print_json({"ok": True, "devices": [device.to_dict() for device in devices]})
+        return 0
+    result = scan_zhiyun_devices_safe(timeout=args.timeout, python=args.python)
+    print_json(result.to_dict())
+    return 0 if result.ok else 2
 
 
 def cmd_register(args: argparse.Namespace) -> int:

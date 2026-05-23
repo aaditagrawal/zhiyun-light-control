@@ -53,6 +53,13 @@ Scan for BLE devices:
 zlight scan-ble --timeout 8
 ```
 
+BLE scans run in a worker process by default, because the local macOS CoreBluetooth/bleak stack can abort the interpreter instead of raising a Python exception. Use `--unsafe-in-process` only when debugging bleak itself.
+If bleak is installed in a separate runtime, point the worker at it:
+
+```sh
+zlight scan-ble --python /path/to/venv/bin/python --timeout 8
+```
+
 Register the light to the default group over USB:
 
 ```sh
@@ -105,6 +112,7 @@ with ZhiyunLight.usb() as light:
 ```
 
 For integration debugging, use `exchange_runtime()` instead of the convenience methods. It returns a `CommandResult` with the transmitted frame, raw response bytes, parsed frames, and matching ACK if one arrived.
+`CommandResult.transport_status` is one of `acknowledged`, `sent_no_response`, or `response_without_matching_ack`, which is useful for fire-and-forget control paths where the current G60 does not ACK every object command.
 
 BLE is async:
 
@@ -120,7 +128,7 @@ async def main():
 asyncio.run(main())
 ```
 
-On the local Python `3.13` test environment, importing the BLE transport works but CoreBluetooth scanning via bleak aborts before returning a Python exception. USB tests and live USB probing are verified; BLE needs validation from a Python/macOS combination where bleak scanning is stable.
+On the local Python `3.13` and `3.12` test environments, importing the BLE transport works but CoreBluetooth scanning via bleak aborts before returning a Python exception. USB tests and live USB probing are verified; BLE needs validation from a Python/macOS combination where bleak scanning is stable. The CLI's default `scan-ble` command isolates that crash in a worker process and reports it as JSON.
 
 ## Protocol Notes
 

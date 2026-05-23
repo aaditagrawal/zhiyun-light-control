@@ -7,7 +7,12 @@ dependencies installed.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import subprocess
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..protocol import iter_frames
@@ -25,6 +30,25 @@ class BleDevice:
     address: str
     name: str | None
     rssi: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {"address": self.address, "name": self.name, "rssi": self.rssi}
+
+
+@dataclass(frozen=True)
+class BleScanResult:
+    ok: bool
+    devices: tuple[BleDevice, ...]
+    error: str | None = None
+    returncode: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "devices": [device.to_dict() for device in self.devices],
+            "error": self.error,
+            "returncode": self.returncode,
+        }
 
 
 class BleTransport:
@@ -137,10 +161,72 @@ async def scan_zhiyun_devices(timeout: float = 5.0) -> list[BleDevice]:
     return found
 
 
+def scan_zhiyun_devices_safe(
+    timeout: float = 5.0,
+    *,
+    python: str | None = None,
+) -> BleScanResult:
+    """Run BLE scanning in a worker process.
+
+    CoreBluetooth/pyobjc failures can abort the interpreter instead of raising
+    Python exceptions. Running the scan in a child process keeps CLI tools and
+    long-lived media-control services alive when that happens.
+    """
+
+    executable = python or sys.executable
+    env = os.environ.copy()
+    package_root = str(Path(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = (
+        package_root
+        if not env.get("PYTHONPATH")
+        else f"{package_root}{os.pathsep}{env['PYTHONPATH']}"
+    )
+    proc = subprocess.run(
+        [
+            executable,
+            "-m",
+            "zhiyun_light_control.ble_worker",
+            "--timeout",
+            str(timeout),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=max(timeout + 5.0, 10.0),
+        env=env,
+        check=False,
+    )
+    stdout = proc.stdout.strip()
+    if proc.returncode != 0:
+        detail = proc.stderr.strip() or stdout or f"worker exited {proc.returncode}"
+        return BleScanResult(
+            ok=False,
+            devices=(),
+            error=detail,
+            returncode=proc.returncode,
+        )
+    try:
+        payload = json.loads(stdout or "{}")
+    except json.JSONDecodeError as exc:
+        return BleScanResult(
+            ok=False,
+            devices=(),
+            error=f"could not parse BLE worker output: {exc}",
+            returncode=proc.returncode,
+        )
+    devices = tuple(
+        BleDevice(
+            address=str(item["address"]),
+            name=item.get("name"),
+            rssi=item.get("rssi"),
+        )
+        for item in payload.get("devices", [])
+    )
+    return BleScanResult(ok=True, devices=devices, returncode=proc.returncode)
+
+
 def _load_bleak() -> tuple[Any, Any]:
     try:
         from bleak import BleakClient, BleakScanner
     except ImportError as exc:
         raise RuntimeError("BLE support requires installing the 'ble' extra") from exc
     return BleakClient, BleakScanner
-

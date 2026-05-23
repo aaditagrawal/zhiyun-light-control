@@ -28,16 +28,30 @@ class CommandResult:
         return self.ack is not None and self.ack.crc_ok
 
     @property
+    def sent(self) -> bool:
+        return bool(self.tx)
+
+    @property
     def timed_out(self) -> bool:
         return not self.rx
+
+    @property
+    def transport_status(self) -> str:
+        if self.acknowledged:
+            return "acknowledged"
+        if self.timed_out:
+            return "sent_no_response"
+        return "response_without_matching_ack"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "command": self.command,
             "tx_hex": self.tx.hex(),
             "rx_hex": self.rx.hex() if self.rx else None,
+            "sent": self.sent,
             "acknowledged": self.acknowledged,
             "timed_out": self.timed_out,
+            "transport_status": self.transport_status,
             "ack": self.ack.to_dict() if self.ack else None,
             "frames": [frame.to_dict() for frame in self.frames],
         }
@@ -60,4 +74,3 @@ class Scene:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

@@ -40,7 +40,7 @@ Known object commands:
 
 Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0` and `1` did not respond.
 
-The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE.
+The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, or `response_without_matching_ack`.
 
 ## Media Integration Surface
 
@@ -102,3 +102,5 @@ Older/alternate YC light service:
 - Service: `0000ffe0-0000-1000-8000-00805f9b34fb`
 - Write characteristic: `0000ffe1-0000-1000-8000-00805f9b34fb`
 - Read characteristic: `0000ffe2-0000-1000-8000-00805f9b34fb`
+
+`zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.

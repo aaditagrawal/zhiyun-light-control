@@ -34,6 +34,8 @@ class ClientTests(unittest.TestCase):
 
         self.assertTrue(result.acknowledged)
         self.assertFalse(result.timed_out)
+        self.assertTrue(result.sent)
+        self.assertEqual(result.transport_status, "acknowledged")
         self.assertEqual(result.command, RuntimeCommand.REGISTER_DEFAULT_GROUP)
         self.assertEqual(result.tx, transport.sent[0])
         self.assertEqual(result.ack.cmd, RuntimeCommand.REGISTER_DEFAULT_GROUP)
@@ -57,4 +59,3 @@ class ClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
