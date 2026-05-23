@@ -11,8 +11,10 @@ from zhiyun_light_control.models import CommandResult, Scene
 from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
+    brightness_payload,
     build_frame,
     build_runtime_frame,
+    cct_payload,
     first_frame,
 )
 from zhiyun_light_control.server import LightHttpServer
@@ -27,6 +29,7 @@ class FakeProbe:
 class FakeLight:
     def __init__(self) -> None:
         self.commands: list[int] = []
+        self.payloads: list[tuple[int, bytes]] = []
         self.frame_exchanges: list[tuple[int, int, bytes, float]] = []
 
     def __enter__(self) -> FakeLight:
@@ -39,9 +42,10 @@ class FakeLight:
         return FakeProbe()
 
     def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
-        del payload, timeout
+        del timeout
         self.commands.append(cmd)
-        tx = build_runtime_frame(1, cmd)
+        self.payloads.append((cmd, payload))
+        tx = build_runtime_frame(1, cmd, payload)
         payload_by_cmd = {
             RuntimeCommand.DEVICE_INFO: b"device-test\x00pl103\x00",
             RuntimeCommand.FIRMWARE: b"1.6.4\x00",
@@ -66,12 +70,26 @@ class FakeLight:
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
-    def apply_scene(self, scene: Scene):
+    def apply_scene(self, scene: Scene, *, control_mode: int = 0x33):
         results = []
         if scene.brightness is not None:
-            results.append(self.exchange_runtime(0x1001))
+            results.append(
+                self.exchange_runtime(
+                    0x1001,
+                    brightness_payload(
+                        scene.obj,
+                        scene.brightness,
+                        control_mode=control_mode,
+                    ),
+                )
+            )
         if scene.kelvin is not None:
-            results.append(self.exchange_runtime(0x1002))
+            results.append(
+                self.exchange_runtime(
+                    0x1002,
+                    cct_payload(scene.obj, scene.kelvin, control_mode=control_mode),
+                )
+            )
         return results
 
     def transition_scene(
@@ -82,6 +100,7 @@ class FakeLight:
         steps: int = 10,
         duration: float = 1.0,
         easing: str = "linear",
+        control_mode: int = 0x33,
     ):
         del start, duration, easing
         batches = []
@@ -91,7 +110,8 @@ class FakeLight:
                 brightness = end.brightness * index / steps
             batches.append(
                 self.apply_scene(
-                    Scene(obj=end.obj, brightness=brightness, kelvin=end.kelvin)
+                    Scene(obj=end.obj, brightness=brightness, kelvin=end.kelvin),
+                    control_mode=control_mode,
                 )
             )
         return batches
@@ -99,9 +119,10 @@ class FakeLight:
 
 class FakeUnconfirmedLight(FakeLight):
     def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
-        del payload, timeout
+        del timeout
         self.commands.append(cmd)
-        tx = build_runtime_frame(1, cmd)
+        self.payloads.append((cmd, payload))
+        tx = build_runtime_frame(1, cmd, payload)
         return CommandResult(cmd, tx, b"", (), None)
 
 
@@ -155,12 +176,15 @@ class ServerTests(unittest.TestCase):
         try:
             request = Request(
                 f"{base}/brightness",
-                data=json.dumps({"obj": 1, "value": 30}).encode(),
+                data=json.dumps(
+                    {"obj": 1, "value": 30, "control_mode": "0x01"}
+                ).encode(),
                 headers={"content-type": "application/json"},
                 method="POST",
             )
             result = json.loads(urlopen(request, timeout=3).read())
             self.assertFalse(result["acknowledged"])
+            self.assertEqual(light.payloads[0][1][2], 0x01)
 
             state = json.loads(urlopen(f"{base}/state", timeout=3).read())
             self.assertEqual(state["source"], "http")

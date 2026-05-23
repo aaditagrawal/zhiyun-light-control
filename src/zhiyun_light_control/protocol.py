@@ -11,6 +11,8 @@ from enum import IntEnum
 SOF = b"\x24\x3c"
 RUNTIME_TYPE = 0x0100
 UPDATER_DEVICE = 0x0103
+DEFAULT_CONTROL_MODE = 0x33
+LEGACY_CONTROL_MODE = 0x01
 
 
 class RuntimeCommand(IntEnum):
@@ -224,12 +226,36 @@ def register_payload(device_id: int, group_id: int = 0) -> bytes:
     return struct.pack("<HH", device_id & 0xFFFF, group_id & 0xFFFF)
 
 
-def brightness_payload(obj: int, value: float = 0.0, *, read: bool = False) -> bytes:
-    return functional_payload(obj, 0 if read else 1, struct.pack("<f", float(value)))
+def control_operation(read: bool, control_mode: int = DEFAULT_CONTROL_MODE) -> int:
+    return 0 if read else control_mode & 0xFF
 
 
-def cct_payload(obj: int, kelvin: int = 0, *, read: bool = False) -> bytes:
-    return functional_payload(obj, 0 if read else 1, struct.pack("<H", kelvin & 0xFFFF))
+def brightness_payload(
+    obj: int,
+    value: float = 0.0,
+    *,
+    read: bool = False,
+    control_mode: int = DEFAULT_CONTROL_MODE,
+) -> bytes:
+    return functional_payload(
+        obj,
+        control_operation(read, control_mode),
+        struct.pack("<f", float(value)),
+    )
+
+
+def cct_payload(
+    obj: int,
+    kelvin: int = 0,
+    *,
+    read: bool = False,
+    control_mode: int = DEFAULT_CONTROL_MODE,
+) -> bytes:
+    return functional_payload(
+        obj,
+        control_operation(read, control_mode),
+        struct.pack("<H", kelvin & 0xFFFF),
+    )
 
 
 def rgb_payload(
@@ -239,10 +265,11 @@ def rgb_payload(
     blue: int = 0,
     *,
     read: bool = False,
+    control_mode: int = DEFAULT_CONTROL_MODE,
 ) -> bytes:
     return functional_payload(
         obj,
-        0 if read else 1,
+        control_operation(read, control_mode),
         struct.pack("<HHH", red & 0xFFFF, green & 0xFFFF, blue & 0xFFFF),
     )
 
@@ -254,10 +281,11 @@ def hsi_payload(
     intensity: int = 0,
     *,
     read: bool = False,
+    control_mode: int = DEFAULT_CONTROL_MODE,
 ) -> bytes:
     return functional_payload(
         obj,
-        0 if read else 1,
+        control_operation(read, control_mode),
         struct.pack("<ffH", float(hue), float(saturation), intensity & 0xFFFF),
     )
 
@@ -268,13 +296,24 @@ def brightness_with_mode_payload(
     mode: int = 0,
     *,
     read: bool = False,
+    control_mode: int = DEFAULT_CONTROL_MODE,
 ) -> bytes:
     payload = b"" if read else struct.pack("<fb", float(value), mode & 0xFF)
-    return functional_payload(obj, 0 if read else 1, payload)
+    return functional_payload(obj, control_operation(read, control_mode), payload)
 
 
-def sleep_payload(obj: int, value: int = 0, *, read: bool = False) -> bytes:
-    return functional_payload(obj, 0 if read else 1, struct.pack("<B", value & 0xFF))
+def sleep_payload(
+    obj: int,
+    value: int = 0,
+    *,
+    read: bool = False,
+    control_mode: int = DEFAULT_CONTROL_MODE,
+) -> bytes:
+    return functional_payload(
+        obj,
+        control_operation(read, control_mode),
+        struct.pack("<B", value & 0xFF),
+    )
 
 
 def object_id_payload(obj: int) -> bytes:

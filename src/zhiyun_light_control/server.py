@@ -14,6 +14,7 @@ from .client import ZhiyunLight
 from .models import Scene
 from .presets import ScenePresetLibrary, merge_scene, scene_from_optional_mapping
 from .protocol import (
+    DEFAULT_CONTROL_MODE,
     RUNTIME_TYPE,
     RuntimeCommand,
     brightness_payload,
@@ -153,6 +154,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_control(self, path: str, body: dict[str, object]) -> dict[str, object]:
         obj = int(body.get("obj", 1))
+        control_mode = _control_mode(body)
         with self.server.light_factory() as light:
             if path == "/register":
                 result = light.exchange_runtime(
@@ -163,7 +165,11 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             if path == "/brightness":
                 result = light.exchange_runtime(
                     RuntimeCommand.BRIGHTNESS,
-                    brightness_payload(obj, float(body["value"])),
+                    brightness_payload(
+                        obj,
+                        float(body["value"]),
+                        control_mode=control_mode,
+                    ),
                 )
                 self._record_scene(
                     Scene(obj=obj, brightness=float(body["value"])),
@@ -174,7 +180,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             if path == "/cct":
                 result = light.exchange_runtime(
                     RuntimeCommand.CCT,
-                    cct_payload(obj, int(body["kelvin"])),
+                    cct_payload(obj, int(body["kelvin"]), control_mode=control_mode),
                 )
                 self._record_scene(
                     Scene(obj=obj, kelvin=int(body["kelvin"])),
@@ -185,7 +191,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             if path == "/sleep":
                 result = light.exchange_runtime(
                     RuntimeCommand.SLEEP,
-                    sleep_payload(obj, int(body["value"])),
+                    sleep_payload(obj, int(body["value"]), control_mode=control_mode),
                 )
                 self._record_scene(
                     Scene(obj=obj, sleep=int(body["value"])),
@@ -201,6 +207,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         int(body["red"]),
                         int(body["green"]),
                         int(body["blue"]),
+                        control_mode=control_mode,
                     ),
                 )
                 self._record_scene(
@@ -222,6 +229,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         float(body["hue"]),
                         float(body["saturation"]),
                         int(body["intensity"]),
+                        control_mode=control_mode,
                     ),
                 )
                 self._record_scene(
@@ -245,7 +253,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 return result.to_dict()
             if path == "/scene":
                 scene = _scene_from_body(body, obj=obj)
-                results = light.apply_scene(scene)
+                results = light.apply_scene(scene, control_mode=control_mode)
                 self._record_scene(scene, action="scene", results=results)
                 return {
                     "scene": scene.to_dict(),
@@ -268,6 +276,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     steps=steps,
                     duration=duration,
                     easing=easing,
+                    control_mode=control_mode,
                 )
                 flat_results = [result for batch in batches for result in batch]
                 self._record_scene(end, action="transition", results=flat_results)
@@ -289,14 +298,14 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 overrides = {
                     key: value
                     for key, value in body.items()
-                    if key != "name" and value is not None
+                    if key not in {"name", "control_mode"} and value is not None
                 }
                 scene = merge_scene(
                     library.get(name),
                     scene_from_optional_mapping(overrides, obj=obj),
                     override_obj="obj" in body,
                 )
-                results = light.apply_scene(scene)
+                results = light.apply_scene(scene, control_mode=control_mode)
                 self._record_scene(scene, action="preset", results=results)
                 return {
                     "preset": name,
@@ -327,6 +336,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 hue=float(body.get("hue", 0.0)),
                 saturation=float(body.get("saturation", 0.0)),
                 intensity=int(body.get("intensity", 35)),
+                control_mode=_control_mode(body),
             )
         return report.to_dict()
 
@@ -529,6 +539,7 @@ def _json_schema_ref(name: str) -> dict[str, object]:
 def _openapi_schemas() -> dict[str, object]:
     number_or_null = {"oneOf": [{"type": "number"}, {"type": "null"}]}
     integer_or_null = {"oneOf": [{"type": "integer"}, {"type": "null"}]}
+    control_mode = {"oneOf": [{"type": "integer"}, {"type": "string"}]}
     return {
         "Health": {
             "type": "object",
@@ -589,6 +600,7 @@ def _openapi_schemas() -> dict[str, object]:
                 "obj": {"type": "integer"},
                 "brightness": {"type": "number"},
                 "kelvin": {"type": "integer"},
+                "control_mode": control_mode,
             },
         },
         "RegisterRequest": {
@@ -597,17 +609,29 @@ def _openapi_schemas() -> dict[str, object]:
         },
         "BrightnessRequest": {
             "type": "object",
-            "properties": {"obj": {"type": "integer"}, "value": {"type": "number"}},
+            "properties": {
+                "obj": {"type": "integer"},
+                "value": {"type": "number"},
+                "control_mode": control_mode,
+            },
             "required": ["value"],
         },
         "CctRequest": {
             "type": "object",
-            "properties": {"obj": {"type": "integer"}, "kelvin": {"type": "integer"}},
+            "properties": {
+                "obj": {"type": "integer"},
+                "kelvin": {"type": "integer"},
+                "control_mode": control_mode,
+            },
             "required": ["kelvin"],
         },
         "SleepRequest": {
             "type": "object",
-            "properties": {"obj": {"type": "integer"}, "value": {"type": "integer"}},
+            "properties": {
+                "obj": {"type": "integer"},
+                "value": {"type": "integer"},
+                "control_mode": control_mode,
+            },
             "required": ["value"],
         },
         "RgbRequest": {
@@ -617,6 +641,7 @@ def _openapi_schemas() -> dict[str, object]:
                 "red": {"type": "integer"},
                 "green": {"type": "integer"},
                 "blue": {"type": "integer"},
+                "control_mode": control_mode,
             },
             "required": ["red", "green", "blue"],
         },
@@ -627,6 +652,7 @@ def _openapi_schemas() -> dict[str, object]:
                 "hue": {"type": "number"},
                 "saturation": {"type": "number"},
                 "intensity": {"type": "integer"},
+                "control_mode": control_mode,
             },
             "required": ["hue", "saturation", "intensity"],
         },
@@ -653,6 +679,7 @@ def _openapi_schemas() -> dict[str, object]:
                 "hue": number_or_null,
                 "saturation": number_or_null,
                 "intensity": integer_or_null,
+                "control_mode": control_mode,
             },
         },
         "SceneApplyResponse": {
@@ -673,6 +700,7 @@ def _openapi_schemas() -> dict[str, object]:
                 "steps": {"type": "integer"},
                 "duration": {"type": "number"},
                 "easing": {"type": "string"},
+                "control_mode": control_mode,
             },
         },
         "TransitionResponse": {"type": "object", "additionalProperties": True},
@@ -746,6 +774,10 @@ def _body_int(
     if isinstance(value, str):
         return int(value, 0)
     raise ValueError(f"{key} must be an integer or integer string")
+
+
+def _control_mode(body: dict[str, object]) -> int:
+    return _body_int(body, "control_mode", DEFAULT_CONTROL_MODE)
 
 
 def _payload_hex(body: dict[str, object]) -> bytes:

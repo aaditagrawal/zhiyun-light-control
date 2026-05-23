@@ -12,6 +12,7 @@ from .bridge import LightConnectionConfig, PersistentLightFactory, make_light_fa
 from .client import ProbeResult, ZhiyunLight
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    DEFAULT_DISCOVERY_CONTROL_MODES,
     DEFAULT_DISCOVERY_FIRST_WORDS,
     DEFAULT_DISCOVERY_OBJECT_IDS,
     DiscoveryAttempt,
@@ -21,6 +22,8 @@ from .discovery import (
 from .models import CommandResult, Scene
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .protocol import (
+    DEFAULT_CONTROL_MODE,
+    LEGACY_CONTROL_MODE,
     ParsedFrame,
     build_frame,
     build_runtime_frame,
@@ -60,9 +63,12 @@ __all__ = [
     "CommandResult",
     "CrashIsolatedBleTransport",
     "DEFAULT_BLE_PROFILE",
+    "DEFAULT_CONTROL_MODE",
+    "DEFAULT_DISCOVERY_CONTROL_MODES",
     "DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS",
     "DEFAULT_DISCOVERY_FIRST_WORDS",
     "DEFAULT_DISCOVERY_OBJECT_IDS",
+    "LEGACY_CONTROL_MODE",
     "DmxMapping",
     "DiscoveryAttempt",
     "LightConnectionConfig",

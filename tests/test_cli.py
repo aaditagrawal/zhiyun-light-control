@@ -52,6 +52,9 @@ class CliTests(unittest.TestCase):
 
     def test_validate_strict_fails_when_control_is_unconfirmed(self) -> None:
         class FakeLight:
+            def __init__(self) -> None:
+                self.payloads: list[tuple[int, bytes]] = []
+
             def __enter__(self):
                 return self
 
@@ -166,6 +169,9 @@ class CliTests(unittest.TestCase):
 
     def test_set_returns_nonzero_when_command_is_unacknowledged(self) -> None:
         class FakeLight:
+            def __init__(self) -> None:
+                self.payloads: list[tuple[int, bytes]] = []
+
             def __enter__(self):
                 return self
 
@@ -173,15 +179,17 @@ class CliTests(unittest.TestCase):
                 return None
 
             def exchange_runtime(self, cmd, payload=b"", *, timeout=0.8):
-                del payload, timeout
-                tx = build_runtime_frame(1, cmd)
+                del timeout
+                self.payloads.append((cmd, payload))
+                tx = build_runtime_frame(1, cmd, payload)
                 return CommandResult(cmd, tx, b"", (), None)
 
+        fake = FakeLight()
         stdout = io.StringIO()
         with (
             patch(
                 "zhiyun_light_control.cli.ZhiyunLight.usb",
-                return_value=FakeLight(),
+                return_value=fake,
             ),
             contextlib.redirect_stdout(stdout),
         ):
@@ -191,6 +199,56 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertFalse(payload["acknowledged"])
         self.assertEqual(payload["transport_status"], "sent_no_response")
+        self.assertEqual(fake.payloads[0][1][2], 0x33)
+
+    def test_set_cli_accepts_legacy_control_mode_override(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.payloads: list[tuple[int, bytes]] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.8):
+                del timeout
+                self.payloads.append((cmd, payload))
+                tx = build_runtime_frame(1, cmd, payload)
+                rx = build_runtime_frame(1, cmd, b"\x00")
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    tuple(iter_frames(rx)),
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        fake = FakeLight()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=fake,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "set",
+                    "sleep",
+                    "--value",
+                    "0",
+                    "--control-mode",
+                    "0x01",
+                    "--yes",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.payloads[0][0], RuntimeCommand.SLEEP)
+        self.assertEqual(fake.payloads[0][1].hex(), "01000100")
 
     def test_apply_returns_nonzero_when_any_command_is_unacknowledged(self) -> None:
         class FakeLight:
@@ -200,7 +258,8 @@ class CliTests(unittest.TestCase):
             def __exit__(self, _exc_type, _exc, _tb):
                 return None
 
-            def apply_scene(self, _scene):
+            def apply_scene(self, _scene, *, control_mode=0x33):
+                del control_mode
                 tx = build_runtime_frame(1, RuntimeCommand.BRIGHTNESS)
                 return [CommandResult(RuntimeCommand.BRIGHTNESS, tx, b"", (), None)]
 
@@ -362,6 +421,8 @@ class CliTests(unittest.TestCase):
                     "0,2",
                     "--control-kinds",
                     "sleep",
+                    "--control-modes",
+                    "0x01",
                     "--json",
                 ]
             )
@@ -372,9 +433,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["register_device_ids"], [0, 1])
         self.assertEqual(payload["register_group_ids"], [0, 2])
         self.assertEqual(payload["control_kinds"], ["sleep"])
+        self.assertEqual(payload["control_modes"], [1])
         self.assertIn("register_default_group_dev1_group2", attempts)
-        self.assertIn("set_sleep_obj1", attempts)
-        self.assertNotIn("set_brightness_obj1", attempts)
+        self.assertIn("set_sleep_obj1_mode0x01", attempts)
+        self.assertNotIn("set_brightness_obj1_mode0x01", attempts)
 
     def test_frame_cli_exchanges_raw_usb_frame(self) -> None:
         class FakeLight:

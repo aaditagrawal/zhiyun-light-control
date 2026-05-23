@@ -105,7 +105,7 @@ Run the broader USB discovery matrix while working on unknown primitive shapes:
 uv run zlight discover-usb --object-ids 0,1,2,100,0x8001,0x8064,0xffff
 uv run zlight discover-usb --allow-control --timeout 0.5
 uv run zlight discover-usb --allow-control --control-object-ids 0,1 --control-first-words 0x0100,0x0301
-uv run zlight discover-usb --allow-control --register-device-ids 0,1 --control-object-ids 1 --control-kinds sleep
+uv run zlight discover-usb --allow-control --register-device-ids 0,1 --control-object-ids 1 --control-kinds sleep --control-modes 0x33,0x01
 ```
 
 `discover-usb` is for bench work. It records global reads, object-read
@@ -114,9 +114,9 @@ same ACK/timeout/echo evidence model used by validation.
 When `--allow-control` is set, control probes default to the same object ids as
 `--object-ids`; use `--control-object-ids` and `--control-first-words` to test a
 bounded control matrix without expanding read probes. Use
-`--register-device-ids`, `--register-group-ids`, and `--control-kinds` to
-separate registration hypotheses from the specific control candidates you want
-to transmit.
+`--register-device-ids`, `--register-group-ids`, `--control-kinds`, and
+`--control-modes` to separate registration hypotheses from the specific control
+candidates you want to transmit.
 
 Exchange one raw frame when you need to reproduce protocol evidence directly:
 
@@ -184,6 +184,9 @@ uv run zlight set brightness --obj 1 --value 35 --yes
 uv run zlight set cct --obj 1 --kelvin 5600 --yes
 uv run zlight set rgb --obj 1 --red 255 --green 180 --blue 120 --yes
 ```
+
+Functional writes default to the Vega `controlMode` operation byte `0x33`.
+Use `--control-mode 0x01` when reproducing older legacy probes.
 
 Exchange a raw protocol frame:
 
@@ -447,6 +450,8 @@ One-shot BLE probe/status/control commands use the same worker isolation by
 default; `--unsafe-in-process` is available for direct bleak runs on stable
 runtimes. On the local Mac, `zlight status --transport ble` also returns a
 structured `SIGABRT` worker diagnostic before any BLE ACK is received.
+Native bundled CoreBluetooth probes with an `NSBluetoothAlwaysUsageDescription`
+plist do work on this Mac and found the G60 as `PL103_EDFE`.
 
 BLE command exchange supports three named characteristic profiles:
 
@@ -486,7 +491,11 @@ probe, global firmware/voltage/device-id reads, register-default-group, and
 updater chip sync. `zlight status --transport usb` also returned ACK-backed
 status for firmware `1.6.4`, generation `pl103`, device id `0`, and
 voltage/status `101`. It did not confirm USB brightness, CCT, sleep, RGB, HSI,
-or object reads; normal runtime writes returned `sent_no_response`. A bounded
+or object reads; runtime writes returned `sent_no_response` even when using the
+official Vega `controlMode` byte `0x33`. A raw/default sleep write with
+`payload_hex 01003301` was not ACK-confirmed; BLE advertisements disappeared
+afterward, which is useful circumstantial evidence but not treated as confirmed
+execution. A bounded
 `discover-usb --control-first-words 0x0301` run produced exact echoed write
 frames for sleep, brightness, CCT, and brightness-plus-mode probes, but those
 are not ACKs and are not treated as applied control. Live HTTP bridge checks

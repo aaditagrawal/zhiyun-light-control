@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 
 from .models import CommandResult
 from .protocol import (
+    DEFAULT_CONTROL_MODE,
     RuntimeCommand,
     UpdaterCommand,
     brightness_payload,
@@ -94,6 +95,7 @@ def validate_sync_light(
     hue: float = 0.0,
     saturation: float = 0.0,
     intensity: int = 35,
+    control_mode: int = DEFAULT_CONTROL_MODE,
 ) -> HardwareValidationReport:
     """Run a hardware validation sequence on an opened synchronous light."""
 
@@ -135,6 +137,7 @@ def validate_sync_light(
                 hue=hue,
                 saturation=saturation,
                 intensity=intensity,
+                control_mode=control_mode,
             )
         )
 
@@ -169,6 +172,7 @@ async def validate_async_light(
     hue: float = 0.0,
     saturation: float = 0.0,
     intensity: int = 35,
+    control_mode: int = DEFAULT_CONTROL_MODE,
 ) -> HardwareValidationReport:
     """Run a hardware validation sequence on an opened async light."""
 
@@ -199,6 +203,7 @@ async def validate_async_light(
                 hue=hue,
                 saturation=saturation,
                 intensity=intensity,
+                control_mode=control_mode,
             )
         )
 
@@ -300,6 +305,7 @@ def _sync_control_checks(
     hue: float,
     saturation: float,
     intensity: int,
+    control_mode: int,
 ) -> list[PrimitiveCheck]:
     checks = [
         _command_check(
@@ -313,20 +319,31 @@ def _sync_control_checks(
         _command_check(
             "set_sleep",
             "control",
-            exchange(RuntimeCommand.SLEEP, sleep_payload(obj, sleep, read=False)),
+            exchange(
+                RuntimeCommand.SLEEP,
+                sleep_payload(obj, sleep, read=False, control_mode=control_mode),
+            ),
         ),
         _command_check(
             "set_brightness",
             "control",
             exchange(
                 RuntimeCommand.BRIGHTNESS,
-                brightness_payload(obj, brightness, read=False),
+                brightness_payload(
+                    obj,
+                    brightness,
+                    read=False,
+                    control_mode=control_mode,
+                ),
             ),
         ),
         _command_check(
             "set_cct",
             "control",
-            exchange(RuntimeCommand.CCT, cct_payload(obj, kelvin, read=False)),
+            exchange(
+                RuntimeCommand.CCT,
+                cct_payload(obj, kelvin, read=False, control_mode=control_mode),
+            ),
         ),
     ]
     if include_color:
@@ -335,14 +352,29 @@ def _sync_control_checks(
                 _command_check(
                     "set_rgb",
                     "control",
-                    exchange(RuntimeCommand.RGB, rgb_payload(obj, red, green, blue)),
+                    exchange(
+                        RuntimeCommand.RGB,
+                        rgb_payload(
+                            obj,
+                            red,
+                            green,
+                            blue,
+                            control_mode=control_mode,
+                        ),
+                    ),
                 ),
                 _command_check(
                     "set_hsi",
                     "control",
                     exchange(
                         RuntimeCommand.HSI,
-                        hsi_payload(obj, hue, saturation, intensity),
+                        hsi_payload(
+                            obj,
+                            hue,
+                            saturation,
+                            intensity,
+                            control_mode=control_mode,
+                        ),
                     ),
                 ),
             ]
@@ -365,6 +397,7 @@ async def _async_control_checks(
     hue: float,
     saturation: float,
     intensity: int,
+    control_mode: int,
 ) -> list[PrimitiveCheck]:
     checks = [
         _command_check(
@@ -378,20 +411,31 @@ async def _async_control_checks(
         _command_check(
             "set_sleep",
             "control",
-            await exchange(RuntimeCommand.SLEEP, sleep_payload(obj, sleep, read=False)),
+            await exchange(
+                RuntimeCommand.SLEEP,
+                sleep_payload(obj, sleep, read=False, control_mode=control_mode),
+            ),
         ),
         _command_check(
             "set_brightness",
             "control",
             await exchange(
                 RuntimeCommand.BRIGHTNESS,
-                brightness_payload(obj, brightness, read=False),
+                brightness_payload(
+                    obj,
+                    brightness,
+                    read=False,
+                    control_mode=control_mode,
+                ),
             ),
         ),
         _command_check(
             "set_cct",
             "control",
-            await exchange(RuntimeCommand.CCT, cct_payload(obj, kelvin, read=False)),
+            await exchange(
+                RuntimeCommand.CCT,
+                cct_payload(obj, kelvin, read=False, control_mode=control_mode),
+            ),
         ),
     ]
     if include_color:
@@ -401,7 +445,14 @@ async def _async_control_checks(
                     "set_rgb",
                     "control",
                     await exchange(
-                        RuntimeCommand.RGB, rgb_payload(obj, red, green, blue)
+                        RuntimeCommand.RGB,
+                        rgb_payload(
+                            obj,
+                            red,
+                            green,
+                            blue,
+                            control_mode=control_mode,
+                        ),
                     ),
                 ),
                 _command_check(
@@ -409,7 +460,13 @@ async def _async_control_checks(
                     "control",
                     await exchange(
                         RuntimeCommand.HSI,
-                        hsi_payload(obj, hue, saturation, intensity),
+                        hsi_payload(
+                            obj,
+                            hue,
+                            saturation,
+                            intensity,
+                            control_mode=control_mode,
+                        ),
                     ),
                 ),
             ]

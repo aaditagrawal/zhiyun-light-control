@@ -123,6 +123,21 @@ class ClientTests(unittest.TestCase):
         )
         sent_cmds = [first_frame(tx).cmd for tx in transport.sent]
         self.assertEqual(sent_cmds, [0x1008, 0x1001, 0x1002])
+        self.assertEqual(
+            [first_frame(tx).payload[2] for tx in transport.sent],
+            [0x33, 0x33, 0x33],
+        )
+
+    def test_control_mode_can_use_legacy_operation_byte(self) -> None:
+        transport = EchoAckTransport()
+        light = ZhiyunLight(transport)
+
+        result = light.set_brightness(1, 25, control_mode=0x01)
+
+        frame = first_frame(transport.sent[0])
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(result.command, RuntimeCommand.BRIGHTNESS)
+        self.assertEqual(frame.payload[2], 0x01)
 
     def test_apply_scene_requires_complete_rgb_tuple(self) -> None:
         light = ZhiyunLight(EchoAckTransport())

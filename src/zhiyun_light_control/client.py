@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass
 
 from .models import CommandResult, Scene
 from .protocol import (
+    DEFAULT_CONTROL_MODE,
     RUNTIME_TYPE,
     UPDATER_DEVICE,
     RuntimeCommand,
@@ -162,53 +163,117 @@ class ZhiyunLight:
             RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True)
         )
 
-    def set_brightness(self, obj: int, value: float):
-        return self.command(
+    def set_brightness(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self.exchange_runtime(
             RuntimeCommand.BRIGHTNESS,
-            brightness_payload(obj, value, read=False),
+            brightness_payload(obj, value, read=False, control_mode=control_mode),
         )
 
     def read_cct(self, obj: int = 0):
         return self.command(RuntimeCommand.CCT, cct_payload(obj, read=True))
 
-    def set_cct(self, obj: int, kelvin: int):
-        return self.command(RuntimeCommand.CCT, cct_payload(obj, kelvin, read=False))
+    def set_cct(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self.exchange_runtime(
+            RuntimeCommand.CCT,
+            cct_payload(obj, kelvin, read=False, control_mode=control_mode),
+        )
 
-    def set_rgb(self, obj: int, red: int, green: int, blue: int):
-        return self.command(RuntimeCommand.RGB, rgb_payload(obj, red, green, blue))
+    def set_rgb(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self.exchange_runtime(
+            RuntimeCommand.RGB,
+            rgb_payload(obj, red, green, blue, control_mode=control_mode),
+        )
 
-    def set_hsi(self, obj: int, hue: float, saturation: float, intensity: int):
-        return self.command(
-            RuntimeCommand.HSI, hsi_payload(obj, hue, saturation, intensity)
+    def set_hsi(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self.exchange_runtime(
+            RuntimeCommand.HSI,
+            hsi_payload(obj, hue, saturation, intensity, control_mode=control_mode),
         )
 
     def read_sleep(self, obj: int = 0):
         return self.command(RuntimeCommand.SLEEP, sleep_payload(obj, read=True))
 
-    def set_sleep(self, obj: int, value: int):
-        return self.command(RuntimeCommand.SLEEP, sleep_payload(obj, value, read=False))
+    def set_sleep(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self.exchange_runtime(
+            RuntimeCommand.SLEEP,
+            sleep_payload(obj, value, read=False, control_mode=control_mode),
+        )
 
-    def apply_scene(self, scene: Scene) -> list[CommandResult]:
+    def apply_scene(
+        self,
+        scene: Scene,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> list[CommandResult]:
         results: list[CommandResult] = []
         if scene.sleep is not None:
             results.append(
                 self.exchange_runtime(
                     RuntimeCommand.SLEEP,
-                    sleep_payload(scene.obj, scene.sleep, read=False),
+                    sleep_payload(
+                        scene.obj,
+                        scene.sleep,
+                        read=False,
+                        control_mode=control_mode,
+                    ),
                 )
             )
         if scene.brightness is not None:
             results.append(
                 self.exchange_runtime(
                     RuntimeCommand.BRIGHTNESS,
-                    brightness_payload(scene.obj, scene.brightness, read=False),
+                    brightness_payload(
+                        scene.obj,
+                        scene.brightness,
+                        read=False,
+                        control_mode=control_mode,
+                    ),
                 )
             )
         if scene.kelvin is not None:
             results.append(
                 self.exchange_runtime(
                     RuntimeCommand.CCT,
-                    cct_payload(scene.obj, scene.kelvin, read=False),
+                    cct_payload(
+                        scene.obj,
+                        scene.kelvin,
+                        read=False,
+                        control_mode=control_mode,
+                    ),
                 )
             )
         if scene.red is not None or scene.green is not None or scene.blue is not None:
@@ -217,7 +282,13 @@ class ZhiyunLight:
             results.append(
                 self.exchange_runtime(
                     RuntimeCommand.RGB,
-                    rgb_payload(scene.obj, scene.red, scene.green, scene.blue),
+                    rgb_payload(
+                        scene.obj,
+                        scene.red,
+                        scene.green,
+                        scene.blue,
+                        control_mode=control_mode,
+                    ),
                 )
             )
         if (
@@ -235,6 +306,7 @@ class ZhiyunLight:
                         scene.hue,
                         scene.saturation,
                         scene.intensity,
+                        control_mode=control_mode,
                     ),
                 )
             )
@@ -248,12 +320,13 @@ class ZhiyunLight:
         steps: int = 10,
         duration: float = 1.0,
         easing: EasingName = "linear",
+        control_mode: int = DEFAULT_CONTROL_MODE,
     ) -> list[list[CommandResult]]:
         scenes = scene_transition(start, end, steps=steps, easing=easing)
         delay = transition_interval(duration, len(scenes))
         batches: list[list[CommandResult]] = []
         for index, scene in enumerate(scenes):
-            batches.append(self.apply_scene(scene))
+            batches.append(self.apply_scene(scene, control_mode=control_mode))
             if delay > 0 and index < len(scenes) - 1:
                 time.sleep(delay)
         return batches

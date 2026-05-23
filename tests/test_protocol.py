@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from zhiyun_light_control.protocol import (
+    LEGACY_CONTROL_MODE,
     RuntimeCommand,
     UpdaterCommand,
     brightness_with_mode_payload,
@@ -17,6 +18,7 @@ from zhiyun_light_control.protocol import (
     parse_device_info,
     parse_version,
     register_payload,
+    sleep_payload,
 )
 
 
@@ -62,7 +64,15 @@ class ProtocolTests(unittest.TestCase):
 
     def test_brightness_with_mode_payload_shape(self) -> None:
         payload = brightness_with_mode_payload(1, 35.0, 1)
-        self.assertEqual(payload.hex(), "01000100000c4201")
+        self.assertEqual(payload.hex(), "01003300000c4201")
+
+    def test_functional_write_payload_control_mode_is_overridable(self) -> None:
+        self.assertEqual(sleep_payload(1, 1).hex(), "01003301")
+        self.assertEqual(
+            sleep_payload(1, 1, control_mode=LEGACY_CONTROL_MODE).hex(),
+            "01000101",
+        )
+        self.assertEqual(sleep_payload(1, read=True).hex(), "01000000")
 
     def test_parse_device_info_after_upgrade(self) -> None:
         rx = bytes.fromhex(

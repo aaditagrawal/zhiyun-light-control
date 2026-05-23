@@ -107,6 +107,21 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         )
         sent_cmds = [first_frame(tx).cmd for tx in transport.sent]
         self.assertEqual(sent_cmds, [0x1008, 0x1001, 0x1002])
+        self.assertEqual(
+            [first_frame(tx).payload[2] for tx in transport.sent],
+            [0x33, 0x33, 0x33],
+        )
+
+    async def test_async_control_mode_can_use_legacy_operation_byte(self) -> None:
+        transport = AsyncEchoAckTransport()
+        light = AsyncZhiyunLight(transport)
+
+        result = await light.set_sleep(1, 0, control_mode=0x01)
+
+        frame = first_frame(transport.sent[0])
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(result.command, RuntimeCommand.SLEEP)
+        self.assertEqual(frame.payload[2], 0x01)
 
     async def test_async_transition_scene_matches_sync_surface(self) -> None:
         transport = AsyncEchoAckTransport()

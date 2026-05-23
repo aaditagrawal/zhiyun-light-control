@@ -26,6 +26,7 @@ class FakeAsyncLight:
         self.commands: list[tuple[int, bytes, float]] = []
         self.frames: list[tuple[int, int, bytes, float]] = []
         self.scenes: list[Scene] = []
+        self.control_modes: list[int] = []
 
     async def __aenter__(self) -> FakeAsyncLight:
         self.opened = True
@@ -64,8 +65,9 @@ class FakeAsyncLight:
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
-    async def apply_scene(self, scene: Scene):
+    async def apply_scene(self, scene: Scene, *, control_mode: int = 0x33):
         self.scenes.append(scene)
+        self.control_modes.append(control_mode)
         return []
 
 
@@ -126,7 +128,7 @@ class BridgeFactoryTests(unittest.TestCase):
                     0x2001,
                     timeout=0.35,
                 )
-                scene_results = light.apply_scene(scene)
+                scene_results = light.apply_scene(scene, control_mode=0x01)
 
         make_ble.assert_called_once_with(
             address="AA:BB",
@@ -146,6 +148,7 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(fake.commands, [(0x1001, b"\x01", 0.25)])
         self.assertEqual(fake.frames, [(0x0100, 0x2001, b"", 0.35)])
         self.assertEqual(fake.scenes, [scene])
+        self.assertEqual(fake.control_modes, [0x01])
         self.assertEqual(scene_results, [])
 
     def test_ble_factory_can_opt_into_direct_client(self) -> None:

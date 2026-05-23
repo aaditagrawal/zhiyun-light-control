@@ -45,9 +45,12 @@ ACKs over USB, but object reads tested for object ids `0`, `1`, `2`, `100`,
 matrix also tested first-word values `0x0100`, `0x0101`, `0x0103`, and
 `0x0301`; only `0x0301` produced exact echoes for object read and control
 probes, not device ACKs. Optional runtime control candidates for sleep,
-brightness, CCT, and brightness-plus-mode still timed out over USB. A later
+brightness, CCT, and brightness-plus-mode still timed out over USB with both
+the Vega `controlMode` operation byte `0x33` and the legacy operation byte
+`0x01`. A later
 narrowed matrix confirmed `register_default_group_dev0_group0` and
-`register_default_group_dev1_group0`, then `set_sleep_obj1` still timed out.
+`register_default_group_dev1_group0`, then `set_sleep_obj1_mode0x33` still
+timed out.
 After registering device id `1`, a probe reported `device_id: 1`; registering
 device id `0` restored the original reported id.
 
@@ -57,16 +60,20 @@ control frame first words with `--control-object-ids` and
 smaller write matrix needed to investigate object-control routing. It can also
 vary the registration prelude with `--register-device-ids` and
 `--register-group-ids`, and restrict state-changing probes with
-`--control-kinds sleep,brightness,cct,brightness-with-mode`. Because alternate
-registration ids are visible in later probes, re-register the intended id after
-experiments.
+`--control-kinds sleep,brightness,cct,brightness-with-mode`. `--control-modes`
+defaults to `0x33,0x01` so one run compares the official Vega write operation
+byte with the older operation byte. Because alternate registration ids are
+visible in later probes, re-register the intended id after experiments.
 
 The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
 For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,
 `0x1101`, `0x1201`, and `0x1202` with `controlMode: "0x33"`, plus CCT range
-`2700..6500`. That is protocol evidence for the G60 feature set, but the current
-USB frame builder has not reproduced the route that makes those object commands
-ACK over USB.
+`2700..6500`. Disassembly of Vega's `libzylink.so` shows that `controlMode` is
+the `u8 op` field inside the functional payload, not the frame first word.
+Accordingly, library writes now default to op `0x33`; object reads still use op
+`0x00`, and `control_mode=0x01` is available for reproducing legacy probes.
+That is protocol evidence for the G60 feature set, but the current USB route has
+not produced ACK-confirmed object control on the attached light.
 
 The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, echo detection, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, `echoed_write`, or `response_without_matching_ack`.
 
@@ -123,6 +130,9 @@ Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
 also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
+Write endpoints, `/scene`, `/transition`, `/preset`, and write-enabled
+`/validate` accept optional `control_mode`; it defaults to `0x33` and can be
+sent as an integer or an integer string such as `"0x01"`.
 `GET /status`, `zlight status`, `read_sync_status()`, and `read_async_status()`
 are read-only and return parsed identity/status fields alongside the raw
 `CommandResult` for each global read. This gives integrations a stable polling
@@ -245,16 +255,18 @@ Firmware write commands are intentionally not exposed by this package.
 
 ## BLE Surfaces
 
-Direct ZY light service:
+Direct ZY light service used by some Zhiyun devices:
 
 - Service: `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
 - Write characteristic: `6e400002-b5a3-f393-e0a9-e50e24dcca9e`
 - Notify/read characteristic: `6e400003-b5a3-f393-e0a9-e50e24dcca9e`
 
-Mesh-related services observed in ZY Vega:
+Mesh-related services observed in ZY Vega and on the local `PL103_EDFE` G60:
 
 - Provisioning: `00001827-0000-1000-8000-00805f9b34fb`
 - Proxy: `00001828-0000-1000-8000-00805f9b34fb`
+- Local G60 write characteristic under `1827`: `00002adb-0000-1000-8000-00805f9b34fb`
+- Local G60 notify characteristic under `1827`: `00002adc-0000-1000-8000-00805f9b34fb`
 
 Older/alternate YC light service:
 
@@ -262,7 +274,7 @@ Older/alternate YC light service:
 - Write characteristic: `0000ffe1-0000-1000-8000-00805f9b34fb`
 - Read characteristic: `0000ffe2-0000-1000-8000-00805f9b34fb`
 
-Older direct ZY service observed in prior notes:
+Older direct ZY service verified on the local `PL103_EDFE` G60:
 
 - Service: `0000fee9-0000-1000-8000-00805f9b34fb`
 - Write characteristic: `d44bc439-abfd-45a2-b575-925416129600`
@@ -274,6 +286,14 @@ and `yc`. One-shot BLE CLI commands and bridge commands accept
 `--ble-notify-uuid` for custom bench routing. `AsyncZhiyunLight.ble()` and
 `AsyncZhiyunLight.isolated_ble()` expose the same profile and UUID override
 arguments.
+
+Native bundled CoreBluetooth inspection with an
+`NSBluetoothAlwaysUsageDescription` plist found service `FEE9` plus mesh service
+`1827` on the local G60. On `FEE9`, device-info, firmware, and register frames
+ACKed; legacy op `0x01` brightness/sleep controls timed out. Writing raw runtime
+frames to `1827/2ADB` disconnected immediately. Direct Swift/Python processes
+without an app bundle were killed by macOS TCC before scan results were
+returned, which matches the bleak worker `SIGABRT` diagnostics below.
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
 

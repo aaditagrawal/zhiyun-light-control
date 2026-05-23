@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
 from .models import Scene
+from .protocol import DEFAULT_CONTROL_MODE
 from .transports.ble import DEFAULT_BLE_PROFILE
 from .transports.usb import DEFAULT_LOCK_TIMEOUT
 
@@ -175,8 +176,13 @@ class SyncBleLight:
             timeout=timeout,
         )
 
-    def apply_scene(self, scene: Scene):
-        return self._run_light("apply_scene", scene)
+    def apply_scene(
+        self,
+        scene: Scene,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light("apply_scene", scene, control_mode=control_mode)
 
     def transition_scene(
         self,
@@ -186,6 +192,7 @@ class SyncBleLight:
         steps: int = 10,
         duration: float = 1.0,
         easing: str = "linear",
+        control_mode: int = DEFAULT_CONTROL_MODE,
     ):
         return self._run_light(
             "transition_scene",
@@ -194,6 +201,7 @@ class SyncBleLight:
             steps=steps,
             duration=duration,
             easing=easing,
+            control_mode=control_mode,
         )
 
     def _run_light(self, method: str, *args: object, **kwargs: object):

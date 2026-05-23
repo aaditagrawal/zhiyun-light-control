@@ -80,10 +80,14 @@ class DiscoveryTests(unittest.TestCase):
             "echoed_write",
         )
         self.assertTrue(attempts["register_default_group_dev0_group0"]["confirmed"])
-        self.assertIn("set_brightness_with_mode_obj1_mode1", attempts)
+        self.assertIn(
+            "set_brightness_with_mode_obj1_brightness_mode1_mode0x33",
+            attempts,
+        )
         self.assertEqual(payload["summary"]["confirmed"], 3)
         self.assertEqual(payload["control_object_ids"], [1])
         self.assertEqual(payload["control_first_words"], [0x0100])
+        self.assertEqual(payload["control_modes"], [0x33, 0x01])
 
     def test_usb_discovery_can_probe_control_object_ids_and_first_words(self) -> None:
         light = FakeDiscoveryLight()
@@ -101,14 +105,14 @@ class DiscoveryTests(unittest.TestCase):
 
         self.assertEqual(payload["control_object_ids"], [0, 1])
         self.assertEqual(payload["control_first_words"], [0x0100, 0x0301])
-        self.assertIn("set_brightness_obj0", attempts)
-        self.assertIn("set_brightness_obj0_fw0x0301", attempts)
+        self.assertIn("set_brightness_obj0_mode0x33", attempts)
+        self.assertIn("set_brightness_obj0_mode0x33_fw0x0301", attempts)
         self.assertEqual(
-            attempts["set_brightness_obj0_fw0x0301"]["category"],
+            attempts["set_brightness_obj0_mode0x33_fw0x0301"]["category"],
             "control_first_word_probe",
         )
         self.assertEqual(
-            attempts["set_brightness_obj0_fw0x0301"]["status"],
+            attempts["set_brightness_obj0_mode0x33_fw0x0301"]["status"],
             "echoed_write",
         )
         self.assertIn(0x0301, light.frame_first_words)
@@ -124,6 +128,7 @@ class DiscoveryTests(unittest.TestCase):
             register_device_ids=(0, 1),
             register_group_ids=(0, 2),
             control_kinds=("sleep",),
+            control_modes=(0x01,),
             allow_control=True,
         )
         payload = report.to_dict()
@@ -132,9 +137,10 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(payload["register_device_ids"], [0, 1])
         self.assertEqual(payload["register_group_ids"], [0, 2])
         self.assertEqual(payload["control_kinds"], ["sleep"])
+        self.assertEqual(payload["control_modes"], [1])
         self.assertIn("register_default_group_dev1_group2", attempts)
-        self.assertIn("set_sleep_obj1", attempts)
-        self.assertNotIn("set_brightness_obj1", attempts)
+        self.assertIn("set_sleep_obj1_mode0x01", attempts)
+        self.assertNotIn("set_brightness_obj1_mode0x01", attempts)
 
     def test_usb_discovery_rejects_unknown_control_kind(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported control kind"):

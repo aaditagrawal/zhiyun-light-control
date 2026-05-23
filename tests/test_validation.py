@@ -31,14 +31,16 @@ class FakeValidationLight:
     def __init__(self, *, ack: bool = True) -> None:
         self.ack = ack
         self.commands: list[int] = []
+        self.payloads: list[tuple[int, bytes]] = []
 
     def probe(self) -> FakeProbe:
         return FakeProbe()
 
     def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
-        del payload, timeout
+        del timeout
         self.commands.append(cmd)
-        tx = build_runtime_frame(len(self.commands), cmd)
+        self.payloads.append((cmd, payload))
+        tx = build_runtime_frame(len(self.commands), cmd, payload)
         rx = build_runtime_frame(len(self.commands), cmd, b"\x00") if self.ack else b""
         ack = first_frame(rx, cmd=cmd)
         from zhiyun_light_control.models import CommandResult
@@ -94,6 +96,16 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(payload["all_attempted_confirmed"])
         self.assertEqual(payload["unconfirmed"], [])
         self.assertIn("set_rgb", [check["name"] for check in payload["checks"]])
+
+    def test_validation_control_mode_is_sent_to_write_checks(self) -> None:
+        light = FakeValidationLight(ack=True)
+
+        validate_sync_light(light, allow_control=True, control_mode=0x01)
+
+        payloads = dict(light.payloads)
+        self.assertEqual(payloads[0x1008][2], 0x01)
+        self.assertEqual(payloads[0x1001][2], 0x01)
+        self.assertEqual(payloads[0x1002][2], 0x01)
 
 
 class AsyncValidationTests(unittest.IsolatedAsyncioTestCase):

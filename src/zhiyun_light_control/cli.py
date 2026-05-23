@@ -24,6 +24,7 @@ from .models import CommandResult, Scene
 from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
 from .protocol import (
+    DEFAULT_CONTROL_MODE,
     RuntimeCommand,
     brightness_payload,
     build_runtime_frame,
@@ -101,6 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--hue", type=float, default=0.0)
     validate.add_argument("--saturation", type=float, default=0.0)
     validate.add_argument("--intensity", type=int, default=35)
+    add_control_mode_arg(validate)
     validate.add_argument(
         "--strict",
         action="store_true",
@@ -167,6 +169,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_DISCOVERY_CONTROL_KINDS,
         help="Comma-separated control candidates to send under --allow-control.",
     )
+    discover.add_argument(
+        "--control-modes",
+        type=parse_int_list,
+        help=(
+            "Comma-separated operation bytes for gated control probes. "
+            "Defaults to the Vega control mode and legacy op=1."
+        ),
+    )
     discover.add_argument("--allow-control", action="store_true")
     discover.add_argument("--brightness", type=float, default=35.0)
     discover.add_argument("--kelvin", type=int, default=5600)
@@ -230,6 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_cmd.add_argument("--red", type=int)
     set_cmd.add_argument("--green", type=int)
     set_cmd.add_argument("--blue", type=int)
+    add_control_mode_arg(set_cmd)
     set_cmd.add_argument("--yes", action="store_true")
     set_cmd.set_defaults(func=cmd_set)
 
@@ -246,6 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--hue", type=float)
     apply.add_argument("--saturation", type=float)
     apply.add_argument("--intensity", type=int)
+    add_control_mode_arg(apply)
     apply.add_argument(
         "--preset-file", help="JSON file containing named scene presets."
     )
@@ -363,6 +375,18 @@ def add_ble_profile_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--ble-notify-uuid",
         help="Override the BLE notify/read characteristic UUID.",
+    )
+
+
+def add_control_mode_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--control-mode",
+        type=parse_int,
+        default=DEFAULT_CONTROL_MODE,
+        help=(
+            "Functional write operation byte. Defaults to Vega controlMode 0x33; "
+            "use 0x01 for legacy probes."
+        ),
     )
 
 
@@ -533,6 +557,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
                 hue=args.hue,
                 saturation=args.saturation,
                 intensity=args.intensity,
+                control_mode=args.control_mode,
             )
     print_json(report.to_dict(), compact=args.json)
     if args.strict and not report.all_attempted_confirmed:
@@ -551,6 +576,7 @@ def cmd_discover_usb(args: argparse.Namespace) -> int:
             register_device_ids=args.register_device_ids,
             register_group_ids=args.register_group_ids,
             control_kinds=args.control_kinds,
+            control_modes=args.control_modes,
             timeout=args.timeout,
             allow_control=args.allow_control,
             brightness=args.brightness,
@@ -580,6 +606,7 @@ async def _validate_ble(args: argparse.Namespace):
             hue=args.hue,
             saturation=args.saturation,
             intensity=args.intensity,
+            control_mode=args.control_mode,
         )
 
 
@@ -711,7 +738,12 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
         value = require_value(args.value, "--value is required for brightness")
         return light.exchange_runtime(
             RuntimeCommand.BRIGHTNESS,
-            brightness_payload(args.obj, value, read=False),
+            brightness_payload(
+                args.obj,
+                value,
+                read=False,
+                control_mode=args.control_mode,
+            ),
         )
     if args.kind == "cct":
         kelvin = (
@@ -723,20 +755,36 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
         )
         return light.exchange_runtime(
             RuntimeCommand.CCT,
-            cct_payload(args.obj, kelvin, read=False),
+            cct_payload(
+                args.obj,
+                kelvin,
+                read=False,
+                control_mode=args.control_mode,
+            ),
         )
     if args.kind == "sleep":
         value = int(require_value(args.value, "--value is required for sleep"))
         return light.exchange_runtime(
             RuntimeCommand.SLEEP,
-            sleep_payload(args.obj, value, read=False),
+            sleep_payload(
+                args.obj,
+                value,
+                read=False,
+                control_mode=args.control_mode,
+            ),
         )
     if args.kind == "rgb":
         if args.red is None or args.green is None or args.blue is None:
             raise SystemExit("--red, --green, and --blue are required for rgb")
         return light.exchange_runtime(
             RuntimeCommand.RGB,
-            rgb_payload(args.obj, args.red, args.green, args.blue),
+            rgb_payload(
+                args.obj,
+                args.red,
+                args.green,
+                args.blue,
+                control_mode=args.control_mode,
+            ),
         )
     raise AssertionError(args.kind)
 
@@ -747,7 +795,7 @@ async def _set_ble(args: argparse.Namespace):
             value = require_value(args.value, "--value is required for brightness")
             return await light.exchange_runtime(
                 RuntimeCommand.BRIGHTNESS,
-                brightness_payload(args.obj, value),
+                brightness_payload(args.obj, value, control_mode=args.control_mode),
             )
         if args.kind == "cct":
             kelvin = (
@@ -759,20 +807,26 @@ async def _set_ble(args: argparse.Namespace):
             )
             return await light.exchange_runtime(
                 RuntimeCommand.CCT,
-                cct_payload(args.obj, kelvin),
+                cct_payload(args.obj, kelvin, control_mode=args.control_mode),
             )
         if args.kind == "sleep":
             value = int(require_value(args.value, "--value is required for sleep"))
             return await light.exchange_runtime(
                 RuntimeCommand.SLEEP,
-                sleep_payload(args.obj, value),
+                sleep_payload(args.obj, value, control_mode=args.control_mode),
             )
         if args.kind == "rgb":
             if args.red is None or args.green is None or args.blue is None:
                 raise SystemExit("--red, --green, and --blue are required for rgb")
             return await light.exchange_runtime(
                 RuntimeCommand.RGB,
-                rgb_payload(args.obj, args.red, args.green, args.blue),
+                rgb_payload(
+                    args.obj,
+                    args.red,
+                    args.green,
+                    args.blue,
+                    control_mode=args.control_mode,
+                ),
             )
     raise AssertionError(args.kind)
 
@@ -790,7 +844,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
             return print_ble_runtime_error(exc)
     else:
         with sync_usb_light_from_args(args) as light:
-            results = light.apply_scene(scene)
+            results = light.apply_scene(scene, control_mode=args.control_mode)
     print_json(
         {"scene": scene.to_dict(), "results": [result.to_dict() for result in results]}
     )
@@ -815,7 +869,7 @@ def sync_usb_light_from_args(args: argparse.Namespace) -> ZhiyunLight:
 
 async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResult]:
     async with async_ble_light_from_args(args) as light:
-        return await light.apply_scene(scene)
+        return await light.apply_scene(scene, control_mode=args.control_mode)
 
 
 def async_ble_light_from_args(args: argparse.Namespace) -> AsyncZhiyunLight:
