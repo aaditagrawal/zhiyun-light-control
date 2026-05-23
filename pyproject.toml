@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zhiyun-light-control"
+version = "0.1.0"
+description = "USB and BLE control experiments for Zhiyun MOLUS lights."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "Aurion contributors" }
+]
+keywords = ["zhiyun", "molus", "light", "usb", "ble", "media-production"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Video",
+  "Topic :: System :: Hardware",
+]
+dependencies = []
+
+[project.optional-dependencies]
+ble = ["bleak>=0.22"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+zlight = "zhiyun_light_control.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
