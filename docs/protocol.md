@@ -249,6 +249,12 @@ them, plus `suggested_profile` when those services match `direct`, `legacy`, or
 `ZhiyunBleScan.app`, bundle id, app path, status command, and settings hint
 needed for macOS Bluetooth authorization.
 
+The same discovery payload is available from the CLI with `zlight devices`.
+Use `--include-ble-status` for the macOS helper authorization check and
+`--include-ble` for a bounded BLE scan. Requested BLE failures are returned as
+JSON diagnostics and make the CLI exit with code `2`, while USB-only listing
+does not open the light or send protocol frames.
+
 HTTP `/discover-usb` exposes the same bounded primitive matrix as
 `zlight discover-usb` for dashboard-driven bench work. The endpoint returns the
 object ids, first words, control candidate settings, summary counts, notes, and

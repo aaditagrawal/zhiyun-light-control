@@ -1065,6 +1065,76 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["devices"][0]["address"], "UUID-1")
         scan.assert_called_once_with(timeout=1.0, name_contains="PL103")
 
+    def test_devices_cli_reports_transport_discovery_state(self) -> None:
+        response = {
+            "api": "zhiyun-light-control",
+            "configured_transport": "usb",
+            "usb": {
+                "available": True,
+                "selected_port": "/dev/cu.usbmodem-test",
+                "ports": [
+                    {
+                        "path": "/dev/cu.usbmodem-test",
+                        "selected": True,
+                    }
+                ],
+            },
+            "ble": {
+                "included": True,
+                "backend": "macos-app",
+                "macos_status": {
+                    "ok": False,
+                    "authorization": "not_determined",
+                    "state": "unauthorized",
+                },
+                "scan": {
+                    "ok": False,
+                    "error": "Bluetooth state unauthorized: 3",
+                },
+            },
+        }
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.discover_transport_devices",
+                return_value=response,
+            ) as discover,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "devices",
+                    "--port",
+                    "/dev/cu.usbmodem-test",
+                    "--include-ble-status",
+                    "--include-ble",
+                    "--ble-backend",
+                    "macos-app",
+                    "--ble-timeout",
+                    "1",
+                    "--name-contains",
+                    "PL103",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 2)
+        self.assertEqual(payload["usb"]["selected_port"], "/dev/cu.usbmodem-test")
+        self.assertEqual(payload["ble"]["backend"], "macos-app")
+        self.assertEqual(payload["ble"]["macos_status"]["state"], "unauthorized")
+        discover.assert_called_once_with(
+            configured_transport="usb",
+            configured_usb_port="/dev/cu.usbmodem-test",
+            include_ble=True,
+            include_ble_status=True,
+            ble_backend="macos-app",
+            ble_timeout=1.0,
+            ble_name_contains="PL103",
+            ble_python=None,
+        )
+
     def test_inspect_ble_can_use_macos_app_backend(self) -> None:
         class FakeInspectResult:
             ok = True

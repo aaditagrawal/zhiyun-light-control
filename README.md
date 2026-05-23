@@ -48,6 +48,7 @@ From this repository:
 ```sh
 cd /Users/mav/Documents/aurion/zhiyun-light-control
 uv sync --extra ble --extra dev
+uv run zlight devices --include-ble-status --json
 uv run zlight probe --transport usb
 uv run zlight status --transport usb
 ```
@@ -144,6 +145,21 @@ uv run zlight apply --preset-file examples/scenes.json --preset key --dry-run
 ```
 
 ## CLI
+
+List local transport setup without opening the light:
+
+```sh
+uv run zlight devices --json
+uv run zlight devices --include-ble-status --json
+uv run zlight devices --include-ble --include-ble-status --ble-backend macos-app --name-contains PL103 --json
+```
+
+`devices` always reports USB serial candidates and marks the configured
+`--port` as selected. Add `--include-ble-status` to include the macOS
+`ZhiyunBleScan` helper authorization/state report, and `--include-ble` to add a
+bounded BLE scan through `worker`, `macos-app`, or `direct`. If a requested BLE
+status or scan fails, the command still prints the full JSON diagnostic and exits
+with code `2`.
 
 Probe:
 

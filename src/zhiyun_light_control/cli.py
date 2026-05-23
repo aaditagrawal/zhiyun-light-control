@@ -11,7 +11,11 @@ from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .cues import CueLibrary
-from .devices import inspect_ble_device, test_ble_endpoint_candidates
+from .devices import (
+    discover_transport_devices,
+    inspect_ble_device,
+    test_ble_endpoint_candidates,
+)
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_KINDS,
@@ -210,6 +214,50 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--sleep", type=int, default=0)
     discover.add_argument("--json", action="store_true", help="Print compact JSON.")
     discover.set_defaults(func=cmd_discover_usb)
+
+    devices = sub.add_parser(
+        "devices",
+        help="List local USB/BLE transport discovery state.",
+    )
+    devices.add_argument(
+        "--transport",
+        choices=["usb", "ble"],
+        default="usb",
+        help="Configured transport to report for bridge setup.",
+    )
+    devices.add_argument(
+        "--port",
+        help="Configured USB serial port to mark as selected.",
+    )
+    devices.add_argument(
+        "--include-ble",
+        action="store_true",
+        help="Run a bounded BLE scan and include its diagnostic result.",
+    )
+    devices.add_argument(
+        "--include-ble-status",
+        action="store_true",
+        help="Run the macOS helper Bluetooth authorization/status check.",
+    )
+    devices.add_argument(
+        "--ble-backend",
+        choices=["worker", "macos-app", "direct"],
+        default="worker",
+        help="BLE scan backend. macos-app uses a CoreBluetooth app bundle.",
+    )
+    devices.add_argument(
+        "--ble-timeout",
+        type=float,
+        default=5.0,
+        help="Seconds to wait for requested BLE status/scan checks.",
+    )
+    devices.add_argument("--name-contains", help="Filter discovered BLE names.")
+    devices.add_argument(
+        "--python",
+        help="Python executable for the crash-isolated BLE worker.",
+    )
+    devices.add_argument("--json", action="store_true", help="Print compact JSON.")
+    devices.set_defaults(func=cmd_devices)
 
     scan = sub.add_parser("scan-ble", help="Scan for likely Zhiyun BLE devices.")
     scan.add_argument("--timeout", type=float, default=5.0)
@@ -834,6 +882,36 @@ def cmd_test_ble_endpoints(args: argparse.Namespace) -> int:
     )
     print_json(result.to_dict(), compact=args.json)
     return 0 if result.ok else 2
+
+
+def cmd_devices(args: argparse.Namespace) -> int:
+    payload = discover_transport_devices(
+        configured_transport=args.transport,
+        configured_usb_port=args.port,
+        include_ble=args.include_ble,
+        include_ble_status=args.include_ble_status,
+        ble_backend=args.ble_backend,
+        ble_timeout=args.ble_timeout,
+        ble_name_contains=args.name_contains,
+        ble_python=args.python,
+    )
+    print_json(payload, compact=args.json)
+    ble = payload.get("ble")
+    if not isinstance(ble, dict):
+        return 0
+    status = ble.get("macos_status")
+    scan = ble.get("scan")
+    status_failed = (
+        args.include_ble_status
+        and isinstance(status, dict)
+        and not status.get("ok")
+    )
+    scan_failed = (
+        args.include_ble
+        and isinstance(scan, dict)
+        and not scan.get("ok")
+    )
+    return 2 if status_failed or scan_failed else 0
 
 
 def cmd_ble_helper(args: argparse.Namespace) -> int:
