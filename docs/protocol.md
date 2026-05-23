@@ -100,6 +100,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/health` | Process health |
 | `GET` | `/openapi.json` | Machine-readable bridge schema |
 | `GET` | `/probe` | Global light probe |
+| `GET` | `/status` | ACK-backed global status reads with raw command evidence |
 | `GET` | `/validate` | Read-only hardware validation report |
 | `GET` | `/commands` | List bridge commands |
 | `GET` | `/presets` | List loaded named scene presets |
@@ -120,6 +121,9 @@ Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
 also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
+`GET /status` is read-only and returns parsed identity/status fields alongside
+the raw `CommandResult` for each global read, which gives integrations a stable
+polling surface without using the gated raw-frame endpoint.
 `POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
 it is deliberately behind the same control gate because arbitrary frames can be
 state-changing. The matching CLI form is:

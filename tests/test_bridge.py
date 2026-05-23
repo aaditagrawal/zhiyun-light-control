@@ -11,7 +11,7 @@ from zhiyun_light_control import (
 )
 from zhiyun_light_control.client import ZhiyunLight
 from zhiyun_light_control.models import CommandResult
-from zhiyun_light_control.protocol import build_runtime_frame, first_frame
+from zhiyun_light_control.protocol import build_frame, build_runtime_frame, first_frame
 
 
 class FakeProbe:
@@ -24,6 +24,7 @@ class FakeAsyncLight:
         self.opened = False
         self.closed = False
         self.commands: list[tuple[int, bytes, float]] = []
+        self.frames: list[tuple[int, int, bytes, float]] = []
         self.scenes: list[Scene] = []
 
     async def __aenter__(self) -> FakeAsyncLight:
@@ -46,6 +47,20 @@ class FakeAsyncLight:
         self.commands.append((cmd, payload, timeout))
         tx = build_runtime_frame(1, cmd, payload)
         rx = build_runtime_frame(1, cmd, b"\x00")
+        ack = first_frame(rx, cmd=cmd)
+        return CommandResult(cmd, tx, rx, (ack,), ack)
+
+    async def exchange_frame(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        self.frames.append((first_word, cmd, payload, timeout))
+        tx = build_frame(first_word, 1, cmd, payload)
+        rx = build_frame(first_word, 1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
@@ -106,6 +121,11 @@ class BridgeFactoryTests(unittest.TestCase):
             with factory() as light:
                 probe = light.probe()
                 result = light.exchange_runtime(0x1001, b"\x01", timeout=0.25)
+                frame_result = light.exchange_frame(
+                    0x0100,
+                    0x2001,
+                    timeout=0.35,
+                )
                 scene_results = light.apply_scene(scene)
 
         make_ble.assert_called_once_with(
@@ -122,7 +142,9 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertTrue(fake.closed)
         self.assertEqual(probe.to_dict()["firmware"], "ble-test")
         self.assertEqual(result.command, 0x1001)
+        self.assertEqual(frame_result.command, 0x2001)
         self.assertEqual(fake.commands, [(0x1001, b"\x01", 0.25)])
+        self.assertEqual(fake.frames, [(0x0100, 0x2001, b"", 0.35)])
         self.assertEqual(fake.scenes, [scene])
         self.assertEqual(scene_results, [])
 

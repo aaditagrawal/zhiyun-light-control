@@ -24,6 +24,7 @@ from .protocol import (
     sleep_payload,
 )
 from .state import SceneStateTracker, results_confirmed, unconfirmed_results_reason
+from .status import read_sync_status
 from .validation import validate_sync_light
 
 
@@ -63,6 +64,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/health",
                         "/openapi.json",
                         "/probe",
+                        "/status",
                         "/validate",
                         "/commands",
                         "/presets",
@@ -101,6 +103,10 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         if path == "/probe":
             with self.server.light_factory() as light:
                 self._json(light.probe().to_dict())
+            return
+        if path == "/status":
+            with self.server.light_factory() as light:
+                self._json(read_sync_status(light, transport="http").to_dict())
             return
         if path == "/validate":
             self._json(self._handle_validate({}))
@@ -398,6 +404,12 @@ def openapi_schema() -> dict[str, object]:
                 "get": _operation("List supported bridge endpoints", "Commands")
             },
             "/probe": {"get": _operation("Probe the connected light", "Probe")},
+            "/status": {
+                "get": _operation(
+                    "Read ACK-backed light status",
+                    "Status",
+                )
+            },
             "/validate": {
                 "get": _operation("Run read-only hardware validation", "Validation"),
                 "post": _operation(
@@ -545,6 +557,7 @@ def _openapi_schemas() -> dict[str, object]:
                 "voltage_status": {"type": ["integer", "null"]},
             },
         },
+        "Status": {"type": "object", "additionalProperties": True},
         "CommandResult": {
             "type": "object",
             "additionalProperties": True,

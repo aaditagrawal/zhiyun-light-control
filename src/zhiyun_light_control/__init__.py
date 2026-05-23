@@ -29,6 +29,7 @@ from .protocol import (
 )
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 from .state import SceneState, SceneStateTracker
+from .status import LightStatusReport, read_sync_status
 from .transitions import SceneTransition, interpolate_scene, scene_transition
 from .transports.ble import (
     BLE_PROFILE_NAMES,
@@ -65,6 +66,7 @@ __all__ = [
     "DmxMapping",
     "DiscoveryAttempt",
     "LightConnectionConfig",
+    "LightStatusReport",
     "HardwareValidationReport",
     "PersistentLightFactory",
     "PrimitiveCheck",
@@ -88,6 +90,7 @@ __all__ = [
     "encode_sacn",
     "iter_frames",
     "sacn_multicast_address",
+    "read_sync_status",
     "resolve_ble_profile",
     "make_light_factory",
     "merge_scene",

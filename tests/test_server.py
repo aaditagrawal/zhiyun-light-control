@@ -9,7 +9,12 @@ from urllib.request import Request, urlopen
 
 from zhiyun_light_control.models import CommandResult, Scene
 from zhiyun_light_control.presets import ScenePresetLibrary
-from zhiyun_light_control.protocol import build_frame, build_runtime_frame, first_frame
+from zhiyun_light_control.protocol import (
+    RuntimeCommand,
+    build_frame,
+    build_runtime_frame,
+    first_frame,
+)
 from zhiyun_light_control.server import LightHttpServer
 
 
@@ -37,7 +42,13 @@ class FakeLight:
         del payload, timeout
         self.commands.append(cmd)
         tx = build_runtime_frame(1, cmd)
-        rx = build_runtime_frame(1, cmd, b"\x00")
+        payload_by_cmd = {
+            RuntimeCommand.DEVICE_INFO: b"device-test\x00pl103\x00",
+            RuntimeCommand.FIRMWARE: b"1.6.4\x00",
+            RuntimeCommand.VOLTAGE: b"\x65",
+            RuntimeCommand.DEVICE_ID: b"\x00\x00",
+        }
+        rx = build_runtime_frame(1, cmd, payload_by_cmd.get(cmd, b"\x00"))
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
@@ -251,8 +262,18 @@ class ServerTests(unittest.TestCase):
         base = f"http://127.0.0.1:{server.server_port}"
         try:
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
+            self.assertIn("/status", commands["get"])
             self.assertIn("/validate", commands["get"])
             self.assertIn("/validate", commands["post"])
+
+            status = json.loads(urlopen(f"{base}/status", timeout=3).read())
+            self.assertTrue(status["connection_confirmed"])
+            self.assertEqual(status["device_identifier"], "device-test")
+            self.assertEqual(status["generation"], "pl103")
+            self.assertEqual(status["firmware"], "1.6.4")
+            self.assertEqual(status["voltage_status"], 0x65)
+            self.assertEqual(status["device_id"], 0)
+            self.assertTrue(status["commands"]["voltage"]["acknowledged"])
 
             report = json.loads(urlopen(f"{base}/validate", timeout=3).read())
             self.assertTrue(report["connection_confirmed"])
@@ -365,12 +386,15 @@ class ServerTests(unittest.TestCase):
             )
             self.assertEqual(schema["openapi"], "3.1.0")
             self.assertIn("/scene", schema["paths"])
+            self.assertIn("/status", schema["paths"])
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
             self.assertIn("CommandResult", schema["components"]["schemas"])
+            self.assertIn("Status", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])
+            self.assertIn("/status", commands["get"])
             self.assertIn("/frame", commands["post"])
 
             options = Request(f"{base}/scene", method="OPTIONS")

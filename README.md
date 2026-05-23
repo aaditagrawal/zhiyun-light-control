@@ -222,6 +222,7 @@ Useful HTTP calls:
 
 ```sh
 curl http://127.0.0.1:8765/probe
+curl http://127.0.0.1:8765/status
 curl http://127.0.0.1:8765/openapi.json
 curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
@@ -255,6 +256,10 @@ statuses behind it. Its `applied` field is ACK-based: it is `true` only when all
 command results for that request were acknowledged by the light. If a command
 was sent but not confirmed, `applied` is `false` and `reason` carries values
 such as `sent_no_response` or `echoed_write`.
+
+`GET /status` returns read-only identity/status fields plus the raw
+`CommandResult` evidence for global device info, firmware, voltage/status,
+device id, and updater chip sync when that transport exposes it.
 
 `GET /validate` returns the same hardware-evidence report as `zlight validate`
 without transmitting control writes. `POST /validate` accepts

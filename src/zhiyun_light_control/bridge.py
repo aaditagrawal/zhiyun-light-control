@@ -159,6 +159,22 @@ class SyncBleLight:
     ):
         return self._run_light("exchange_runtime", cmd, payload, timeout=timeout)
 
+    def exchange_frame(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ):
+        return self._run_light(
+            "exchange_frame",
+            first_word,
+            cmd,
+            payload,
+            timeout=timeout,
+        )
+
     def apply_scene(self, scene: Scene):
         return self._run_light("apply_scene", scene)
 
@@ -220,6 +236,6 @@ class SyncBleLight:
 
 def _get_event_loop() -> asyncio.AbstractEventLoop | None:
     try:
-        return asyncio.get_event_loop()
+        return asyncio.get_running_loop()
     except RuntimeError:
         return None
