@@ -26,20 +26,27 @@ Known global runtime commands:
 
 Known object commands:
 
-| Command | Name | Payload shape |
-| --- | --- | --- |
-| `0x1001` | Brightness | `u16 obj, u8 op, float value` |
-| `0x1002` | CCT | `u16 obj, u8 op, u16 kelvin` |
-| `0x1003` | RGB | `u16 obj, u8 op, u16 r, u16 g, u16 b` |
-| `0x1008` | Sleep/power | `u16 obj, u8 op, u8 value` |
-| `0x100a` | HSI | `u16 obj, u8 op, float h, float s, u16 intensity` |
-| `0x100b` | Brightness plus mode | `u16 obj, u8 op, float brightness, i8 mode` |
-| `0x1101` | Identify | `u16 obj` |
-| `0x1201` | Voltage by object | `u16 obj` |
-| `0x1202` | Firmware by object | `u16 obj` |
-| `0x1203` | Device mode | `u16 obj` |
+| Command | Name | Payload shape | Current USB status |
+| --- | --- | --- | --- |
+| `0x1001` | Brightness | `u16 obj, u8 op, float value` | `sent_no_response` on G60 `1.6.4` |
+| `0x1002` | CCT | `u16 obj, u8 op, u16 kelvin` | `sent_no_response` on G60 `1.6.4` |
+| `0x1003` | RGB | `u16 obj, u8 op, u16 r, u16 g, u16 b` | `sent_no_response` on G60 `1.6.4` |
+| `0x1008` | Sleep/power | `u16 obj, u8 op, u8 value` | `sent_no_response` on G60 `1.6.4` |
+| `0x100a` | HSI | `u16 obj, u8 op, float h, float s, u16 intensity` | `sent_no_response` on G60 `1.6.4` |
+| `0x100b` | Brightness plus mode | `u16 obj, u8 op, float brightness, i8 mode` | `sent_no_response` on G60 `1.6.4` |
+| `0x1101` | Identify | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
+| `0x1201` | Voltage by object | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
+| `0x1202` | Firmware by object | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
+| `0x1203` | Device mode | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
 
 Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0`, `1`, `2`, `100`, `0x8001`, `0x8064`, and `0xffff` did not respond. The `zlight discover-usb` matrix also tested first-word values `0x0100`, `0x0101`, `0x0103`, and `0x0301`; only `0x0301` produced an exact echo for `read_brightness_obj0`, not a device ACK. Optional safe control candidates for sleep, brightness, CCT, and brightness-plus-mode also timed out over USB.
+
+The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
+For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,
+`0x1101`, `0x1201`, and `0x1202` with `controlMode: "0x33"`, plus CCT range
+`2700..6500`. That is protocol evidence for the G60 feature set, but the current
+USB frame builder has not reproduced the route that makes those object commands
+ACK over USB.
 
 The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, echo detection, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, `echoed_write`, or `response_without_matching_ack`.
 
@@ -50,6 +57,10 @@ that receives no response remains `sent_no_response`, not confirmed. An exact
 write echo is reported as `echoed_write` and is also not confirmed. Use
 `zlight validate --strict` in automation when unconfirmed attempted primitives
 should fail the run.
+
+The direct CLI commands `register`, `read`, `set`, and `apply` use the same ACK
+definition for their process exit status. They print the full `CommandResult`
+payload either way, but unacknowledged transmissions return exit code `1`.
 
 ## Media Integration Surface
 
@@ -178,9 +189,9 @@ Firmware write commands are intentionally not exposed by this package.
 
 Direct ZY light service:
 
-- Service: `0000fee9-0000-1000-8000-00805f9b34fb`
-- Write characteristic: `d44bc439-abfd-45a2-b575-925416129600`
-- Notify/read characteristic: `d44bc439-abfd-45a2-b575-925416129601`
+- Service: `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
+- Write characteristic: `6e400002-b5a3-f393-e0a9-e50e24dcca9e`
+- Notify/read characteristic: `6e400003-b5a3-f393-e0a9-e50e24dcca9e`
 
 Mesh-related services observed in ZY Vega:
 
@@ -192,6 +203,12 @@ Older/alternate YC light service:
 - Service: `0000ffe0-0000-1000-8000-00805f9b34fb`
 - Write characteristic: `0000ffe1-0000-1000-8000-00805f9b34fb`
 - Read characteristic: `0000ffe2-0000-1000-8000-00805f9b34fb`
+
+Older direct ZY service observed in prior notes:
+
+- Service: `0000fee9-0000-1000-8000-00805f9b34fb`
+- Write characteristic: `d44bc439-abfd-45a2-b575-925416129600`
+- Notify/read characteristic: `d44bc439-abfd-45a2-b575-925416129601`
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
 

@@ -19,11 +19,20 @@ from typing import Any
 from ..protocol import iter_frames
 
 
-DIRECT_ZY_SERVICE_UUID = "0000fee9-0000-1000-8000-00805f9b34fb"
-DIRECT_ZY_WRITE_UUID = "d44bc439-abfd-45a2-b575-925416129600"
-DIRECT_ZY_NOTIFY_UUID = "d44bc439-abfd-45a2-b575-925416129601"
+DIRECT_ZY_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
+DIRECT_ZY_WRITE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
+DIRECT_ZY_NOTIFY_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+LEGACY_ZY_SERVICE_UUID = "0000fee9-0000-1000-8000-00805f9b34fb"
+LEGACY_ZY_WRITE_UUID = "d44bc439-abfd-45a2-b575-925416129600"
+LEGACY_ZY_NOTIFY_UUID = "d44bc439-abfd-45a2-b575-925416129601"
 MESH_PROVISIONING_SERVICE_UUID = "00001827-0000-1000-8000-00805f9b34fb"
 MESH_PROXY_SERVICE_UUID = "00001828-0000-1000-8000-00805f9b34fb"
+KNOWN_ZHIYUN_SERVICE_UUIDS = {
+    DIRECT_ZY_SERVICE_UUID,
+    LEGACY_ZY_SERVICE_UUID,
+    MESH_PROVISIONING_SERVICE_UUID,
+    MESH_PROXY_SERVICE_UUID,
+}
 
 
 @dataclass(frozen=True)
@@ -153,14 +162,7 @@ async def scan_zhiyun_devices(timeout: float = 5.0) -> list[BleDevice]:
         service_uuids = {uuid.lower() for uuid in (adv.service_uuids or [])}
         name = device.name or adv.local_name
         name_hit = bool(name and any(part in name.lower() for part in ("zhiyun", "molus", "g60", "zy")))
-        service_hit = bool(
-            {
-                DIRECT_ZY_SERVICE_UUID,
-                MESH_PROVISIONING_SERVICE_UUID,
-                MESH_PROXY_SERVICE_UUID,
-            }
-            & service_uuids
-        )
+        service_hit = bool(KNOWN_ZHIYUN_SERVICE_UUIDS & service_uuids)
         if name_hit or service_hit:
             found.append(BleDevice(address=device.address, name=name, rssi=adv.rssi))
     return found

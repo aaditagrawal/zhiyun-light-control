@@ -382,7 +382,7 @@ def cmd_register(args: argparse.Namespace) -> int:
                 register_payload(args.device_id),
             )
     print_json(result.to_dict())
-    return 0
+    return command_result_exit_code(result)
 
 
 async def _register_ble(args: argparse.Namespace):
@@ -404,7 +404,7 @@ def cmd_read(args: argparse.Namespace) -> int:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             result = _read_usb(light, args)
     print_json(result.to_dict())
-    return 0
+    return command_result_exit_code(result)
 
 
 def _read_usb(light: ZhiyunLight, args: argparse.Namespace) -> CommandResult:
@@ -446,7 +446,7 @@ def cmd_set(args: argparse.Namespace) -> int:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             result = _set_usb(light, args)
     print_json(result.to_dict())
-    return 0
+    return command_result_exit_code(result)
 
 
 def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
@@ -532,7 +532,15 @@ def cmd_apply(args: argparse.Namespace) -> int:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             results = light.apply_scene(scene)
     print_json({"scene": scene.to_dict(), "results": [result.to_dict() for result in results]})
-    return 0
+    return command_results_exit_code(results)
+
+
+def command_result_exit_code(result: CommandResult) -> int:
+    return 0 if result.acknowledged else 1
+
+
+def command_results_exit_code(results: list[CommandResult]) -> int:
+    return 0 if all(result.acknowledged for result in results) else 1
 
 
 async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResult]:

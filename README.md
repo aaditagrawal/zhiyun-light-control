@@ -20,7 +20,7 @@ Verified over USB on the G60:
 Implemented and still experimental:
 
 - Brightness, CCT, sleep/power, RGB, HSI, and scene application.
-- BLE transport using the direct ZY service and characteristics seen in ZY Vega.
+- BLE transport using the direct ZY light service and characteristics seen in ZY Vega.
 - Local HTTP, OSC, Art-Net, and sACN bridges for production tools.
 - Named scene presets loaded from JSON.
 - Requested-state tracking for bridge clients.
@@ -70,6 +70,11 @@ Register the current session to the default group before object-scoped control:
 uv run zlight register --transport usb --device-id 0 --yes
 ```
 
+On the currently attached G60, USB registration ACKs but object-scoped
+brightness/CCT/sleep writes still time out. Treat `set` and `apply` as bench
+commands until `validate --allow-control` reports ACK-confirmed results on your
+transport.
+
 Run a structured hardware validation report:
 
 ```sh
@@ -80,6 +85,10 @@ uv run zlight validate --transport usb --allow-control --include-object-reads
 The validation report separates ACK-confirmed primitives from frames that were
 sent but not acknowledged by the device. Use `--strict` when you want a non-zero
 exit unless every attempted command was ACK-confirmed.
+
+Direct `register`, `read`, `set`, and `apply` commands also exit non-zero when
+the transmitted command does not receive an ACK, so shell scripts can distinguish
+working primitives from timeouts.
 
 Run the broader USB discovery matrix while working on unknown primitive shapes:
 
@@ -374,12 +383,17 @@ The locally verified firmware update result is:
 ```text
 firmware: 1.6.4
 generation: pl103
-device_id: 1 after registration
+device_id: 0
 chip_sync core: HDL
 product: 0x0541
 hardware: 0x0840
 updater firmware: 1.64
 ```
+
+The latest local hardware pass, run against `/dev/cu.usbmodem21301`, confirmed
+probe, global firmware/voltage/device-id reads, register-default-group, and
+updater chip sync. It did not confirm USB brightness, CCT, sleep, RGB, HSI, or
+object reads; those returned `sent_no_response`.
 
 Zhiyun did not expose detailed release notes through the protocol data gathered
 here, so behavior claims in this project are based on observed commands rather

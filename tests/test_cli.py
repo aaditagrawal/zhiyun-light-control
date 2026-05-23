@@ -92,6 +92,50 @@ class CliTests(unittest.TestCase):
         self.assertFalse(payload["all_attempted_confirmed"])
         self.assertIn("set_brightness", payload["unconfirmed"])
 
+    def test_set_returns_nonzero_when_command_is_unacknowledged(self) -> None:
+        class FakeLight:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.8):
+                del payload, timeout
+                tx = build_runtime_frame(1, cmd)
+                return CommandResult(cmd, tx, b"", (), None)
+
+        stdout = io.StringIO()
+        with patch("zhiyun_light_control.cli.ZhiyunLight.usb", return_value=FakeLight()):
+            with contextlib.redirect_stdout(stdout):
+                code = main(["set", "brightness", "--value", "35", "--yes"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 1)
+        self.assertFalse(payload["acknowledged"])
+        self.assertEqual(payload["transport_status"], "sent_no_response")
+
+    def test_apply_returns_nonzero_when_any_command_is_unacknowledged(self) -> None:
+        class FakeLight:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def apply_scene(self, _scene):
+                tx = build_runtime_frame(1, RuntimeCommand.BRIGHTNESS)
+                return [CommandResult(RuntimeCommand.BRIGHTNESS, tx, b"", (), None)]
+
+        stdout = io.StringIO()
+        with patch("zhiyun_light_control.cli.ZhiyunLight.usb", return_value=FakeLight()):
+            with contextlib.redirect_stdout(stdout):
+                code = main(["apply", "--brightness", "35", "--yes"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 1)
+        self.assertEqual(payload["results"][0]["transport_status"], "sent_no_response")
+
     def test_discover_usb_cli_runs_matrix(self) -> None:
         class FakeLight:
             def __init__(self) -> None:

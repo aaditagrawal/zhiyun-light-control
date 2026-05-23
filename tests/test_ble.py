@@ -6,7 +6,12 @@ import unittest
 from unittest.mock import patch
 
 from zhiyun_light_control.protocol import RuntimeCommand, build_runtime_frame, first_frame
-from zhiyun_light_control.transports.ble import BleTransport, scan_zhiyun_devices, scan_zhiyun_devices_safe
+from zhiyun_light_control.transports.ble import (
+    DIRECT_ZY_WRITE_UUID,
+    BleTransport,
+    scan_zhiyun_devices,
+    scan_zhiyun_devices_safe,
+)
 
 
 class FakeDevice:
@@ -102,6 +107,13 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
                         FakeDevice("BB", "Keyboard"),
                         FakeAdvertisement(rssi=-50),
                     ),
+                    "three": (
+                        FakeDevice("CC", "Unknown"),
+                        FakeAdvertisement(
+                            service_uuids=["6E400001-B5A3-F393-E0A9-E50E24DCCA9E"],
+                            rssi=-60,
+                        ),
+                    ),
                 }
 
         with patch(
@@ -110,9 +122,10 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         ):
             devices = await scan_zhiyun_devices(timeout=1.0)
 
-        self.assertEqual(len(devices), 1)
+        self.assertEqual(len(devices), 2)
         self.assertEqual(devices[0].address, "AA")
         self.assertEqual(devices[0].name, "MOLUS G60")
+        self.assertEqual(devices[1].address, "CC")
 
     async def test_transport_exchange_uses_write_and_notify_characteristics(self) -> None:
         class FakeClient:
@@ -151,7 +164,7 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
                 rx = await transport.exchange(tx, timeout=1.0)
 
         self.assertTrue(rx)
-        self.assertEqual(FakeClient.writes[0][0], "d44bc439-abfd-45a2-b575-925416129600")
+        self.assertEqual(FakeClient.writes[0][0], DIRECT_ZY_WRITE_UUID)
         self.assertFalse(FakeClient.writes[0][2])
         self.assertEqual(first_frame(rx).cmd, RuntimeCommand.DEVICE_INFO)
 
