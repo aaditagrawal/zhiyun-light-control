@@ -100,6 +100,12 @@ class AsyncControllerTests(unittest.IsolatedAsyncioTestCase):
             [sent.brightness for sent in light.scenes],
             [10, 35.0],
         )
+        self.assertEqual(controller.state()["action"], "preset")
+        self.assertEqual(controller.state()["scene"]["brightness"], 35.0)
+        self.assertEqual(controller.state_snapshot()["version"], 2)
+        history = controller.state_history(limit=1)
+        self.assertEqual(history["events"][0]["version"], 2)
+        self.assertEqual(history["events"][0]["state"]["action"], "preset")
 
     async def test_async_controller_runs_sequences_and_stops_on_unconfirmed(
         self,
@@ -151,11 +157,14 @@ class AsyncControllerTests(unittest.IsolatedAsyncioTestCase):
         plan = controller.plan_sequence(cues.get("intro")["steps"])
 
         self.assertEqual(response["cue"], "intro")
+        self.assertEqual(response["action"], "cue")
         self.assertTrue(response["applied"])
         self.assertEqual(response["steps"][1]["action"], "transition")
         self.assertEqual(light.transitions[0][2], 2)
         self.assertEqual(plan["steps"][1]["from"]["brightness"], 10.0)
         self.assertEqual(plan["scene"]["brightness"], 30.0)
+        self.assertEqual(controller.state()["action"], "cue")
+        self.assertEqual(controller.state()["scene"]["brightness"], 30.0)
 
     async def test_async_controller_strict_mode_raises_for_unconfirmed(self) -> None:
         light = FakeAsyncLight(acknowledged=False)
@@ -169,6 +178,22 @@ class AsyncControllerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(error.exception.action, "scene")
         self.assertEqual(error.exception.statuses, ["sent_no_response"])
+        self.assertFalse(controller.state()["applied"])
+        self.assertEqual(controller.state()["reason"], "sent_no_response")
+
+    async def test_async_controller_waits_for_state_updates(self) -> None:
+        controller = AsyncLightController(
+            light_factory=FakeAsyncFactory(FakeAsyncLight())
+        )
+
+        empty = controller.state_snapshot()
+        self.assertEqual(empty, {"version": 0, "state": {"scene": None}})
+
+        await controller.apply_scene(Scene(obj=1, brightness=10))
+        update = controller.wait_for_state_update(0, timeout=0.1)
+
+        self.assertEqual(update["version"], 1)
+        self.assertEqual(update["state"]["scene"]["brightness"], 10)
 
     async def test_async_controller_rejects_malformed_cue_steps(self) -> None:
         controller = AsyncLightController(

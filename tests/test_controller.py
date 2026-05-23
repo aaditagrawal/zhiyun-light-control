@@ -89,6 +89,13 @@ class ControllerTests(unittest.TestCase):
             [sent.brightness for sent in light.scenes],
             [10, 35.0],
         )
+        self.assertEqual(controller.state()["action"], "preset")
+        self.assertEqual(controller.state()["scene"]["brightness"], 35.0)
+        self.assertEqual(controller.state_snapshot()["version"], 2)
+        history = controller.state_history()
+        self.assertEqual([event["version"] for event in history["events"]], [1, 2])
+        self.assertEqual(history["events"][0]["state"]["action"], "scene")
+        self.assertEqual(history["events"][1]["state"]["action"], "preset")
 
     def test_controller_runs_sequences_and_stops_on_unconfirmed_steps(self) -> None:
         light = FakeLight(acknowledged=False)
@@ -135,11 +142,14 @@ class ControllerTests(unittest.TestCase):
         plan = controller.plan_sequence(cues.get("intro")["steps"])
 
         self.assertEqual(response["cue"], "intro")
+        self.assertEqual(response["action"], "cue")
         self.assertTrue(response["applied"])
         self.assertEqual(response["steps"][1]["action"], "transition")
         self.assertEqual(light.transitions[0][2], 2)
         self.assertEqual(plan["steps"][1]["from"]["brightness"], 10.0)
         self.assertEqual(plan["scene"]["brightness"], 30.0)
+        self.assertEqual(controller.state()["action"], "cue")
+        self.assertEqual(controller.state()["scene"]["brightness"], 30.0)
 
     def test_controller_strict_mode_raises_for_unconfirmed_control(self) -> None:
         light = FakeLight(acknowledged=False)
@@ -153,6 +163,20 @@ class ControllerTests(unittest.TestCase):
 
         self.assertEqual(error.exception.action, "scene")
         self.assertEqual(error.exception.statuses, ["sent_no_response"])
+        self.assertFalse(controller.state()["applied"])
+        self.assertEqual(controller.state()["reason"], "sent_no_response")
+
+    def test_controller_waits_for_state_updates(self) -> None:
+        controller = LightController(light_factory=FakeFactory(FakeLight()))
+
+        empty = controller.state_snapshot()
+        self.assertEqual(empty, {"version": 0, "state": {"scene": None}})
+
+        controller.apply_scene(Scene(obj=1, brightness=10))
+        update = controller.wait_for_state_update(0, timeout=0.1)
+
+        self.assertEqual(update["version"], 1)
+        self.assertEqual(update["state"]["scene"]["brightness"], 10)
 
     def test_controller_rejects_malformed_cue_steps(self) -> None:
         controller = LightController(light_factory=FakeFactory(FakeLight()))

@@ -27,7 +27,12 @@ from .presets import (
     scene_from_optional_mapping,
 )
 from .protocol import DEFAULT_CONTROL_MODE
-from .state import results_confirmed, unconfirmed_results_reason
+from .state import (
+    SceneState,
+    SceneStateTracker,
+    results_confirmed,
+    unconfirmed_results_reason,
+)
 
 AsyncLightFactory = Callable[[], object]
 
@@ -42,6 +47,7 @@ class LightController:
         light_factory: LightFactory | None = None,
         preset_library: ScenePresetLibrary | None = None,
         cue_library: CueLibrary | None = None,
+        state_tracker: SceneStateTracker | None = None,
         control_mode: int = DEFAULT_CONTROL_MODE,
         require_acknowledged: bool = False,
     ) -> None:
@@ -50,6 +56,7 @@ class LightController:
         self.light_factory = light_factory
         self.preset_library = preset_library
         self.cue_library = cue_library
+        self.state_tracker = state_tracker or SceneStateTracker()
         self.control_mode = control_mode
         self.require_acknowledged = require_acknowledged
 
@@ -79,6 +86,7 @@ class LightController:
                 resolved,
                 control_mode=self._control_mode(control_mode),
             )
+        self._record_scene(resolved, "scene", results)
         self._require_acknowledged(results, require_acknowledged, action="scene")
         return _scene_response("scene", resolved, results)
 
@@ -107,6 +115,7 @@ class LightController:
                 scene,
                 control_mode=self._control_mode(control_mode),
             )
+        self._record_scene(scene, "preset", results)
         self._require_acknowledged(results, require_acknowledged, action="preset")
         return {
             "preset": name,
@@ -132,7 +141,9 @@ class LightController:
                 obj=obj,
                 stop_on_unconfirmed=stop_on_unconfirmed,
                 control_mode=self._control_mode(control_mode),
+                action="sequence",
             )
+        self._record_response_scene(response, "sequence", results)
         self._require_acknowledged(results, require_acknowledged, action="sequence")
         return response
 
@@ -145,12 +156,45 @@ class LightController:
         require_acknowledged: bool | None = None,
     ) -> dict[str, object]:
         stop_on_unconfirmed = bool(cue.get("stop_on_unconfirmed"))
-        return self.run_sequence(
-            _cue_steps(cue.get("steps")),
-            obj=obj,
-            stop_on_unconfirmed=stop_on_unconfirmed,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
+        step_items = _cue_steps(cue.get("steps"))
+        with self.light_factory() as light:
+            response, results = self._run_sequence_on_light(
+                light,
+                step_items,
+                obj=obj,
+                stop_on_unconfirmed=stop_on_unconfirmed,
+                control_mode=self._control_mode(control_mode),
+                action="cue",
+            )
+        self._record_response_scene(response, "cue", results)
+        self._require_acknowledged(results, require_acknowledged, action="cue")
+        return response
+
+    def state(self) -> dict[str, object]:
+        return self.state_tracker.to_dict()
+
+    def state_snapshot(self) -> dict[str, object]:
+        version, state = self.state_tracker.versioned_snapshot()
+        return _state_payload(version, state)
+
+    def state_history(
+        self,
+        *,
+        after_version: int = 0,
+        limit: int | None = None,
+    ) -> dict[str, object]:
+        return _history_payload(
+            self.state_tracker.history(after_version=after_version, limit=limit)
+        )
+
+    def wait_for_state_update(
+        self,
+        after_version: int,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, object]:
+        return _state_payload(
+            *self.state_tracker.wait_for_update(after_version, timeout=timeout)
         )
 
     def run_named_cue(
@@ -195,6 +239,7 @@ class LightController:
         obj: int,
         stop_on_unconfirmed: bool,
         control_mode: int,
+        action: str,
     ) -> tuple[dict[str, object], list[CommandResult]]:
         current_scene: Scene | None = None
         all_results: list[CommandResult] = []
@@ -216,7 +261,7 @@ class LightController:
                 break
         return (
             {
-                "action": "sequence",
+                "action": action,
                 "steps": step_responses,
                 "scene": None if current_scene is None else current_scene.to_dict(),
                 "stopped": stopped,
@@ -257,6 +302,32 @@ class LightController:
             response = _scene_response("scene", scene, results)
         response["index"] = index
         return response, scene, results
+
+    def _record_scene(
+        self,
+        scene: Scene,
+        action: str,
+        results: Iterable[CommandResult],
+    ) -> None:
+        result_items = list(results)
+        self.state_tracker.record(
+            scene,
+            source="sdk",
+            action=action,
+            applied=results_confirmed(tuple(result_items)),
+            reason=_results_reason(result_items),
+            results=result_items,
+        )
+
+    def _record_response_scene(
+        self,
+        response: Mapping[str, object],
+        action: str,
+        results: Iterable[CommandResult],
+    ) -> None:
+        scene = _response_scene(response)
+        if scene is not None:
+            self._record_scene(scene, action, results)
 
     def _run_preset_step(
         self,
@@ -354,6 +425,7 @@ class AsyncLightController:
         light_factory: AsyncLightFactory | None = None,
         preset_library: ScenePresetLibrary | None = None,
         cue_library: CueLibrary | None = None,
+        state_tracker: SceneStateTracker | None = None,
         control_mode: int = DEFAULT_CONTROL_MODE,
         require_acknowledged: bool = False,
     ) -> None:
@@ -367,6 +439,7 @@ class AsyncLightController:
         self.light_factory = light_factory
         self.preset_library = preset_library
         self.cue_library = cue_library
+        self.state_tracker = state_tracker or SceneStateTracker()
         self.control_mode = control_mode
         self.require_acknowledged = require_acknowledged
 
@@ -396,6 +469,7 @@ class AsyncLightController:
                 resolved,
                 control_mode=self._control_mode(control_mode),
             )
+        self._record_scene(resolved, "scene", results)
         self._require_acknowledged(results, require_acknowledged, action="scene")
         return _scene_response("scene", resolved, results)
 
@@ -428,6 +502,7 @@ class AsyncLightController:
                 scene,
                 control_mode=self._control_mode(control_mode),
             )
+        self._record_scene(scene, "preset", results)
         self._require_acknowledged(results, require_acknowledged, action="preset")
         return {"preset": name, **_scene_response("preset", scene, results)}
 
@@ -450,7 +525,9 @@ class AsyncLightController:
                 obj=obj,
                 stop_on_unconfirmed=stop_on_unconfirmed,
                 control_mode=self._control_mode(control_mode),
+                action="sequence",
             )
+        self._record_response_scene(response, "sequence", results)
         self._require_acknowledged(results, require_acknowledged, action="sequence")
         return response
 
@@ -462,12 +539,45 @@ class AsyncLightController:
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
     ) -> dict[str, object]:
-        return await self.run_sequence(
-            _cue_steps(cue.get("steps")),
-            obj=obj,
-            stop_on_unconfirmed=bool(cue.get("stop_on_unconfirmed")),
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
+        step_items = _cue_steps(cue.get("steps"))
+        async with self.light_factory() as light:
+            response, results = await self._run_sequence_on_light(
+                light,
+                step_items,
+                obj=obj,
+                stop_on_unconfirmed=bool(cue.get("stop_on_unconfirmed")),
+                control_mode=self._control_mode(control_mode),
+                action="cue",
+            )
+        self._record_response_scene(response, "cue", results)
+        self._require_acknowledged(results, require_acknowledged, action="cue")
+        return response
+
+    def state(self) -> dict[str, object]:
+        return self.state_tracker.to_dict()
+
+    def state_snapshot(self) -> dict[str, object]:
+        version, state = self.state_tracker.versioned_snapshot()
+        return _state_payload(version, state)
+
+    def state_history(
+        self,
+        *,
+        after_version: int = 0,
+        limit: int | None = None,
+    ) -> dict[str, object]:
+        return _history_payload(
+            self.state_tracker.history(after_version=after_version, limit=limit)
+        )
+
+    def wait_for_state_update(
+        self,
+        after_version: int,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, object]:
+        return _state_payload(
+            *self.state_tracker.wait_for_update(after_version, timeout=timeout)
         )
 
     async def run_named_cue(
@@ -512,6 +622,7 @@ class AsyncLightController:
         obj: int,
         stop_on_unconfirmed: bool,
         control_mode: int,
+        action: str,
     ) -> tuple[dict[str, object], list[CommandResult]]:
         current_scene: Scene | None = None
         all_results: list[CommandResult] = []
@@ -533,7 +644,7 @@ class AsyncLightController:
                 break
         return (
             {
-                "action": "sequence",
+                "action": action,
                 "steps": step_responses,
                 "scene": None if current_scene is None else current_scene.to_dict(),
                 "stopped": stopped,
@@ -574,6 +685,32 @@ class AsyncLightController:
             response = _scene_response("scene", scene, results)
         response["index"] = index
         return response, scene, results
+
+    def _record_scene(
+        self,
+        scene: Scene,
+        action: str,
+        results: Iterable[CommandResult],
+    ) -> None:
+        result_items = list(results)
+        self.state_tracker.record(
+            scene,
+            source="sdk",
+            action=action,
+            applied=results_confirmed(tuple(result_items)),
+            reason=_results_reason(result_items),
+            results=result_items,
+        )
+
+    def _record_response_scene(
+        self,
+        response: Mapping[str, object],
+        action: str,
+        results: Iterable[CommandResult],
+    ) -> None:
+        scene = _response_scene(response)
+        if scene is not None:
+            self._record_scene(scene, action, results)
 
     async def _run_preset_step(
         self,
@@ -792,6 +929,32 @@ def _plan_step(
         response = {"action": "scene", "scene": scene.to_dict()}
     response["index"] = index
     return response, scene
+
+
+def _state_payload(version: int, state: SceneState | None) -> dict[str, object]:
+    return {
+        "version": version,
+        "state": {"scene": None} if state is None else state.to_dict(),
+    }
+
+
+def _history_payload(history: tuple[tuple[int, SceneState], ...]) -> dict[str, object]:
+    return {
+        "events": [
+            {
+                "version": version,
+                "state": state.to_dict(),
+            }
+            for version, state in history
+        ]
+    }
+
+
+def _response_scene(response: Mapping[str, object]) -> Scene | None:
+    raw_scene = response.get("scene")
+    if not isinstance(raw_scene, Mapping):
+        return None
+    return scene_from_mapping(raw_scene)
 
 
 def _scene_payload(scene: Scene | Mapping[str, object]) -> Scene:

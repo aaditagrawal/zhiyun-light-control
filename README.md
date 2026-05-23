@@ -732,6 +732,8 @@ controller = LightController(
 print(controller.plan_sequence(cues.get("intro")["steps"]))
 result = controller.run_named_cue("intro", require_acknowledged=True)
 print(result["applied"], result["reason"])
+print(controller.state_snapshot())
+print(controller.state_history(limit=5))
 ```
 
 For event-loop based systems, use the async controller directly. This is the
