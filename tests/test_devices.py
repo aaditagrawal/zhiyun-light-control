@@ -5,8 +5,12 @@ from unittest.mock import patch
 
 from zhiyun_light_control.devices import (
     BLE_BACKENDS,
+    ble_config_from_candidate,
+    ble_config_from_endpoint_report,
+    ble_config_from_scan,
     discover_transport_devices,
     scan_ble_devices,
+    usb_config_from_devices,
 )
 from zhiyun_light_control.devices import (
     test_ble_endpoint_candidates as run_ble_endpoint_candidate_test,
@@ -149,6 +153,104 @@ class DeviceDiscoveryTests(unittest.TestCase):
         self.assertEqual(payload["ble"]["macos_status"]["state"], "unauthorized")
         self.assertEqual(payload["ble"]["macos_status"]["authorization"], "denied")
         status.assert_called_once_with(timeout=1.25)
+
+    def test_usb_config_from_devices_uses_selected_port(self) -> None:
+        config = usb_config_from_devices(
+            {
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.usbmodem21301",
+                    "ports": [
+                        {"path": "/dev/cu.usbmodem21301", "selected": True},
+                    ],
+                }
+            },
+            timeout=0.7,
+            persistent=True,
+        )
+
+        self.assertEqual(config.transport, "usb")
+        self.assertEqual(config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(config.timeout, 0.7)
+        self.assertTrue(config.persistent)
+
+    def test_ble_config_from_scan_uses_advertised_profile(self) -> None:
+        config = ble_config_from_scan(
+            {
+                "ble": {
+                    "backend": "macos-app",
+                    "timeout": 2.0,
+                    "scan": {
+                        "ok": True,
+                        "devices": [
+                            {
+                                "address": "UUID-1",
+                                "name": "PL103_EDFE",
+                                "suggested_profile": "legacy",
+                            }
+                        ],
+                    },
+                }
+            },
+            python="python-test",
+        )
+
+        self.assertEqual(config.transport, "ble")
+        self.assertEqual(config.address, "UUID-1")
+        self.assertEqual(config.ble_backend, "macos-app")
+        self.assertEqual(config.ble_profile, "legacy")
+        self.assertEqual(config.timeout, 2.0)
+        self.assertEqual(config.ble_python, "python-test")
+
+    def test_ble_config_from_endpoint_report_uses_confirmed_candidate(self) -> None:
+        report = {
+            "backend": "macos-app",
+            "timeout": 2.5,
+            "address": "UUID-1",
+            "confirmed_candidates": [
+                {
+                    "profile": "direct",
+                    "service_uuid": DIRECT_ZY_SERVICE_UUID,
+                    "write_uuid": DIRECT_ZY_WRITE_UUID,
+                    "notify_uuid": DIRECT_ZY_NOTIFY_UUID,
+                }
+            ],
+        }
+
+        config = ble_config_from_endpoint_report(report, persistent=True)
+
+        self.assertEqual(config.transport, "ble")
+        self.assertEqual(config.address, "UUID-1")
+        self.assertEqual(config.ble_backend, "macos-app")
+        self.assertEqual(config.timeout, 2.5)
+        self.assertEqual(config.ble_service_uuid, DIRECT_ZY_SERVICE_UUID)
+        self.assertEqual(config.ble_write_uuid, DIRECT_ZY_WRITE_UUID)
+        self.assertEqual(config.ble_notify_uuid, DIRECT_ZY_NOTIFY_UUID)
+        self.assertTrue(config.persistent)
+
+    def test_ble_config_from_candidate_requires_endpoint_uuids(self) -> None:
+        config = ble_config_from_candidate(
+            {
+                "profile": "direct",
+                "service_uuid": DIRECT_ZY_SERVICE_UUID,
+                "write_uuid": DIRECT_ZY_WRITE_UUID,
+                "notify_uuid": DIRECT_ZY_NOTIFY_UUID,
+            },
+            address="UUID-1",
+            backend="direct",
+        )
+
+        self.assertEqual(config.ble_backend, "direct")
+        self.assertEqual(config.address, "UUID-1")
+
+        with self.assertRaisesRegex(ValueError, "write_uuid"):
+            ble_config_from_candidate(
+                {
+                    "profile": "direct",
+                    "service_uuid": DIRECT_ZY_SERVICE_UUID,
+                    "notify_uuid": DIRECT_ZY_NOTIFY_UUID,
+                }
+            )
 
     def test_worker_scan_passes_python_override(self) -> None:
         scan = BleScanResult(

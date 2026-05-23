@@ -1364,7 +1364,7 @@ def _config_from_fixture_mapping(
         config_values = {
             key: payload[key] for key in _config_field_names() if key in payload
         }
-        return LightConnectionConfig(**config_values)
+        return LightConnectionConfig.from_mapping(config_values)
     if isinstance(raw_config, LightConnectionConfig):
         return raw_config
     if not isinstance(raw_config, Mapping):
@@ -1374,7 +1374,7 @@ def _config_from_fixture_mapping(
         for key, value in raw_config.items()
         if str(key) in _config_field_names()
     }
-    return LightConnectionConfig(**config_values)
+    return LightConnectionConfig.from_mapping(config_values)
 
 
 def _config_field_names() -> tuple[str, ...]:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, dataclass, fields
 
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
@@ -31,6 +31,147 @@ class LightConnectionConfig:
     ble_backend: str = "worker"
     ble_in_process: bool = False
     persistent: bool = False
+
+    @classmethod
+    def usb(
+        cls,
+        *,
+        port: str | None = None,
+        timeout: float = 1.5,
+        usb_lock_timeout: float | None = DEFAULT_LOCK_TIMEOUT,
+        persistent: bool = False,
+    ) -> LightConnectionConfig:
+        return cls(
+            transport="usb",
+            port=port,
+            timeout=timeout,
+            usb_lock_timeout=usb_lock_timeout,
+            persistent=persistent,
+        )
+
+    @classmethod
+    def ble(
+        cls,
+        *,
+        address: str | None = None,
+        name_contains: str | None = None,
+        timeout: float = 1.5,
+        backend: str = "worker",
+        profile: str = DEFAULT_BLE_PROFILE.name,
+        service_uuid: str | None = None,
+        write_uuid: str | None = None,
+        notify_uuid: str | None = None,
+        python: str | None = None,
+        in_process: bool = False,
+        persistent: bool = False,
+    ) -> LightConnectionConfig:
+        return cls(
+            transport="ble",
+            address=address,
+            name_contains=name_contains,
+            timeout=timeout,
+            ble_backend=backend,
+            ble_profile=profile,
+            ble_service_uuid=service_uuid,
+            ble_write_uuid=write_uuid,
+            ble_notify_uuid=notify_uuid,
+            ble_python=python,
+            ble_in_process=in_process,
+            persistent=persistent,
+        )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Mapping[str, object],
+    ) -> LightConnectionConfig:
+        values = {
+            field.name: _config_value(field.name, payload[field.name])
+            for field in fields(cls)
+            if field.name in payload
+        }
+        return cls(**values)
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+    def with_updates(self, **updates: object) -> LightConnectionConfig:
+        return self.from_mapping(self.to_dict() | updates)
+
+    def with_ble_candidate(
+        self,
+        candidate: Mapping[str, object],
+        *,
+        address: str | None = None,
+        name_contains: str | None = None,
+        backend: str | None = None,
+        timeout: float | None = None,
+        python: str | None = None,
+        persistent: bool | None = None,
+    ) -> LightConnectionConfig:
+        return self.with_updates(
+            transport="ble",
+            address=self.address if address is None else address,
+            name_contains=(
+                self.name_contains if name_contains is None else name_contains
+            ),
+            timeout=self.timeout if timeout is None else timeout,
+            ble_backend=self.ble_backend if backend is None else backend,
+            ble_profile=_optional_string(candidate.get("profile")) or self.ble_profile,
+            ble_service_uuid=_optional_string(
+                candidate.get("service_uuid", self.ble_service_uuid)
+            ),
+            ble_write_uuid=_optional_string(
+                candidate.get("write_uuid", self.ble_write_uuid)
+            ),
+            ble_notify_uuid=_optional_string(
+                candidate.get("notify_uuid", self.ble_notify_uuid)
+            ),
+            ble_python=self.ble_python if python is None else python,
+            persistent=self.persistent if persistent is None else persistent,
+        )
+
+
+def light_connection_config_from_mapping(
+    payload: Mapping[str, object],
+) -> LightConnectionConfig:
+    return LightConnectionConfig.from_mapping(payload)
+
+
+def _config_value(name: str, value: object) -> object:
+    if name == "timeout":
+        return float(value)
+    if name == "usb_lock_timeout":
+        return _optional_float(value)
+    if name in {"ble_in_process", "persistent"}:
+        return _config_bool(value)
+    return value
+
+
+def _config_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "off"}:
+            return False
+    return bool(value)
+
+
+def _optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in {"none", "null", ""}:
+        return None
+    return float(value)
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
 
 
 LightFactory = Callable[[], object]

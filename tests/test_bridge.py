@@ -7,6 +7,7 @@ from zhiyun_light_control import (
     LightConnectionConfig,
     PersistentLightFactory,
     Scene,
+    light_connection_config_from_mapping,
     make_light_factory,
     open_light,
 )
@@ -142,6 +143,71 @@ class FakeSyncContext:
 
 
 class BridgeFactoryTests(unittest.TestCase):
+    def test_connection_config_mapping_helpers_are_sdk_friendly(self) -> None:
+        usb = LightConnectionConfig.usb(
+            port="/dev/cu.test",
+            timeout=2.0,
+            usb_lock_timeout=None,
+            persistent=True,
+        )
+        ble = LightConnectionConfig.ble(
+            address="UUID-1",
+            backend="macos-app",
+            profile="legacy",
+            service_uuid="service-test",
+            write_uuid="write-test",
+            notify_uuid="notify-test",
+            in_process=False,
+        )
+        parsed = light_connection_config_from_mapping(
+            {
+                "transport": "ble",
+                "address": "UUID-2",
+                "timeout": "2.5",
+                "usb_lock_timeout": "none",
+                "ble_backend": "direct",
+                "ble_in_process": "true",
+                "persistent": "yes",
+            }
+        )
+
+        self.assertEqual(usb.transport, "usb")
+        self.assertEqual(usb.port, "/dev/cu.test")
+        self.assertIsNone(usb.usb_lock_timeout)
+        self.assertTrue(usb.persistent)
+        self.assertEqual(ble.transport, "ble")
+        self.assertEqual(ble.ble_profile, "legacy")
+        self.assertEqual(ble.ble_service_uuid, "service-test")
+        self.assertEqual(parsed.address, "UUID-2")
+        self.assertEqual(parsed.timeout, 2.5)
+        self.assertIsNone(parsed.usb_lock_timeout)
+        self.assertEqual(parsed.ble_backend, "direct")
+        self.assertTrue(parsed.ble_in_process)
+        self.assertTrue(parsed.persistent)
+        self.assertEqual(parsed.to_dict()["transport"], "ble")
+
+    def test_connection_config_can_apply_ble_endpoint_candidate(self) -> None:
+        config = LightConnectionConfig.usb(port="/dev/cu.test").with_ble_candidate(
+            {
+                "profile": "legacy",
+                "service_uuid": "service-test",
+                "write_uuid": "write-test",
+                "notify_uuid": "notify-test",
+            },
+            address="UUID-1",
+            backend="macos-app",
+            timeout=2.0,
+        )
+
+        self.assertEqual(config.transport, "ble")
+        self.assertEqual(config.address, "UUID-1")
+        self.assertEqual(config.ble_backend, "macos-app")
+        self.assertEqual(config.ble_profile, "legacy")
+        self.assertEqual(config.ble_service_uuid, "service-test")
+        self.assertEqual(config.ble_write_uuid, "write-test")
+        self.assertEqual(config.ble_notify_uuid, "notify-test")
+        self.assertEqual(config.timeout, 2.0)
+
     def test_usb_factory_builds_sync_usb_client_without_opening_port(self) -> None:
         factory = make_light_factory(
             LightConnectionConfig(

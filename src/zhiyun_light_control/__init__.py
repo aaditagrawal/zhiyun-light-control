@@ -11,6 +11,7 @@ from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .bridge import (
     LightConnectionConfig,
     PersistentLightFactory,
+    light_connection_config_from_mapping,
     make_light_factory,
     open_light,
 )
@@ -27,9 +28,13 @@ from .devices import (
     BleEndpointCandidateReport,
     BleEndpointCandidateTest,
     UsbPortInfo,
+    ble_config_from_candidate,
+    ble_config_from_endpoint_report,
+    ble_config_from_scan,
     discover_transport_devices,
     inspect_ble_device,
     test_ble_endpoint_candidates,
+    usb_config_from_devices,
 )
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
@@ -245,6 +250,9 @@ __all__ = [
     "build_frame",
     "build_runtime_frame",
     "build_updater_frame",
+    "ble_config_from_candidate",
+    "ble_config_from_endpoint_report",
+    "ble_config_from_scan",
     "bridge_response_applied",
     "bridge_response_reason",
     "bridge_response_statuses",
@@ -322,6 +330,7 @@ __all__ = [
     "load_async_rig",
     "load_rig",
     "load_rig_mapping",
+    "light_connection_config_from_mapping",
     "test_ble_endpoint_candidates",
     "macos_ble_app_info",
     "macos_ble_app_status",
@@ -347,6 +356,7 @@ __all__ = [
     "interpolate_scene",
     "discover_usb_primitives",
     "discover_transport_devices",
+    "usb_config_from_devices",
     "validate_async_light",
     "validate_sync_light",
 ]

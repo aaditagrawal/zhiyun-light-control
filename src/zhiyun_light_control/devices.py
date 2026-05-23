@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 
+from .bridge import LightConnectionConfig
 from .macos_ble_app import macos_ble_app_info, macos_ble_app_status
 from .models import CommandResult
 from .protocol import (
@@ -161,6 +163,121 @@ def discover_transport_devices(
             python=ble_python,
         ).to_dict()
     return response
+
+
+def usb_config_from_devices(
+    payload: Mapping[str, object],
+    *,
+    port: str | None = None,
+    timeout: float | None = None,
+    usb_lock_timeout: float | None = None,
+    persistent: bool | None = None,
+) -> LightConnectionConfig:
+    """Build a USB connection config from a ``devices`` discovery payload."""
+
+    usb = _nested_mapping(payload, "usb")
+    selected = port or _string_value(usb.get("selected_port"))
+    if selected is None:
+        selected = _first_usb_port_path(usb)
+    if selected is None:
+        raise ValueError("devices payload has no USB serial port")
+    config = LightConnectionConfig.usb(port=selected)
+    updates: dict[str, object] = {}
+    if timeout is not None:
+        updates["timeout"] = timeout
+    if usb_lock_timeout is not None:
+        updates["usb_lock_timeout"] = usb_lock_timeout
+    if persistent is not None:
+        updates["persistent"] = persistent
+    return config.with_updates(**updates)
+
+
+def ble_config_from_scan(
+    payload: Mapping[str, object],
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+    persistent: bool = False,
+) -> LightConnectionConfig:
+    """Build a BLE config from a devices payload or raw BLE scan payload."""
+
+    scan, ble = _scan_payload(payload)
+    if scan.get("ok") is not True:
+        raise ValueError("BLE scan payload is not confirmed ok")
+    device = _first_ble_device(scan)
+    address = _required_string(device, "address")
+    profile = _string_value(device.get("suggested_profile"))
+    return LightConnectionConfig.ble(
+        address=address,
+        name_contains=name_contains,
+        timeout=timeout if timeout is not None else _float_value(ble.get("timeout")),
+        backend=backend or _string_value(ble.get("backend")) or "worker",
+        profile=profile or "direct",
+        python=python,
+        persistent=persistent,
+    )
+
+
+def ble_config_from_candidate(
+    candidate: Mapping[str, object],
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    backend: str = "worker",
+    timeout: float = 1.5,
+    python: str | None = None,
+    persistent: bool = False,
+) -> LightConnectionConfig:
+    """Build a BLE config from one endpoint candidate mapping."""
+
+    return LightConnectionConfig.ble(
+        address=address,
+        name_contains=name_contains,
+        timeout=timeout,
+        backend=backend,
+        profile=_string_value(candidate.get("profile")) or "direct",
+        service_uuid=_required_string(candidate, "service_uuid"),
+        write_uuid=_required_string(candidate, "write_uuid"),
+        notify_uuid=_required_string(candidate, "notify_uuid"),
+        python=python,
+        persistent=persistent,
+    )
+
+
+def ble_config_from_endpoint_report(
+    payload: Mapping[str, object],
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    python: str | None = None,
+    persistent: bool = False,
+    require_confirmed: bool = True,
+) -> LightConnectionConfig:
+    """Build a BLE config from a BLE endpoint-test report."""
+
+    candidate = _endpoint_report_candidate(
+        payload,
+        require_confirmed=require_confirmed,
+    )
+    inspect = _optional_nested_mapping(payload, "inspect")
+    address = _string_value(payload.get("address"))
+    if address is None and inspect is not None:
+        address = _string_value(inspect.get("address"))
+    return ble_config_from_candidate(
+        candidate,
+        address=address,
+        name_contains=_string_value(payload.get("name_contains")),
+        backend=backend or _string_value(payload.get("backend")) or "worker",
+        timeout=(
+            timeout
+            if timeout is not None
+            else _float_value(payload.get("timeout"))
+        ),
+        python=python,
+        persistent=persistent,
+    )
 
 
 def scan_ble_devices(
@@ -414,3 +531,121 @@ def _selected_usb_port(
     if configured_usb_port is not None:
         return configured_usb_port
     return ports[0] if ports else None
+
+
+def _nested_mapping(
+    payload: Mapping[str, object],
+    key: str,
+) -> Mapping[str, object]:
+    value = payload.get(key)
+    if isinstance(value, Mapping):
+        return value
+    raise ValueError(f"payload missing {key!r} mapping")
+
+
+def _optional_nested_mapping(
+    payload: Mapping[str, object],
+    key: str,
+) -> Mapping[str, object] | None:
+    value = payload.get(key)
+    return value if isinstance(value, Mapping) else None
+
+
+def _string_value(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if text else None
+
+
+def _required_string(payload: Mapping[str, object], key: str) -> str:
+    value = _string_value(payload.get(key))
+    if value is None:
+        raise ValueError(f"payload missing {key!r}")
+    return value
+
+
+def _float_value(value: object, default: float = 1.5) -> float:
+    if value is None:
+        return default
+    return float(value)
+
+
+def _first_usb_port_path(usb: Mapping[str, object]) -> str | None:
+    ports = usb.get("ports")
+    if not isinstance(ports, list):
+        return None
+    for item in ports:
+        if not isinstance(item, Mapping):
+            continue
+        path = _string_value(item.get("path"))
+        if path is not None:
+            return path
+    return None
+
+
+def _scan_payload(
+    payload: Mapping[str, object],
+) -> tuple[Mapping[str, object], Mapping[str, object]]:
+    ble = _optional_nested_mapping(payload, "ble")
+    if ble is not None:
+        scan = _optional_nested_mapping(ble, "scan")
+        if scan is None:
+            raise ValueError("devices payload missing BLE scan mapping")
+        return scan, ble
+    return payload, {}
+
+
+def _first_ble_device(scan: Mapping[str, object]) -> Mapping[str, object]:
+    devices = scan.get("devices")
+    if not isinstance(devices, list):
+        raise ValueError("BLE scan payload has no devices list")
+    first: Mapping[str, object] | None = None
+    for device in devices:
+        if not isinstance(device, Mapping):
+            continue
+        if first is None:
+            first = device
+        if _string_value(device.get("suggested_profile")) is not None:
+            return device
+    if first is None:
+        raise ValueError("BLE scan payload has no devices")
+    return first
+
+
+def _endpoint_report_candidate(
+    payload: Mapping[str, object],
+    *,
+    require_confirmed: bool,
+) -> Mapping[str, object]:
+    if require_confirmed:
+        candidate = _first_candidate_from_list(payload.get("confirmed_candidates"))
+        if candidate is not None:
+            return candidate
+        raise ValueError("endpoint report has no confirmed BLE candidates")
+    candidate = _first_candidate_from_list(payload.get("confirmed_candidates"))
+    if candidate is not None:
+        return candidate
+    tests = payload.get("tests")
+    if isinstance(tests, list):
+        for test in tests:
+            if not isinstance(test, Mapping):
+                continue
+            candidate = _optional_nested_mapping(test, "candidate")
+            if candidate is not None:
+                return candidate
+    inspect = _optional_nested_mapping(payload, "inspect")
+    if inspect is not None:
+        candidate = _first_candidate_from_list(inspect.get("endpoint_candidates"))
+        if candidate is not None:
+            return candidate
+    raise ValueError("endpoint report has no BLE endpoint candidates")
+
+
+def _first_candidate_from_list(value: object) -> Mapping[str, object] | None:
+    if not isinstance(value, list):
+        return None
+    for item in value:
+        if isinstance(item, Mapping):
+            return item
+    return None
