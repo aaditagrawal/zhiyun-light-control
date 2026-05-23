@@ -5,9 +5,12 @@ from unittest.mock import patch
 
 from zhiyun_light_control.devices import (
     BLE_BACKENDS,
+    best_connection_config,
     ble_config_from_candidate,
     ble_config_from_endpoint_report,
     ble_config_from_scan,
+    connection_candidates_from_devices,
+    connection_candidates_from_endpoint_report,
     discover_transport_devices,
     scan_ble_devices,
     usb_config_from_devices,
@@ -251,6 +254,111 @@ class DeviceDiscoveryTests(unittest.TestCase):
                     "notify_uuid": DIRECT_ZY_NOTIFY_UUID,
                 }
             )
+
+    def test_connection_candidates_rank_usb_and_ble_scan_routes(self) -> None:
+        candidates = connection_candidates_from_devices(
+            {
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.usbmodem21301",
+                    "ports": [
+                        {
+                            "path": "/dev/cu.usbmodem21301",
+                            "selected": True,
+                            "metadata": {
+                                "vendor_id": 0xFFF8,
+                                "product_id": 0x0180,
+                                "product_name": "Zhiyun Virtual ComPort",
+                            },
+                        }
+                    ],
+                },
+                "ble": {
+                    "backend": "macos-app",
+                    "timeout": 2.0,
+                    "scan": {
+                        "ok": True,
+                        "devices": [
+                            {
+                                "address": "UUID-1",
+                                "name": "PL103_EDFE",
+                                "suggested_profile": "legacy",
+                            }
+                        ],
+                    },
+                },
+            },
+            persistent=True,
+        )
+
+        self.assertEqual(
+            [candidate.transport for candidate in candidates],
+            ["usb", "ble"],
+        )
+        self.assertEqual(candidates[0].confidence, "known-usb-descriptor")
+        self.assertEqual(candidates[0].config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(candidates[0].config.persistent)
+        self.assertEqual(candidates[1].confidence, "advertised-profile")
+        self.assertEqual(candidates[1].config.address, "UUID-1")
+        self.assertEqual(candidates[1].config.ble_profile, "legacy")
+        self.assertEqual(best_connection_config(candidates).transport, "usb")
+        self.assertEqual(candidates[0].to_dict()["config"]["transport"], "usb")
+
+    def test_connection_candidates_from_endpoint_report_rank_confirmed_routes(
+        self,
+    ) -> None:
+        report = {
+            "backend": "macos-app",
+            "timeout": 2.5,
+            "address": "UUID-1",
+            "confirmed_candidates": [
+                {
+                    "profile": "direct",
+                    "service_uuid": DIRECT_ZY_SERVICE_UUID,
+                    "write_uuid": DIRECT_ZY_WRITE_UUID,
+                    "notify_uuid": DIRECT_ZY_NOTIFY_UUID,
+                }
+            ],
+            "tests": [],
+        }
+
+        candidates = connection_candidates_from_endpoint_report(report)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].confidence, "confirmed-endpoint")
+        self.assertEqual(candidates[0].confidence_score, 100)
+        self.assertEqual(candidates[0].config.ble_backend, "macos-app")
+        self.assertEqual(candidates[0].config.ble_write_uuid, DIRECT_ZY_WRITE_UUID)
+        self.assertTrue(candidates[0].evidence["acknowledged"])
+
+    def test_endpoint_report_candidates_can_include_unconfirmed_suggestions(
+        self,
+    ) -> None:
+        report = {
+            "backend": "worker",
+            "inspect": {
+                "address": "AA:BB",
+                "endpoint_candidates": [
+                    {
+                        "profile": "direct",
+                        "service_uuid": DIRECT_ZY_SERVICE_UUID,
+                        "write_uuid": DIRECT_ZY_WRITE_UUID,
+                        "notify_uuid": DIRECT_ZY_NOTIFY_UUID,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(ValueError, "confirmed"):
+            connection_candidates_from_endpoint_report(report)
+
+        candidates = connection_candidates_from_endpoint_report(
+            report,
+            require_confirmed=False,
+        )
+
+        self.assertEqual(candidates[0].confidence, "unconfirmed-endpoint")
+        self.assertEqual(candidates[0].config.address, "AA:BB")
 
     def test_worker_scan_passes_python_override(self) -> None:
         scan = BleScanResult(

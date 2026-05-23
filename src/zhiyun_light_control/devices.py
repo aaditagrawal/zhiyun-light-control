@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 from .bridge import LightConnectionConfig
@@ -48,6 +48,35 @@ class UsbPortInfo:
         data: dict[str, object] = {"path": self.path, "selected": self.selected}
         if self.metadata:
             data["metadata"] = self.metadata
+        return data
+
+
+@dataclass(frozen=True)
+class LightConnectionCandidate:
+    """A ranked connection route discovered from local USB or BLE evidence."""
+
+    config: LightConnectionConfig
+    source: str
+    confidence: str
+    confidence_score: int
+    reason: str
+    evidence: dict[str, object] | None = None
+
+    @property
+    def transport(self) -> str:
+        return self.config.transport
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "transport": self.transport,
+            "source": self.source,
+            "confidence": self.confidence,
+            "confidence_score": self.confidence_score,
+            "reason": self.reason,
+            "config": self.config.to_dict(),
+        }
+        if self.evidence is not None:
+            data["evidence"] = self.evidence
         return data
 
 
@@ -278,6 +307,127 @@ def ble_config_from_endpoint_report(
         python=python,
         persistent=persistent,
     )
+
+
+def connection_candidates_from_devices(
+    payload: Mapping[str, object],
+    *,
+    include_usb: bool = True,
+    include_ble: bool = True,
+    persistent: bool = False,
+) -> tuple[LightConnectionCandidate, ...]:
+    """Return ranked connection configs from a ``devices`` discovery payload."""
+
+    candidates: list[LightConnectionCandidate] = []
+    if include_usb:
+        usb = _optional_nested_mapping(payload, "usb")
+        if usb is not None:
+            usb_candidate = _usb_connection_candidate(
+                payload,
+                usb,
+                persistent=persistent,
+            )
+            if usb_candidate is not None:
+                candidates.append(usb_candidate)
+    if include_ble:
+        candidates.extend(
+            _ble_scan_connection_candidates(payload, persistent=persistent)
+        )
+    return _rank_connection_candidates(candidates)
+
+
+def connection_candidates_from_endpoint_report(
+    payload: Mapping[str, object],
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    python: str | None = None,
+    persistent: bool = False,
+    require_confirmed: bool = True,
+) -> tuple[LightConnectionCandidate, ...]:
+    """Return ranked BLE configs from an endpoint-test report."""
+
+    candidates: list[LightConnectionCandidate] = []
+    for candidate in _endpoint_report_candidates(
+        payload,
+        require_confirmed=require_confirmed,
+    ):
+        config = _ble_config_from_endpoint_candidate(
+            payload,
+            candidate,
+            backend=backend,
+            timeout=timeout,
+            python=python,
+            persistent=persistent,
+        )
+        confirmed = _candidate_is_confirmed(payload, candidate)
+        candidates.append(
+            LightConnectionCandidate(
+                config=config,
+                source="ble.endpoint_report",
+                confidence="confirmed-endpoint"
+                if confirmed
+                else "unconfirmed-endpoint",
+                confidence_score=100 if confirmed else 65,
+                reason=(
+                    "endpoint candidate returned ACK-backed DEVICE_INFO"
+                    if confirmed
+                    else "endpoint candidate was suggested but not ACK-confirmed"
+                ),
+                evidence={
+                    "candidate": dict(candidate),
+                    "acknowledged": confirmed,
+                },
+            )
+        )
+    return _rank_connection_candidates(candidates)
+
+
+def discover_connection_candidates(
+    *,
+    configured_transport: str = "usb",
+    configured_usb_port: str | None = None,
+    include_ble: bool = False,
+    include_ble_status: bool = False,
+    ble_backend: str = "worker",
+    ble_timeout: float = 5.0,
+    ble_name_contains: str | None = None,
+    ble_python: str | None = None,
+    persistent: bool = False,
+) -> tuple[LightConnectionCandidate, ...]:
+    """Discover local USB/BLE routes and return ranked SDK configs."""
+
+    return connection_candidates_from_devices(
+        discover_transport_devices(
+            configured_transport=configured_transport,
+            configured_usb_port=configured_usb_port,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            ble_backend=ble_backend,
+            ble_timeout=ble_timeout,
+            ble_name_contains=ble_name_contains,
+            ble_python=ble_python,
+        ),
+        include_ble=include_ble,
+        persistent=persistent,
+    )
+
+
+def best_connection_candidate(
+    candidates: Iterable[LightConnectionCandidate],
+) -> LightConnectionCandidate:
+    """Return the highest-ranked candidate from a candidate iterable."""
+
+    ranked = _rank_connection_candidates(list(candidates))
+    if not ranked:
+        raise ValueError("no connection candidates available")
+    return ranked[0]
+
+
+def best_connection_config(
+    candidates: Iterable[LightConnectionCandidate],
+) -> LightConnectionConfig:
+    return best_connection_candidate(candidates).config
 
 
 def scan_ble_devices(
@@ -649,3 +799,253 @@ def _first_candidate_from_list(value: object) -> Mapping[str, object] | None:
         if isinstance(item, Mapping):
             return item
     return None
+
+
+def _usb_connection_candidate(
+    payload: Mapping[str, object],
+    usb: Mapping[str, object],
+    *,
+    persistent: bool,
+) -> LightConnectionCandidate | None:
+    try:
+        config = usb_config_from_devices(payload, persistent=persistent)
+    except ValueError:
+        return None
+    selected = _selected_usb_port_evidence(usb, config.port)
+    confidence, score, reason = _usb_confidence(selected)
+    return LightConnectionCandidate(
+        config=config,
+        source="devices.usb",
+        confidence=confidence,
+        confidence_score=score,
+        reason=reason,
+        evidence=dict(selected) if selected is not None else None,
+    )
+
+
+def _selected_usb_port_evidence(
+    usb: Mapping[str, object],
+    port: str | None,
+) -> Mapping[str, object] | None:
+    ports = usb.get("ports")
+    if not isinstance(ports, list):
+        return None
+    first: Mapping[str, object] | None = None
+    for item in ports:
+        if not isinstance(item, Mapping):
+            continue
+        if first is None:
+            first = item
+        if port is not None and item.get("path") == port:
+            return item
+    return first
+
+
+def _usb_confidence(
+    selected: Mapping[str, object] | None,
+) -> tuple[str, int, str]:
+    metadata = _optional_nested_mapping(selected or {}, "metadata")
+    if metadata is not None:
+        vendor_id = metadata.get("vendor_id")
+        product_id = metadata.get("product_id")
+        product_name = _string_value(metadata.get("product_name")) or ""
+        description = _string_value(metadata.get("description")) or ""
+        haystack = f"{product_name} {description}".lower()
+        if vendor_id == 0xFFF8 and product_id == 0x0180:
+            return (
+                "known-usb-descriptor",
+                95,
+                "USB descriptor matches Zhiyun Virtual ComPort",
+            )
+        if "zhiyun" in haystack:
+            return (
+                "vendor-name",
+                85,
+                "USB descriptor text references Zhiyun",
+            )
+    return ("serial-port", 70, "USB serial port is available")
+
+
+def _ble_scan_connection_candidates(
+    payload: Mapping[str, object],
+    *,
+    persistent: bool,
+) -> tuple[LightConnectionCandidate, ...]:
+    ble = _optional_nested_mapping(payload, "ble")
+    if ble is None:
+        return ()
+    scan = _optional_nested_mapping(ble, "scan")
+    if scan is None or scan.get("ok") is not True:
+        return ()
+    devices = scan.get("devices")
+    if not isinstance(devices, list):
+        return ()
+    candidates: list[LightConnectionCandidate] = []
+    for device in devices:
+        if not isinstance(device, Mapping):
+            continue
+        try:
+            config = _ble_config_from_scan_device(
+                device,
+                ble,
+                persistent=persistent,
+            )
+        except ValueError:
+            continue
+        confidence, score, reason = _ble_scan_confidence(device)
+        candidates.append(
+            LightConnectionCandidate(
+                config=config,
+                source="devices.ble.scan",
+                confidence=confidence,
+                confidence_score=score,
+                reason=reason,
+                evidence=dict(device),
+            )
+        )
+    return tuple(candidates)
+
+
+def _ble_config_from_scan_device(
+    device: Mapping[str, object],
+    ble: Mapping[str, object],
+    *,
+    persistent: bool,
+) -> LightConnectionConfig:
+    return LightConnectionConfig.ble(
+        address=_required_string(device, "address"),
+        timeout=_float_value(ble.get("timeout")),
+        backend=_string_value(ble.get("backend")) or "worker",
+        profile=_string_value(device.get("suggested_profile")) or "direct",
+        persistent=persistent,
+    )
+
+
+def _ble_scan_confidence(
+    device: Mapping[str, object],
+) -> tuple[str, int, str]:
+    profile = _string_value(device.get("suggested_profile"))
+    if profile is not None:
+        return (
+            "advertised-profile",
+            85,
+            f"BLE advertisement matched built-in {profile} profile",
+        )
+    name = (_string_value(device.get("name")) or "").lower()
+    if any(part in name for part in ("zhiyun", "molus", "pl103", "g60")):
+        return ("name-match", 65, "BLE device name looks like a Zhiyun light")
+    return ("scan-hit", 45, "BLE scan returned a candidate device")
+
+
+def _endpoint_report_candidates(
+    payload: Mapping[str, object],
+    *,
+    require_confirmed: bool,
+) -> tuple[Mapping[str, object], ...]:
+    candidates: list[Mapping[str, object]] = []
+    if require_confirmed:
+        _append_candidate_list(candidates, payload.get("confirmed_candidates"))
+        if not candidates:
+            raise ValueError("endpoint report has no confirmed BLE candidates")
+        return tuple(candidates)
+    _append_candidate_list(candidates, payload.get("confirmed_candidates"))
+    tests = payload.get("tests")
+    if isinstance(tests, list):
+        for test in tests:
+            if not isinstance(test, Mapping):
+                continue
+            candidate = _optional_nested_mapping(test, "candidate")
+            if candidate is not None:
+                _append_unique_candidate(candidates, candidate)
+    inspect = _optional_nested_mapping(payload, "inspect")
+    if inspect is not None:
+        _append_candidate_list(candidates, inspect.get("endpoint_candidates"))
+    if not candidates:
+        raise ValueError("endpoint report has no BLE endpoint candidates")
+    return tuple(candidates)
+
+
+def _append_candidate_list(
+    candidates: list[Mapping[str, object]],
+    value: object,
+) -> None:
+    if not isinstance(value, list):
+        return
+    for item in value:
+        if isinstance(item, Mapping):
+            _append_unique_candidate(candidates, item)
+
+
+def _append_unique_candidate(
+    candidates: list[Mapping[str, object]],
+    candidate: Mapping[str, object],
+) -> None:
+    key = _candidate_key(candidate)
+    if any(_candidate_key(item) == key for item in candidates):
+        return
+    candidates.append(candidate)
+
+
+def _candidate_key(candidate: Mapping[str, object]) -> tuple[str, str, str]:
+    return (
+        _string_value(candidate.get("service_uuid")) or "",
+        _string_value(candidate.get("write_uuid")) or "",
+        _string_value(candidate.get("notify_uuid")) or "",
+    )
+
+
+def _candidate_is_confirmed(
+    payload: Mapping[str, object],
+    candidate: Mapping[str, object],
+) -> bool:
+    confirmed = payload.get("confirmed_candidates")
+    if not isinstance(confirmed, list):
+        return False
+    key = _candidate_key(candidate)
+    return any(
+        isinstance(item, Mapping) and _candidate_key(item) == key
+        for item in confirmed
+    )
+
+
+def _ble_config_from_endpoint_candidate(
+    payload: Mapping[str, object],
+    candidate: Mapping[str, object],
+    *,
+    backend: str | None,
+    timeout: float | None,
+    python: str | None,
+    persistent: bool,
+) -> LightConnectionConfig:
+    inspect = _optional_nested_mapping(payload, "inspect")
+    address = _string_value(payload.get("address"))
+    if address is None and inspect is not None:
+        address = _string_value(inspect.get("address"))
+    return ble_config_from_candidate(
+        candidate,
+        address=address,
+        name_contains=_string_value(payload.get("name_contains")),
+        backend=backend or _string_value(payload.get("backend")) or "worker",
+        timeout=(
+            timeout
+            if timeout is not None
+            else _float_value(payload.get("timeout"))
+        ),
+        python=python,
+        persistent=persistent,
+    )
+
+
+def _rank_connection_candidates(
+    candidates: Iterable[LightConnectionCandidate],
+) -> tuple[LightConnectionCandidate, ...]:
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda candidate: (
+                -candidate.confidence_score,
+                candidate.transport,
+                candidate.source,
+            ),
+        )
+    )

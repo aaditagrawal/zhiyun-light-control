@@ -558,6 +558,7 @@ process instead of opening the USB/BLE transport itself:
 from zhiyun_light_control import (
     LightBridgeClient,
     Scene,
+    best_connection_config,
     ble_config_from_endpoint_report,
     ble_config_from_scan,
     bridge_response_applied,
@@ -566,6 +567,7 @@ from zhiyun_light_control import (
     devices_ble_authorization,
     devices_ble_blocker,
     devices_selected_usb_port,
+    connection_candidates_from_devices,
     usb_config_from_devices,
 )
 
@@ -581,9 +583,13 @@ print(bridge.cues()["cues"])
 devices = bridge.devices(include_ble_status=True)
 print(devices_selected_usb_port(devices))
 print(devices_ble_authorization(devices), devices_ble_blocker(devices))
+route_candidates = connection_candidates_from_devices(devices)
+best_config = best_connection_config(route_candidates)
 usb_config = usb_config_from_devices(devices)
 ble_devices = bridge.devices(include_ble=True, ble_backend="macos-app")
 ble_scan_config = ble_config_from_scan(ble_devices)
+print([candidate.to_dict() for candidate in route_candidates])
+print(best_config.to_dict())
 print(usb_config.to_dict())
 print(ble_scan_config.to_dict())
 ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
@@ -667,11 +673,13 @@ inside `GET /ready` have `devices_selected_usb_port()`,
 `devices_ble_authorization()`, `devices_ble_state()`,
 `devices_ble_blocker()`, `devices_ble_scan_ok()`, and
 `devices_ble_scan_devices()` helpers.
-Use `usb_config_from_devices()`, `ble_config_from_scan()`,
+Use `connection_candidates_from_devices()`,
+`connection_candidates_from_endpoint_report()`, `best_connection_config()`,
+`usb_config_from_devices()`, `ble_config_from_scan()`,
 `ble_config_from_candidate()`, and `ble_config_from_endpoint_report()` when a
-host application wants to turn discovery evidence directly into a reusable
-`LightConnectionConfig` for `open_light()`, `AsyncLightIntegration`, or a rig
-fixture.
+host application wants to turn discovery evidence directly into ranked reusable
+`LightConnectionConfig` objects for `open_light()`, `AsyncLightIntegration`, or
+a rig fixture.
 The client also exposes `devices_selected_usb_port()`,
 `devices_ble_authorization()`, and `devices_ble_blocker()` convenience methods
 that fetch the needed discovery payload before normalizing it.
