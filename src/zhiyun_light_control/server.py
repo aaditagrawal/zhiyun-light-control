@@ -1394,6 +1394,10 @@ def _openapi_schemas() -> dict[str, object]:
             "additionalProperties": True,
             "properties": {
                 "ready_for": {"type": "object", "additionalProperties": True},
+                "requirements": {
+                    "type": "object",
+                    "additionalProperties": True,
+                },
                 "actions": {
                     "type": "array",
                     "items": {"$ref": "#/components/schemas/ReadinessAction"},
@@ -2109,18 +2113,20 @@ def readiness_response(
         confirmed_control=confirmed_control,
         error=error,
     )
+    ready_for = {
+        "read_status": connection_confirmed,
+        "control_requests": control_requests,
+        "confirmed_control": confirmed_control,
+        "state_events": True,
+        "device_discovery": True,
+    }
     return {
         "api": "zhiyun-light-control",
         "ok": connection_confirmed,
         "connection_confirmed": connection_confirmed,
         "control_enabled": allow_control,
-        "ready_for": {
-            "read_status": connection_confirmed,
-            "control_requests": control_requests,
-            "confirmed_control": confirmed_control,
-            "state_events": True,
-            "device_discovery": True,
-        },
+        "ready_for": ready_for,
+        "requirements": _readiness_requirements(ready_for, actions),
         "bridge": {
             "transport": transport,
             "ble_backend": ble_backend,
@@ -2256,6 +2262,83 @@ def _readiness_actions(
             },
         )
     return actions
+
+
+def _readiness_requirements(
+    ready_for: dict[str, bool],
+    actions: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    requirements: dict[str, dict[str, object]] = {}
+    action_by_id = _readiness_actions_by_id(actions)
+    for capability, ready in ready_for.items():
+        matching_actions = _readiness_actions_for(actions, capability)
+        requirements[capability] = {
+            "ready": ready,
+            "actions": [
+                action["id"]
+                for action in matching_actions
+                if isinstance(action.get("id"), str)
+            ],
+            "pending_actions": _readiness_pending_action_ids(
+                matching_actions,
+                action_by_id,
+            ),
+        }
+    return requirements
+
+
+def _readiness_actions_by_id(
+    actions: list[dict[str, object]],
+) -> dict[str, dict[str, object]]:
+    action_by_id: dict[str, dict[str, object]] = {}
+    for action in actions:
+        action_id = action.get("id")
+        if isinstance(action_id, str):
+            action_by_id[action_id] = action
+    return action_by_id
+
+
+def _readiness_actions_for(
+    actions: list[dict[str, object]],
+    capability: str,
+) -> list[dict[str, object]]:
+    matching: list[dict[str, object]] = []
+    for action in actions:
+        required_for = action.get("required_for")
+        if not isinstance(required_for, list):
+            continue
+        if capability in required_for:
+            matching.append(action)
+    return matching
+
+
+def _readiness_pending_action_ids(
+    actions: list[dict[str, object]],
+    action_by_id: dict[str, dict[str, object]],
+) -> list[str]:
+    pending: list[str] = []
+    seen: set[str] = set()
+
+    def append_pending(action_id: str) -> None:
+        if action_id in seen:
+            return
+        action = action_by_id.get(action_id)
+        if action is not None:
+            blocked_by = action.get("blocked_by")
+            if isinstance(blocked_by, list):
+                for blocker in blocked_by:
+                    if isinstance(blocker, str):
+                        append_pending(blocker)
+            if action.get("ready") is True:
+                return
+        seen.add(action_id)
+        pending.append(action_id)
+
+    for action in actions:
+        action_id = action.get("id")
+        if isinstance(action_id, str):
+            append_pending(action_id)
+    return pending
 
 
 def _diagnostic_next_steps(

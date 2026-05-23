@@ -48,6 +48,28 @@ class LightBridgeClient:
     def ready(self) -> dict[str, object]:
         return self._get("/ready")
 
+    def readiness_ready_for(self) -> dict[str, bool]:
+        return readiness_ready_for(self.ready())
+
+    def readiness_ready(self, capability: str) -> bool:
+        return readiness_ready(self.ready(), capability)
+
+    def readiness_requirements(self) -> dict[str, dict[str, object]]:
+        return readiness_requirements(self.ready())
+
+    def readiness_requirement(self, capability: str) -> dict[str, object]:
+        return readiness_requirement(self.ready(), capability)
+
+    def readiness_pending_action_ids(
+        self,
+        *,
+        capability: str | None = None,
+    ) -> list[str]:
+        return readiness_pending_action_ids(self.ready(), capability=capability)
+
+    def readiness_warnings(self) -> list[str]:
+        return readiness_warnings(self.ready())
+
     def readiness_actions(
         self,
         *,
@@ -561,6 +583,107 @@ def validation_unconfirmed_names(
     if not isinstance(raw_names, list):
         return []
     return [str(item) for item in raw_names if item is not None]
+
+
+def readiness_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:
+    ready_for = payload.get("ready_for")
+    if not isinstance(ready_for, Mapping):
+        return {}
+    return {
+        str(key): value
+        for key, value in ready_for.items()
+        if isinstance(key, str) and isinstance(value, bool)
+    }
+
+
+def readiness_ready(payload: Mapping[str, object], capability: str) -> bool:
+    return readiness_ready_for(payload).get(capability, False)
+
+
+def readiness_requirements(
+    payload: Mapping[str, object],
+) -> dict[str, dict[str, object]]:
+    raw_requirements = payload.get("requirements")
+    if not isinstance(raw_requirements, Mapping):
+        return {}
+    requirements: dict[str, dict[str, object]] = {}
+    for raw_capability, raw_requirement in raw_requirements.items():
+        if not isinstance(raw_capability, str):
+            continue
+        if not isinstance(raw_requirement, Mapping):
+            continue
+        requirements[raw_capability] = {
+            str(key): value
+            for key, value in raw_requirement.items()
+            if isinstance(key, str)
+        }
+    return requirements
+
+
+def readiness_requirement(
+    payload: Mapping[str, object],
+    capability: str,
+) -> dict[str, object]:
+    return readiness_requirements(payload).get(capability, {})
+
+
+def readiness_pending_action_ids(
+    payload: Mapping[str, object],
+    *,
+    capability: str | None = None,
+) -> list[str]:
+    if capability is None:
+        return list(readiness_actions_by_id(payload, include_ready=False))
+    raw_ids = readiness_requirement(payload, capability).get("pending_actions")
+    if isinstance(raw_ids, list):
+        return [str(item) for item in raw_ids if item is not None]
+    actions = [
+        action
+        for action in readiness_actions_by_id(payload).values()
+        if _action_requires(action, capability)
+    ]
+    return _pending_action_ids(actions, readiness_actions_by_id(payload))
+
+
+def readiness_warnings(payload: Mapping[str, object]) -> list[str]:
+    warnings = payload.get("warnings")
+    if not isinstance(warnings, list):
+        return []
+    return [str(item) for item in warnings if item is not None]
+
+
+def _action_requires(action: Mapping[str, object], capability: str) -> bool:
+    required_for = action.get("required_for")
+    return isinstance(required_for, list) and capability in required_for
+
+
+def _pending_action_ids(
+    actions: list[dict[str, object]],
+    action_by_id: dict[str, dict[str, object]],
+) -> list[str]:
+    pending: list[str] = []
+    seen: set[str] = set()
+
+    def append_pending(action_id: str) -> None:
+        if action_id in seen:
+            return
+        action = action_by_id.get(action_id)
+        if action is not None:
+            blocked_by = action.get("blocked_by")
+            if isinstance(blocked_by, list):
+                for blocker in blocked_by:
+                    if isinstance(blocker, str):
+                        append_pending(blocker)
+            if action.get("ready") is True:
+                return
+        seen.add(action_id)
+        pending.append(action_id)
+
+    for action in actions:
+        action_id = action.get("id")
+        if isinstance(action_id, str):
+            append_pending(action_id)
+    return pending
 
 
 def readiness_actions_by_id(

@@ -723,6 +723,14 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(ready["ready_for"]["read_status"])
             self.assertFalse(ready["ready_for"]["control_requests"])
             self.assertFalse(ready["ready_for"]["confirmed_control"])
+            self.assertEqual(
+                ready["requirements"]["control_requests"]["pending_actions"],
+                ["enable-control"],
+            )
+            self.assertEqual(
+                ready["requirements"]["confirmed_control"]["pending_actions"],
+                ["enable-control", "confirm-control"],
+            )
             self.assertEqual(ready["status"]["firmware"], "1.6.4")
             self.assertEqual(ready["state"]["version"], 0)
             self.assertIsNone(ready["state"]["snapshot"]["scene"])
@@ -865,6 +873,14 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(ready["bridge"]["ble_backend"], "macos-app")
             self.assertEqual(
                 ready["status"]["error"], "Bluetooth state unauthorized: 3"
+            )
+            self.assertEqual(
+                ready["requirements"]["read_status"]["pending_actions"],
+                ["authorize-bluetooth", "read-status"],
+            )
+            self.assertEqual(
+                ready["requirements"]["control_requests"]["pending_actions"],
+                ["authorize-bluetooth", "enable-control"],
             )
             self.assertIn("Bluetooth authorization", ready["warnings"][0])
             actions = {action["id"]: action for action in ready["actions"]}
@@ -1078,6 +1094,7 @@ class ServerTests(unittest.TestCase):
                 readiness["properties"]["actions"]["items"]["$ref"],
                 "#/components/schemas/ReadinessAction",
             )
+            self.assertIn("requirements", readiness["properties"])
             self.assertIn("Devices", schema["components"]["schemas"])
             self.assertIn("History", schema["components"]["schemas"])
             self.assertIn("PlanRequest", schema["components"]["schemas"])

@@ -369,7 +369,8 @@ turns true when the bridge is connected and started with `--allow-control`;
 `ready_for.confirmed_control` only turns true after the bridge has recorded an
 ACK-confirmed control request. The response also includes stable `actions`
 entries such as `read-status`, `enable-control`, `confirm-control`, and
-`authorize-bluetooth` so setup dashboards can render deterministic next steps.
+`authorize-bluetooth`, plus a `requirements` map that groups pending action ids
+by each `ready_for` capability for deterministic setup dashboards.
 
 `POST /plan` resolves a scene, preset, transition, or sequence without opening
 the light or requiring `--allow-control`. Use it for show-control previews and
@@ -559,7 +560,10 @@ still check `acknowledged`, `transport_status`, and `/state` rather than assumin
 that a transmitted command was applied.
 It also includes `readiness_actions()`, `readiness_action(id)`, and
 `pending_readiness_actions()` helpers for setup dashboards that consume
-`GET /ready`.
+`GET /ready`. Use `readiness_ready_for()`, `readiness_ready()`,
+`readiness_requirements()`, `readiness_requirement()`,
+`readiness_pending_action_ids()`, and `readiness_warnings()` when consuming
+preflight results outside the client class.
 Use `bridge_response_applied()`, `bridge_response_statuses()`, and
 `bridge_response_reason()` to normalize ACK evidence across single commands,
 scenes, transitions, sequences, and state/history responses.

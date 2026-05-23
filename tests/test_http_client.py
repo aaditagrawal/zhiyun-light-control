@@ -14,6 +14,12 @@ from zhiyun_light_control import (
     command_result_acknowledged,
     command_result_status,
     readiness_actions_by_id,
+    readiness_pending_action_ids,
+    readiness_ready,
+    readiness_ready_for,
+    readiness_requirement,
+    readiness_requirements,
+    readiness_warnings,
     validation_category,
     validation_ready,
     validation_ready_for,
@@ -161,6 +167,25 @@ class HttpClientTests(unittest.TestCase):
             self.assertTrue(ready["ready_for"]["read_status"])
             self.assertTrue(ready["ready_for"]["control_requests"])
             self.assertFalse(ready["ready_for"]["confirmed_control"])
+            self.assertTrue(readiness_ready(ready, "read_status"))
+            self.assertTrue(readiness_ready_for(ready)["control_requests"])
+            self.assertEqual(readiness_warnings(ready), ready["warnings"])
+            requirements = readiness_requirements(ready)
+            self.assertEqual(
+                requirements["confirmed_control"]["pending_actions"],
+                ["confirm-control"],
+            )
+            self.assertEqual(
+                readiness_requirement(ready, "control_requests")["actions"],
+                ["enable-control"],
+            )
+            self.assertEqual(
+                readiness_pending_action_ids(
+                    ready,
+                    capability="confirmed_control",
+                ),
+                ["confirm-control"],
+            )
             actions = readiness_actions_by_id(ready)
             self.assertTrue(actions["enable-control"]["ready"])
             self.assertFalse(actions["confirm-control"]["ready"])
@@ -177,6 +202,18 @@ class HttpClientTests(unittest.TestCase):
                 client.readiness_actions(include_ready=False),
                 pending,
             )
+            self.assertTrue(client.readiness_ready("read_status"))
+            self.assertEqual(
+                client.readiness_pending_action_ids(
+                    capability="confirmed_control",
+                ),
+                ["confirm-control"],
+            )
+            self.assertEqual(
+                client.readiness_requirement("control_requests")["actions"],
+                ["enable-control"],
+            )
+            self.assertEqual(client.readiness_warnings(), ready["warnings"])
             self.assertIn("/brightness", client.commands()["post"])
             self.assertIn("brightness", client.capabilities()["scene_fields"])
             with patch(
@@ -418,6 +455,39 @@ class HttpClientTests(unittest.TestCase):
             ["set_sleep"],
         )
         self.assertEqual(validation_unconfirmed_names(payload), ["set_sleep"])
+
+    def test_readiness_helpers_derive_pending_action_chains(self) -> None:
+        payload = {
+            "ready_for": {"confirmed_control": False},
+            "actions": [
+                {
+                    "id": "enable-control",
+                    "label": "Enable control",
+                    "ready": False,
+                    "category": "control",
+                    "required_for": ["control_requests"],
+                },
+                {
+                    "id": "confirm-control",
+                    "label": "Confirm control",
+                    "ready": False,
+                    "category": "control",
+                    "required_for": ["confirmed_control"],
+                    "blocked_by": ["enable-control"],
+                },
+            ],
+            "warnings": ["No ACK-confirmed control request is recorded yet."],
+        }
+
+        self.assertFalse(readiness_ready(payload, "confirmed_control"))
+        self.assertEqual(
+            readiness_pending_action_ids(
+                payload,
+                capability="confirmed_control",
+            ),
+            ["enable-control", "confirm-control"],
+        )
+        self.assertEqual(readiness_warnings(payload), payload["warnings"])
 
     def test_client_iterates_state_events(self) -> None:
         light = FakeLight()
