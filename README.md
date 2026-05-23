@@ -215,6 +215,9 @@ curl -X POST http://127.0.0.1:8765/validate \
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
+curl -X POST http://127.0.0.1:8765/frame \
+  -H 'content-type: application/json' \
+  -d '{"first_word": "0x0100", "command": "0x2001", "payload_hex": ""}'
 curl -X POST http://127.0.0.1:8765/scene \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "sleep": 0, "brightness": 35, "kelvin": 5600}'

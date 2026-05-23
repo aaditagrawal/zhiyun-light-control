@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 
 from zhiyun_light_control.models import CommandResult, Scene
 from zhiyun_light_control.presets import ScenePresetLibrary
-from zhiyun_light_control.protocol import build_runtime_frame, first_frame
+from zhiyun_light_control.protocol import build_frame, build_runtime_frame, first_frame
 from zhiyun_light_control.server import LightHttpServer
 
 
@@ -22,6 +22,7 @@ class FakeProbe:
 class FakeLight:
     def __init__(self) -> None:
         self.commands: list[int] = []
+        self.frame_exchanges: list[tuple[int, int, bytes, float]] = []
 
     def __enter__(self) -> FakeLight:
         return self
@@ -37,6 +38,20 @@ class FakeLight:
         self.commands.append(cmd)
         tx = build_runtime_frame(1, cmd)
         rx = build_runtime_frame(1, cmd, b"\x00")
+        ack = first_frame(rx, cmd=cmd)
+        return CommandResult(cmd, tx, rx, (ack,), ack)
+
+    def exchange_frame(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ):
+        self.frame_exchanges.append((first_word, cmd, payload, timeout))
+        tx = build_frame(first_word, 1, cmd, payload)
+        rx = build_frame(first_word, 1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
@@ -295,6 +310,42 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_frame_exchange_uses_raw_frame_api(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            request = Request(
+                f"{base}/frame",
+                data=json.dumps(
+                    {
+                        "first_word": "0x0100",
+                        "command": "0x2001",
+                        "payload_hex": "00 01",
+                        "timeout": 0.25,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            result = json.loads(urlopen(request, timeout=3).read())
+
+            self.assertTrue(result["acknowledged"])
+            self.assertEqual(result["command"], 0x2001)
+            self.assertEqual(
+                light.frame_exchanges,
+                [(0x0100, 0x2001, b"\x00\x01", 0.25)],
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_exposes_openapi_schema_and_configurable_cors(self) -> None:
         light = FakeLight()
         server = LightHttpServer(
@@ -314,10 +365,13 @@ class ServerTests(unittest.TestCase):
             )
             self.assertEqual(schema["openapi"], "3.1.0")
             self.assertIn("/scene", schema["paths"])
+            self.assertIn("/frame", schema["paths"])
+            self.assertIn("FrameRequest", schema["components"]["schemas"])
             self.assertIn("CommandResult", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])
+            self.assertIn("/frame", commands["post"])
 
             options = Request(f"{base}/scene", method="OPTIONS")
             options_response = urlopen(options, timeout=3)

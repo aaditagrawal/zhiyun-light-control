@@ -93,6 +93,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/sleep` | Set sleep/power value |
 | `POST` | `/rgb` | Set RGB values |
 | `POST` | `/hsi` | Set HSI values |
+| `POST` | `/frame` | Exchange one raw frame for bench/integration tooling |
 | `POST` | `/scene` | Apply several properties in order |
 | `POST` | `/transition` | Apply a timed sequence from one requested scene to another |
 | `POST` | `/preset` | Apply a loaded named preset with optional overrides |
@@ -101,6 +102,9 @@ Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
 also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
+`POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
+it is deliberately behind the same control gate because arbitrary frames can be
+state-changing.
 On the attached G60, live HTTP bridge checks confirmed `/probe` and `/register`
 while `/sleep` and `/brightness` returned `sent_no_response`.
 The HTTP bridge sends CORS headers by default for browser-based local control

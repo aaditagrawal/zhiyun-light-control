@@ -14,6 +14,7 @@ from .client import ZhiyunLight
 from .models import Scene
 from .presets import ScenePresetLibrary, merge_scene, scene_from_optional_mapping
 from .protocol import (
+    RUNTIME_TYPE,
     RuntimeCommand,
     brightness_payload,
     cct_payload,
@@ -75,6 +76,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/sleep",
                         "/rgb",
                         "/hsi",
+                        "/frame",
                         "/scene",
                         "/transition",
                         "/preset",
@@ -225,6 +227,14 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     ),
                     action="hsi",
                     results=[result],
+                )
+                return result.to_dict()
+            if path == "/frame":
+                result = light.exchange_frame(
+                    _body_int(body, "first_word", RUNTIME_TYPE),
+                    _body_int(body, "command"),
+                    _payload_hex(body),
+                    timeout=float(body.get("timeout", 0.8)),
                 )
                 return result.to_dict()
             if path == "/scene":
@@ -440,6 +450,13 @@ def openapi_schema() -> dict[str, object]:
                     request_schema="HsiRequest",
                 )
             },
+            "/frame": {
+                "post": _operation(
+                    "Exchange one raw frame",
+                    "CommandResult",
+                    request_schema="FrameRequest",
+                )
+            },
             "/scene": {
                 "post": _operation(
                     "Apply a scene",
@@ -600,6 +617,16 @@ def _openapi_schemas() -> dict[str, object]:
             },
             "required": ["hue", "saturation", "intensity"],
         },
+        "FrameRequest": {
+            "type": "object",
+            "properties": {
+                "first_word": {"oneOf": [{"type": "integer"}, {"type": "string"}]},
+                "command": {"oneOf": [{"type": "integer"}, {"type": "string"}]},
+                "payload_hex": {"type": "string"},
+                "timeout": {"type": "number"},
+            },
+            "required": ["command"],
+        },
         "Scene": {
             "type": "object",
             "properties": {
@@ -691,6 +718,28 @@ def _body_bool(body: dict[str, object], key: str, default: bool = False) -> bool
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _body_int(
+    body: dict[str, object],
+    key: str,
+    default: int | None = None,
+) -> int:
+    value = body.get(key, default)
+    if value is None:
+        raise ValueError(f"{key} is required")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value, 0)
+    raise ValueError(f"{key} must be an integer or integer string")
+
+
+def _payload_hex(body: dict[str, object]) -> bytes:
+    payload = body.get("payload_hex", "")
+    if not isinstance(payload, str):
+        raise ValueError("payload_hex must be a string")
+    return bytes.fromhex(payload)
 
 
 _SCENE_FIELDS = {field.name for field in fields(Scene)}
