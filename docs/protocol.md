@@ -248,8 +248,9 @@ The OSC bridge is UDP-based and dependency-free:
 | `/zhiyun/hsi` | `f hue, f saturation, i intensity`, optional trailing `i obj` |
 | `/zhiyun/scene` | `f brightness, i kelvin, i sleep`, optional trailing `i obj` |
 | `/zhiyun/preset` | `s name`, optional trailing `i obj` |
+| `/zhiyun/cue` | `s name`, optional trailing `i obj` |
 
-The `/light/...` prefix is an alias. Control endpoints require `zlight osc-serve --allow-control`. The server replies to each datagram with `/zhiyun/result` containing success flag, action, and error text.
+The `/light/...` prefix is an alias. Control endpoints require `zlight osc-serve --allow-control`. Add `--cue-file` to load named cues for `/zhiyun/cue`. The server replies to each datagram with `/zhiyun/result` containing success flag, action, and error text.
 
 Named presets are loaded from JSON with `--preset-file`. Files can either be a
 top-level mapping of names to scene objects or an object with a `scenes` mapping:

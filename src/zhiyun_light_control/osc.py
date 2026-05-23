@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import socket
 import struct
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
+from .cues import CueLibrary
 from .models import Scene
-from .presets import ScenePresetLibrary
+from .presets import ScenePresetLibrary, merge_scene, scene_from_optional_mapping
 from .protocol import (
     RuntimeCommand,
     brightness_payload,
@@ -120,11 +121,13 @@ class OscLightDispatcher:
         *,
         allow_control: bool,
         preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
         state_tracker: SceneStateTracker | None = None,
     ):
         self.light_factory = light_factory
         self.allow_control = allow_control
         self.preset_library = preset_library
+        self.cue_library = cue_library
         self.state_tracker = state_tracker or SceneStateTracker()
 
     def dispatch(self, message: OscMessage) -> OscDispatchResult:
@@ -249,10 +252,172 @@ class OscLightDispatcher:
                 action="preset",
                 result={"preset": name, "scene": scene.to_dict(), "results": results},
             )
+        if address in {"/zhiyun/cue", "/light/cue"}:
+            if self.cue_library is None:
+                raise ValueError("no cue file loaded")
+            name = _string_arg(args, 0)
+            cue_obj = (
+                int(args[1]) if len(args) >= 2 and isinstance(args[1], int) else obj
+            )
+            cue = self.cue_library.get(name)
+            return self._dispatch_cue(light, message, name, cue, obj=cue_obj)
         return OscDispatchResult(
             message=message,
             action="unknown",
             error=f"unknown OSC address: {address}",
+        )
+
+    def _dispatch_cue(
+        self,
+        light: ZhiyunLight,
+        message: OscMessage,
+        name: str,
+        cue: dict[str, object],
+        *,
+        obj: int,
+    ) -> OscDispatchResult:
+        raw_steps = cue.get("steps")
+        if not isinstance(raw_steps, list) or not raw_steps:
+            raise ValueError("cue steps must be a non-empty array")
+        stop_on_unconfirmed = bool(cue.get("stop_on_unconfirmed"))
+        current_scene: Scene | None = None
+        all_results: list[object] = []
+        step_responses: list[dict[str, object]] = []
+        stopped = False
+        for index, raw_step in enumerate(raw_steps):
+            if not isinstance(raw_step, Mapping):
+                raise ValueError("cue steps must be objects")
+            response, current_scene, results = self._dispatch_cue_step(
+                light,
+                raw_step,
+                index=index,
+                obj=obj,
+                current_scene=current_scene,
+            )
+            step_responses.append(response)
+            all_results.extend(results)
+            if stop_on_unconfirmed and not response["applied"]:
+                stopped = True
+                break
+        applied = results_confirmed(all_results)
+        reason = None if applied else unconfirmed_results_reason(all_results)
+        if current_scene is not None:
+            self._record_scene(current_scene, "cue", all_results)
+        return OscDispatchResult(
+            message=message,
+            action="cue",
+            result={
+                "cue": name,
+                "steps": step_responses,
+                "stopped": stopped,
+                "applied": applied,
+                "reason": reason,
+            },
+        )
+
+    def _dispatch_cue_step(
+        self,
+        light: ZhiyunLight,
+        step: Mapping[str, object],
+        *,
+        index: int,
+        obj: int,
+        current_scene: Scene | None,
+    ) -> tuple[dict[str, object], Scene, list[object]]:
+        if "to" in step:
+            response, scene, results = self._dispatch_cue_transition(
+                light,
+                step,
+                obj=obj,
+                current_scene=current_scene,
+            )
+        elif "preset" in step:
+            response, scene, results = self._dispatch_cue_preset(
+                light,
+                step,
+                obj=obj,
+            )
+        else:
+            scene = _scene_from_step(step, obj=obj)
+            results = light.apply_scene(scene)
+            response = {
+                "action": "scene",
+                "scene": scene.to_dict(),
+                "results": [result.to_dict() for result in results],
+            }
+        applied = results_confirmed(results)
+        response.update(
+            {
+                "index": index,
+                "applied": applied,
+                "reason": None if applied else unconfirmed_results_reason(results),
+            }
+        )
+        return response, scene, list(results)
+
+    def _dispatch_cue_preset(
+        self,
+        light: ZhiyunLight,
+        step: Mapping[str, object],
+        *,
+        obj: int,
+    ) -> tuple[dict[str, object], Scene, list[object]]:
+        if self.preset_library is None:
+            raise ValueError("no preset file loaded")
+        name = str(step["preset"])
+        overrides = _step_overrides(step)
+        scene = merge_scene(
+            self.preset_library.get(name),
+            scene_from_optional_mapping(overrides, obj=obj),
+            override_obj="obj" in overrides,
+        )
+        results = light.apply_scene(scene)
+        return (
+            {
+                "action": "preset",
+                "preset": name,
+                "scene": scene.to_dict(),
+                "results": [result.to_dict() for result in results],
+            },
+            scene,
+            list(results),
+        )
+
+    def _dispatch_cue_transition(
+        self,
+        light: ZhiyunLight,
+        step: Mapping[str, object],
+        *,
+        obj: int,
+        current_scene: Scene | None,
+    ) -> tuple[dict[str, object], Scene, list[object]]:
+        target = step["to"]
+        if not isinstance(target, Mapping):
+            raise ValueError("cue transition target must be an object")
+        scene = scene_from_optional_mapping(target, obj=obj)
+        start = current_scene if current_scene is not None else Scene(obj=scene.obj)
+        batches = light.transition_scene(
+            start,
+            scene,
+            steps=int(step.get("steps", 10)),
+            duration=float(step.get("duration", 1.0)),
+            easing=str(step.get("easing", "linear")),
+        )
+        results = [result for batch in batches for result in batch]
+        return (
+            {
+                "action": "transition",
+                "from": start.to_dict(),
+                "scene": scene.to_dict(),
+                "steps": int(step.get("steps", 10)),
+                "duration": float(step.get("duration", 1.0)),
+                "easing": str(step.get("easing", "linear")),
+                "batches": [
+                    [result.to_dict() for result in batch] for batch in batches
+                ],
+            },
+            scene,
+            results,
         )
 
     def _record_scene(self, scene: Scene, action: str, results: list[object]) -> None:
@@ -276,12 +441,14 @@ def serve_osc(
     once: bool = False,
     light_factory: Callable[[], object] | None = None,
     preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
     state_tracker: SceneStateTracker | None = None,
 ) -> None:
     dispatcher = OscLightDispatcher(
         light_factory=light_factory or (lambda: ZhiyunLight.usb(port=light_port)),
         allow_control=allow_control,
         preset_library=preset_library,
+        cue_library=cue_library,
         state_tracker=state_tracker,
     )
     try:
@@ -364,6 +531,20 @@ def _scene_from_args(args: tuple[OscArg, ...], *, obj: int) -> Scene:
     kelvin = _optional_int(args, 1)
     sleep = _optional_int(args, 2)
     return Scene(obj=obj, brightness=brightness, kelvin=kelvin, sleep=sleep)
+
+
+def _scene_from_step(step: Mapping[str, object], *, obj: int) -> Scene:
+    scene_data = step.get("scene", step)
+    if not isinstance(scene_data, Mapping):
+        raise ValueError("cue scene step must be an object")
+    return scene_from_optional_mapping(scene_data, obj=obj)
+
+
+def _step_overrides(step: Mapping[str, object]) -> dict[str, object]:
+    raw = step.get("overrides", {})
+    if not isinstance(raw, Mapping):
+        raise ValueError("cue preset overrides must be an object")
+    return {str(key): value for key, value in raw.items()}
 
 
 def _optional_number(args: tuple[OscArg, ...], index: int) -> float | None:

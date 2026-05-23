@@ -403,6 +403,7 @@ def build_parser() -> argparse.ArgumentParser:
     osc.add_argument("--port", type=int, default=9000)
     add_bridge_transport_args(osc)
     osc.add_argument("--preset-file", help="JSON file containing named scene presets.")
+    osc.add_argument("--cue-file", help="JSON file containing named cues.")
     osc.add_argument("--allow-control", action="store_true")
     osc.set_defaults(func=cmd_osc_serve)
 
@@ -1188,6 +1189,7 @@ def cmd_osc_serve(args: argparse.Namespace) -> int:
         allow_control=args.allow_control,
         light_factory=bridge_light_factory(args),
         preset_library=load_preset_library(args),
+        cue_library=load_cue_library(args),
     )
     return 0
 

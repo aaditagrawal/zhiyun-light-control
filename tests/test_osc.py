@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from zhiyun_light_control.cues import CueLibrary
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.osc import (
     OscLightDispatcher,
@@ -48,6 +49,18 @@ class FakeLight:
         if scene.sleep is not None:
             results.append(self.exchange_runtime(0x1008))
         return results
+
+    def transition_scene(
+        self,
+        _start,
+        end,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+    ):
+        del duration, easing
+        return [self.apply_scene(end) for _ in range(steps)]
 
 
 class FakeUnconfirmedLight(FakeLight):
@@ -145,6 +158,86 @@ class OscTests(unittest.TestCase):
         self.assertEqual(
             [item["command"] for item in result.result["results"]], [0x1001, 0x1002]
         )
+
+    def test_dispatch_cue_runs_named_steps(self) -> None:
+        light = FakeLight()
+        tracker = SceneStateTracker()
+        presets = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 30, "kelvin": 5000}}}
+        )
+        cues = CueLibrary.from_mapping(
+            {
+                "intro": {
+                    "steps": [
+                        {"scene": {"brightness": 10}},
+                        {"preset": "key", "overrides": {"kelvin": 5600}},
+                    ],
+                    "stop_on_unconfirmed": True,
+                }
+            }
+        )
+        dispatcher = OscLightDispatcher(
+            lambda: light,
+            allow_control=True,
+            preset_library=presets,
+            cue_library=cues,
+            state_tracker=tracker,
+        )
+
+        result = dispatcher.dispatch(
+            decode_message(encode_message("/zhiyun/cue", "intro", 2))
+        )
+
+        self.assertEqual(result.action, "cue")
+        self.assertEqual(result.result["cue"], "intro")
+        self.assertTrue(result.result["applied"])
+        self.assertFalse(result.result["stopped"])
+        self.assertEqual(
+            [step["action"] for step in result.result["steps"]],
+            ["scene", "preset"],
+        )
+        self.assertEqual(light.commands, [0x1001, 0x1001, 0x1002])
+        state = tracker.to_dict()
+        self.assertEqual(state["action"], "cue")
+        self.assertEqual(state["scene"]["obj"], 2)
+        self.assertEqual(state["scene"]["kelvin"], 5600)
+        self.assertTrue(state["applied"])
+
+    def test_dispatch_cue_stops_on_unconfirmed_step(self) -> None:
+        light = FakeUnconfirmedLight()
+        tracker = SceneStateTracker()
+        cues = CueLibrary.from_mapping(
+            {
+                "intro": {
+                    "steps": [
+                        {"scene": {"brightness": 10}},
+                        {"scene": {"kelvin": 5600}},
+                    ],
+                    "stop_on_unconfirmed": True,
+                }
+            }
+        )
+        dispatcher = OscLightDispatcher(
+            lambda: light,
+            allow_control=True,
+            cue_library=cues,
+            state_tracker=tracker,
+        )
+
+        result = dispatcher.dispatch(
+            decode_message(encode_message("/zhiyun/cue", "intro"))
+        )
+
+        self.assertEqual(result.action, "cue")
+        self.assertFalse(result.result["applied"])
+        self.assertTrue(result.result["stopped"])
+        self.assertEqual(result.result["reason"], "sent_no_response")
+        self.assertEqual(len(result.result["steps"]), 1)
+        self.assertEqual(light.commands, [0x1001])
+        state = tracker.to_dict()
+        self.assertEqual(state["action"], "cue")
+        self.assertFalse(state["applied"])
+        self.assertEqual(state["reason"], "sent_no_response")
 
 
 if __name__ == "__main__":

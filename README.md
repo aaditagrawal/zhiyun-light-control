@@ -422,7 +422,7 @@ test values as the CLI. Write checks only run when the bridge was started with
 OSC bridge:
 
 ```sh
-uv run zlight osc-serve --host 127.0.0.1 --port 9000 --allow-control
+uv run zlight osc-serve --host 127.0.0.1 --port 9000 --preset-file examples/scenes.json --cue-file examples/cues.json --allow-control
 ```
 
 Supported OSC addresses:
@@ -437,9 +437,12 @@ Supported OSC addresses:
 /zhiyun/hsi          f:hue f:saturation i:intensity [i:obj]
 /zhiyun/scene        f:brightness i:kelvin i:sleep [i:obj]
 /zhiyun/preset       s:name [i:obj]
+/zhiyun/cue          s:name [i:obj]
 ```
 
-The `/light/...` prefix is accepted as an alias.
+The `/light/...` prefix is accepted as an alias. `/zhiyun/cue` runs a named cue
+loaded by `--cue-file` and records requested state with the same ACK evidence as
+the HTTP cue endpoints.
 
 Art-Net bridge:
 
