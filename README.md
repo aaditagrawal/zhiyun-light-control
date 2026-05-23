@@ -1041,8 +1041,8 @@ planning surface is available through `LightBridgeClient.plan_scene()`,
 resolve serialized runtime frames; they do not open the light or issue writes.
 
 For multi-light setups, use named fixtures and a rig controller. Each fixture can
-use its own USB or BLE `LightConnectionConfig`, and scene mappings without `obj`
-inherit the fixture object id:
+use its own USB or BLE `LightConnectionConfig` or a saved `LightSetupProfile`,
+and scene mappings without `obj` inherit the fixture object id:
 
 ```python
 from zhiyun_light_control import LightConnectionConfig, LightFixture, LightRig
@@ -1090,6 +1090,21 @@ rig = load_rig("examples/rig.json")
 print(rig.fixture_names())
 print(rig.to_dict()["fixtures"])
 ```
+
+Fixture entries may use `profile_path` or an inline `profile` object instead of
+duplicating a connection config. Relative profile paths are resolved beside the
+rig JSON file:
+
+```json
+{
+  "fixtures": {
+    "key": {"profile_path": "zhiyun-light-profile.json", "obj": 1}
+  }
+}
+```
+
+Use `rig.require_setup_profile("key", "read_status")` to fail fast from saved
+profile evidence before opening the transport.
 
 For host applications that need one structured preflight payload for a full
 fixture group, use the rig snapshot API. It returns the same manifest,

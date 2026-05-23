@@ -285,6 +285,11 @@ evidence while failing fast on missing capabilities.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.
+Rig fixtures can reference the same setup evidence with `profile_path` or an
+inline `profile` object. The rig loader resolves relative `profile_path` values
+beside the rig JSON file, uses the profile's selected config for the fixture,
+and keeps the profile available through `rig.setup_profile(name)` and
+`rig.require_setup_profile(name, ...)`.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

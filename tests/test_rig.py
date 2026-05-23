@@ -12,13 +12,16 @@ from zhiyun_light_control import (
     LightConnectionConfig,
     LightFixture,
     LightRig,
+    LightSetupProfile,
     RigConfigError,
     RigNotReady,
     Scene,
+    SetupProfileNotReady,
     async_rig_from_mapping,
     fixture_from_mapping,
     load_rig,
     rig_from_mapping,
+    save_light_setup_profile,
 )
 from zhiyun_light_control.protocol import (
     RUNTIME_TYPE,
@@ -160,6 +163,33 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(fixture.obj, 2)
         self.assertEqual(fixture.tags, ("stage-left", "warm"))
 
+    def test_fixture_from_mapping_accepts_inline_setup_profile(self) -> None:
+        fixture = fixture_from_mapping(
+            {
+                "name": "key",
+                "profile": setup_profile().to_dict(),
+                "obj": 3,
+                "tags": ["profiled"],
+            }
+        )
+
+        self.assertEqual(fixture.config.port, "/dev/cu.usbmodem21301")
+        self.assertIsNotNone(fixture.setup_profile)
+        self.assertTrue(fixture.setup_profile.ready("read_status"))
+        self.assertFalse(fixture.setup_profile.ready("control_writes"))
+        self.assertEqual(fixture.obj, 3)
+        self.assertEqual(fixture.tags, ("profiled",))
+
+    def test_fixture_rejects_mixed_config_and_profile(self) -> None:
+        with self.assertRaisesRegex(ValueError, "config and setup profile"):
+            fixture_from_mapping(
+                {
+                    "name": "key",
+                    "profile": setup_profile().to_dict(),
+                    "config": {"transport": "usb", "port": "/dev/cu.other"},
+                }
+            )
+
     def test_rig_from_mapping_loads_fixtures_presets_and_cues(self) -> None:
         key = FakeLight("key")
         rig = rig_from_mapping(
@@ -217,6 +247,38 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(rig.fixture("key").config.port, "/dev/cu.key")
         response = rig.controller("key").apply_preset("key")
         self.assertEqual(response["scene"]["brightness"], 30.0)
+
+    def test_load_rig_resolves_relative_fixture_profile_path(self) -> None:
+        key = FakeLight("key")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            profile_path = root / "key-profile.json"
+            save_light_setup_profile(setup_profile(), profile_path)
+            rig_path = root / "rig.json"
+            rig_path.write_text(
+                json.dumps(
+                    {
+                        "fixtures": {
+                            "key": {
+                                "profile_path": "key-profile.json",
+                                "obj": 4,
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            rig = load_rig(rig_path, light_factories={"key": FakeFactory(key)})
+
+        fixture = rig.fixture("key")
+        self.assertEqual(fixture.config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(fixture.obj, 4)
+        self.assertIsNotNone(fixture.setup_profile)
+        self.assertTrue(rig.require_setup_profile("key", "read_status").ok)
+        with self.assertRaises(SetupProfileNotReady):
+            rig.require_setup_profile("key", "control_writes")
+        self.assertIn("setup_profile", fixture.to_dict())
 
     def test_rig_integration_carries_libraries_for_planning(self) -> None:
         key = FakeLight("key")
@@ -483,6 +545,31 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(key.scenes[0].obj, 4)
         self.assertEqual(key.control_modes, [0x01])
 
+    async def test_async_rig_accepts_fixture_profile_mapping(self) -> None:
+        key = AsyncFakeLight("key")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "profile": setup_profile(
+                            LightConnectionConfig.ble(
+                                address="UUID-1",
+                                backend="macos-app",
+                            )
+                        ).to_dict(),
+                        "obj": 6,
+                    }
+                }
+            },
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        fixture = rig.fixture("key")
+        self.assertEqual(fixture.config.transport, "ble")
+        self.assertEqual(fixture.config.address, "UUID-1")
+        self.assertEqual(fixture.obj, 6)
+        self.assertTrue(rig.require_setup_profile("key", "read_status").ok)
+
     async def test_async_apply_all_uses_fixture_object_defaults(self) -> None:
         key = AsyncFakeLight("key")
         fill = AsyncFakeLight("fill")
@@ -667,6 +754,25 @@ def _result(
     rx = build_frame(RUNTIME_TYPE, 1, cmd, payload)
     ack = first_frame(rx, cmd=cmd)
     return CommandResult(cmd, tx, rx, (ack,), ack)
+
+
+def setup_profile(config: LightConnectionConfig | None = None) -> LightSetupProfile:
+    resolved = config or LightConnectionConfig.usb(
+        port="/dev/cu.usbmodem21301",
+        persistent=True,
+    )
+    return LightSetupProfile.from_setup_report(
+        {
+            "api": "zhiyun-light-control",
+            "ok": True,
+            "config": resolved.to_dict(),
+            "route_confirmed": True,
+            "status_ok": True,
+            "ready_for": {"read_status": True},
+            "validation_ready_for": {"control_writes": False},
+            "validation_unconfirmed": ["set_brightness"],
+        }
+    )
 
 
 if __name__ == "__main__":

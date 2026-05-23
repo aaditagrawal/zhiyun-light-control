@@ -19,6 +19,7 @@ from .integration import (
 )
 from .models import Scene
 from .presets import ScenePresetLibrary, scene_from_mapping
+from .profiles import LightSetupProfile, load_light_setup_profile
 from .protocol import DEFAULT_CONTROL_MODE
 from .state import SceneStateTracker
 
@@ -31,14 +32,18 @@ class LightFixture:
     config: LightConnectionConfig = field(default_factory=LightConnectionConfig)
     obj: int = 1
     tags: tuple[str, ...] = ()
+    setup_profile: LightSetupProfile | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "name": self.name,
             "obj": self.obj,
             "tags": list(self.tags),
             "config": asdict(self.config),
         }
+        if self.setup_profile is not None:
+            payload["setup_profile"] = self.setup_profile.to_dict()
+        return payload
 
 
 class RigConfigError(ValueError):
@@ -180,6 +185,19 @@ class LightRig:
             return self.fixtures[name]
         except KeyError as exc:
             raise ValueError(f"unknown fixture {name!r}") from exc
+
+    def setup_profile(self, name: str) -> LightSetupProfile | None:
+        return self.fixture(name).setup_profile
+
+    def require_setup_profile(
+        self,
+        name: str,
+        *capabilities: str,
+    ) -> LightSetupProfile:
+        profile = self.setup_profile(name)
+        if profile is None:
+            raise RigConfigError(f"fixture {name!r} has no setup profile")
+        return profile.require_ready(*capabilities)
 
     def controller(self, name: str) -> LightController:
         self.fixture(name)
@@ -725,6 +743,19 @@ class AsyncLightRig:
         except KeyError as exc:
             raise ValueError(f"unknown fixture {name!r}") from exc
 
+    def setup_profile(self, name: str) -> LightSetupProfile | None:
+        return self.fixture(name).setup_profile
+
+    def require_setup_profile(
+        self,
+        name: str,
+        *capabilities: str,
+    ) -> LightSetupProfile:
+        profile = self.setup_profile(name)
+        if profile is None:
+            raise RigConfigError(f"fixture {name!r} has no setup profile")
+        return profile.require_ready(*capabilities)
+
     def controller(self, name: str) -> AsyncLightController:
         self.fixture(name)
         return self.controllers[name]
@@ -1166,11 +1197,13 @@ def fixture_from_mapping(payload: Mapping[str, object]) -> LightFixture:
     if not isinstance(raw_tags, Iterable) or isinstance(raw_tags, str | bytes):
         raise ValueError("fixture tags must be an iterable of strings")
     tags = tuple(str(tag) for tag in raw_tags)
+    profile = _setup_profile_from_fixture_mapping(payload)
     return LightFixture(
         name=name,
-        config=_config_from_fixture_mapping(payload),
+        config=_config_from_fixture_mapping(payload, setup_profile=profile),
         obj=raw_obj,
         tags=tags,
+        setup_profile=profile,
     )
 
 
@@ -1251,11 +1284,15 @@ def load_async_rig(
 
 
 def load_rig_mapping(path: str | Path) -> dict[str, object]:
-    with Path(path).open("r", encoding="utf-8") as handle:
+    rig_path = Path(path)
+    with rig_path.open("r", encoding="utf-8") as handle:
         payload = json.load(handle)
     if not isinstance(payload, Mapping):
         raise RigConfigError("rig file must contain a JSON object")
-    return {str(key): value for key, value in payload.items()}
+    return _resolve_rig_profile_paths(
+        {str(key): value for key, value in payload.items()},
+        base_dir=rig_path.parent,
+    )
 
 
 @dataclass(frozen=True)
@@ -1364,13 +1401,19 @@ def _fixture_scene(fixture: LightFixture, scene: SceneInput) -> Scene:
 
 def _config_from_fixture_mapping(
     payload: Mapping[str, object],
+    *,
+    setup_profile: LightSetupProfile | None,
 ) -> LightConnectionConfig:
     raw_config = payload.get("config")
     if raw_config is None:
+        if setup_profile is not None:
+            return setup_profile.config
         config_values = {
             key: payload[key] for key in _config_field_names() if key in payload
         }
         return LightConnectionConfig.from_mapping(config_values)
+    if setup_profile is not None:
+        raise ValueError("fixture cannot define both config and setup profile")
     if isinstance(raw_config, LightConnectionConfig):
         return raw_config
     if not isinstance(raw_config, Mapping):
@@ -1381,6 +1424,72 @@ def _config_from_fixture_mapping(
         if str(key) in _config_field_names()
     }
     return LightConnectionConfig.from_mapping(config_values)
+
+
+def _setup_profile_from_fixture_mapping(
+    payload: Mapping[str, object],
+) -> LightSetupProfile | None:
+    raw_profile = payload.get("setup_profile", payload.get("profile"))
+    raw_profile_path = payload.get("profile_path")
+    if raw_profile is not None and raw_profile_path is not None:
+        raise ValueError("fixture cannot define both profile and profile_path")
+    if raw_profile_path is not None:
+        if not isinstance(raw_profile_path, str):
+            raise ValueError("fixture profile_path must be a string")
+        return load_light_setup_profile(raw_profile_path)
+    if raw_profile is None:
+        return None
+    if isinstance(raw_profile, LightSetupProfile):
+        return raw_profile
+    if isinstance(raw_profile, str):
+        return load_light_setup_profile(raw_profile)
+    if isinstance(raw_profile, Mapping):
+        return LightSetupProfile.from_mapping(
+            {str(key): value for key, value in raw_profile.items()}
+        )
+    raise ValueError("fixture profile must be a path, mapping, or LightSetupProfile")
+
+
+def _resolve_rig_profile_paths(
+    payload: dict[str, object],
+    *,
+    base_dir: Path,
+) -> dict[str, object]:
+    raw_fixtures = payload.get("fixtures")
+    if isinstance(raw_fixtures, Mapping):
+        payload["fixtures"] = {
+            str(name): _resolve_fixture_profile_path(value, base_dir=base_dir)
+            for name, value in raw_fixtures.items()
+        }
+    elif not isinstance(raw_fixtures, str | bytes) and isinstance(
+        raw_fixtures,
+        Iterable,
+    ):
+        payload["fixtures"] = [
+            _resolve_fixture_profile_path(value, base_dir=base_dir)
+            for value in raw_fixtures
+        ]
+    return payload
+
+
+def _resolve_fixture_profile_path(value: object, *, base_dir: Path) -> object:
+    if not isinstance(value, Mapping):
+        return value
+    fixture = {str(key): item for key, item in value.items()}
+    raw_profile = fixture.get("profile")
+    raw_profile_path = fixture.get("profile_path")
+    if isinstance(raw_profile_path, str):
+        fixture["profile_path"] = str(_resolve_path(raw_profile_path, base_dir))
+    if isinstance(raw_profile, str):
+        fixture["profile"] = str(_resolve_path(raw_profile, base_dir))
+    return fixture
+
+
+def _resolve_path(path: str, base_dir: Path) -> Path:
+    resolved = Path(path)
+    if resolved.is_absolute():
+        return resolved
+    return base_dir / resolved
 
 
 def _config_field_names() -> tuple[str, ...]:
