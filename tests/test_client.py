@@ -56,6 +56,23 @@ class ClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "RGB"):
             light.apply_scene(Scene(obj=1, red=255))
 
+    def test_transition_scene_applies_interpolated_updates(self) -> None:
+        transport = EchoAckTransport()
+        light = ZhiyunLight(transport)
+
+        batches = light.transition_scene(
+            Scene(obj=1, brightness=0),
+            Scene(obj=1, brightness=100),
+            steps=2,
+            duration=0,
+        )
+
+        self.assertEqual(
+            [result.command for batch in batches for result in batch],
+            [0x1001, 0x1001],
+        )
+        self.assertEqual([first_frame(tx).cmd for tx in transport.sent], [0x1001, 0x1001])
+
 
 if __name__ == "__main__":
     unittest.main()

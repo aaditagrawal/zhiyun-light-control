@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -24,6 +25,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
+from .transitions import EasingName, scene_transition, transition_interval
 from .transports.ble import BleTransport
 
 
@@ -224,3 +226,21 @@ class AsyncZhiyunLight:
                 )
             )
         return results
+
+    async def transition_scene(
+        self,
+        start: Scene,
+        end: Scene,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: EasingName = "linear",
+    ) -> list[list[CommandResult]]:
+        scenes = scene_transition(start, end, steps=steps, easing=easing)
+        delay = transition_interval(duration, len(scenes))
+        batches: list[list[CommandResult]] = []
+        for index, scene in enumerate(scenes):
+            batches.append(await self.apply_scene(scene))
+            if delay > 0 and index < len(scenes) - 1:
+                await asyncio.sleep(delay)
+        return batches

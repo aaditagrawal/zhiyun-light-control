@@ -70,6 +70,23 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         sent_cmds = [first_frame(tx).cmd for tx in transport.sent]
         self.assertEqual(sent_cmds, [0x1008, 0x1001, 0x1002])
 
+    async def test_async_transition_scene_matches_sync_surface(self) -> None:
+        transport = AsyncEchoAckTransport()
+        light = AsyncZhiyunLight(transport)
+
+        batches = await light.transition_scene(
+            Scene(obj=1, brightness=0),
+            Scene(obj=1, brightness=100),
+            steps=2,
+            duration=0,
+        )
+
+        self.assertEqual(
+            [result.command for batch in batches for result in batch],
+            [0x1001, 0x1001],
+        )
+        self.assertEqual([first_frame(tx).cmd for tx in transport.sent], [0x1001, 0x1001])
+
 
 if __name__ == "__main__":
     unittest.main()

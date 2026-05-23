@@ -24,6 +24,7 @@ Implemented and still experimental:
 - Local HTTP, OSC, Art-Net, and sACN bridges for production tools.
 - Named scene presets loaded from JSON.
 - Requested-state tracking for bridge clients.
+- Timed scene transitions for cue-style fades over USB or BLE.
 
 Firmware flashing is intentionally not implemented here. Use Zhiyun's official
 updater for firmware writes.
@@ -140,10 +141,16 @@ curl -X POST http://127.0.0.1:8765/brightness \
 curl -X POST http://127.0.0.1:8765/scene \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "sleep": 0, "brightness": 35, "kelvin": 5600}'
+curl -X POST http://127.0.0.1:8765/transition \
+  -H 'content-type: application/json' \
+  -d '{"from": {"brightness": 10}, "to": {"brightness": 60, "kelvin": 5600}, "steps": 8, "duration": 2.0, "easing": "ease-in-out"}'
 curl -X POST http://127.0.0.1:8765/preset \
   -H 'content-type: application/json' \
   -d '{"name": "key", "brightness": 45}'
 ```
+
+For `/transition`, omit `from` to use the bridge's last requested state for the
+same object id.
 
 OSC bridge:
 
@@ -214,6 +221,22 @@ with ZhiyunLight.usb() as light:
     print([result.to_dict() for result in results])
 ```
 
+Smooth transitions use the same scene model and work with both USB and BLE
+clients:
+
+```python
+from zhiyun_light_control import Scene, ZhiyunLight
+
+with ZhiyunLight.usb() as light:
+    light.transition_scene(
+        Scene(obj=1, brightness=10, kelvin=3200),
+        Scene(obj=1, brightness=60, kelvin=5600),
+        steps=8,
+        duration=2.0,
+        easing="ease-in-out",
+    )
+```
+
 Map a DMX frame to the same scene model:
 
 ```python
@@ -239,7 +262,12 @@ from zhiyun_light_control import AsyncZhiyunLight, Scene
 async def main():
     async with AsyncZhiyunLight.ble(name_contains="MOLUS") as light:
         print(await light.probe())
-        await light.apply_scene(Scene(obj=1, brightness=35, kelvin=5600))
+        await light.transition_scene(
+            Scene(obj=1, brightness=10),
+            Scene(obj=1, brightness=35, kelvin=5600),
+            steps=6,
+            duration=1.5,
+        )
 
 asyncio.run(main())
 ```

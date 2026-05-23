@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -27,6 +28,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
+from .transitions import EasingName, scene_transition, transition_interval
 from .transports.usb import UsbTransport
 
 
@@ -226,6 +228,24 @@ class ZhiyunLight:
                 )
             )
         return results
+
+    def transition_scene(
+        self,
+        start: Scene,
+        end: Scene,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: EasingName = "linear",
+    ) -> list[list[CommandResult]]:
+        scenes = scene_transition(start, end, steps=steps, easing=easing)
+        delay = transition_interval(duration, len(scenes))
+        batches: list[list[CommandResult]] = []
+        for index, scene in enumerate(scenes):
+            batches.append(self.apply_scene(scene))
+            if delay > 0 and index < len(scenes) - 1:
+                time.sleep(delay)
+        return batches
 
     def get_object_firmware(self, obj: int = 0):
         return self.command(RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj))

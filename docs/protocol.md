@@ -60,6 +60,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/rgb` | Set RGB values |
 | `POST` | `/hsi` | Set HSI values |
 | `POST` | `/scene` | Apply several properties in order |
+| `POST` | `/transition` | Apply a timed sequence from one requested scene to another |
 | `POST` | `/preset` | Apply a loaded named preset with optional overrides |
 
 Control endpoints require `zlight serve --allow-control`. Responses include command result details instead of hiding timeouts, because some endpoints are still experimental on the current G60.
@@ -109,6 +110,16 @@ device-confirmed physical measurement. It includes the last scene payload,
 source protocol, action name, timestamp, applied flag, optional reason, and
 transport status strings from any command results. This gives media tools a
 stable polling surface even while some device commands remain fire-and-forget.
+
+HTTP `/transition` accepts either explicit `from` and `to` scene objects or
+top-level target scene fields. If `from` is omitted, the bridge uses the last
+requested state for the same object id; if no state exists yet, unknown starting
+fields are omitted until the final update. Empty intermediate updates are
+dropped, so a transition with no known starting values sends the final scene
+immediately. Supported transition fields: `steps`, `duration`, and `easing`
+(`linear`, `ease-in`, `ease-out`, `ease-in-out`). The same transition planner is
+exposed in Python through `SceneTransition`, `scene_transition()`,
+`ZhiyunLight.transition_scene()`, and `AsyncZhiyunLight.transition_scene()`.
 
 The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and maps DMX channels to a `Scene`:
 

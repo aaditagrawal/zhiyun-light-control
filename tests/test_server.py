@@ -47,6 +47,28 @@ class FakeLight:
             results.append(self.exchange_runtime(0x1002))
         return results
 
+    def transition_scene(
+        self,
+        start: Scene,
+        end: Scene,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+    ):
+        del start, duration, easing
+        batches = []
+        for index in range(1, steps + 1):
+            brightness = None
+            if end.brightness is not None:
+                brightness = end.brightness * index / steps
+            batches.append(
+                self.apply_scene(
+                    Scene(obj=end.obj, brightness=brightness, kelvin=end.kelvin)
+                )
+            )
+        return batches
+
 
 class ServerTests(unittest.TestCase):
     def test_http_probe_and_scene(self) -> None:
@@ -115,6 +137,44 @@ class ServerTests(unittest.TestCase):
             state = json.loads(urlopen(f"{base}/state", timeout=3).read())
             self.assertEqual(state["action"], "preset")
             self.assertEqual(state["scene"]["brightness"], 55.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_transition_uses_tracked_state_as_default_start(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            scene_request = Request(
+                f"{base}/scene",
+                data=json.dumps({"obj": 1, "brightness": 10}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            json.loads(urlopen(scene_request, timeout=3).read())
+
+            transition_request = Request(
+                f"{base}/transition",
+                data=json.dumps({"to": {"brightness": 30}, "steps": 2, "duration": 0}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            response = json.loads(urlopen(transition_request, timeout=3).read())
+            self.assertEqual(response["from"]["brightness"], 10.0)
+            self.assertEqual(response["scene"]["brightness"], 30.0)
+            self.assertEqual(response["steps"], 2)
+            self.assertEqual(len(response["batches"]), 2)
+
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["action"], "transition")
+            self.assertEqual(state["scene"]["brightness"], 30.0)
         finally:
             server.shutdown()
             server.server_close()

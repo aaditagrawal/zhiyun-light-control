@@ -14,6 +14,7 @@ from .protocol import (
 )
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 from .state import SceneState, SceneStateTracker
+from .transitions import SceneTransition, interpolate_scene, scene_transition
 
 __all__ = [
     "AsyncZhiyunLight",
@@ -29,6 +30,7 @@ __all__ = [
     "Scene",
     "SceneState",
     "SceneStateTracker",
+    "SceneTransition",
     "ScenePresetLibrary",
     "SacnPacket",
     "ZhiyunLight",
@@ -44,4 +46,6 @@ __all__ = [
     "merge_scene",
     "scene_from_mapping",
     "scene_from_dmx",
+    "scene_transition",
+    "interpolate_scene",
 ]

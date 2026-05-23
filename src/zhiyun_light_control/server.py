@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import fields
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -63,6 +64,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/rgb",
                         "/hsi",
                         "/scene",
+                        "/transition",
                         "/preset",
                     ],
                     "control_enabled": self.server.allow_control,
@@ -194,23 +196,42 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 )
                 return result.to_dict()
             if path == "/scene":
-                scene = Scene(
-                    obj=obj,
-                    brightness=_optional_float(body, "brightness"),
-                    kelvin=_optional_int(body, "kelvin"),
-                    sleep=_optional_int(body, "sleep"),
-                    red=_optional_int(body, "red"),
-                    green=_optional_int(body, "green"),
-                    blue=_optional_int(body, "blue"),
-                    hue=_optional_float(body, "hue"),
-                    saturation=_optional_float(body, "saturation"),
-                    intensity=_optional_int(body, "intensity"),
-                )
+                scene = _scene_from_body(body, obj=obj)
                 results = light.apply_scene(scene)
                 self._record_scene(scene, action="scene", results=results)
                 return {
                     "scene": scene.to_dict(),
                     "results": [result.to_dict() for result in results],
+                }
+            if path == "/transition":
+                target_data = body.get("to")
+                if target_data is None:
+                    target_data = _scene_fields_from_body(body)
+                if not isinstance(target_data, dict):
+                    raise ValueError("transition 'to' must be an object")
+                end = _scene_from_body(target_data, obj=obj)
+                start = self._transition_start(body, obj=end.obj)
+                steps = int(body.get("steps", 10))
+                duration = float(body.get("duration", 1.0))
+                easing = str(body.get("easing", "linear"))
+                batches = light.transition_scene(
+                    start,
+                    end,
+                    steps=steps,
+                    duration=duration,
+                    easing=easing,
+                )
+                flat_results = [result for batch in batches for result in batch]
+                self._record_scene(end, action="transition", results=flat_results)
+                return {
+                    "from": start.to_dict(),
+                    "scene": end.to_dict(),
+                    "steps": steps,
+                    "duration": duration,
+                    "easing": easing,
+                    "batches": [
+                        [result.to_dict() for result in batch] for batch in batches
+                    ],
                 }
             if path == "/preset":
                 library = self.server.preset_library
@@ -235,6 +256,17 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     "results": [result.to_dict() for result in results],
                 }
         raise ValueError("unknown endpoint")
+
+    def _transition_start(self, body: dict[str, Any], *, obj: int) -> Scene:
+        start_data = body.get("from")
+        if start_data is not None:
+            if not isinstance(start_data, dict):
+                raise ValueError("transition 'from' must be an object")
+            return _scene_from_body(start_data, obj=obj)
+        snapshot = self.server.state_tracker.snapshot()
+        if snapshot is not None and snapshot.scene.obj == obj:
+            return snapshot.scene
+        return Scene(obj=obj)
 
     def _record_scene(
         self,
@@ -302,3 +334,25 @@ def _optional_int(body: dict[str, Any], key: str) -> int | None:
 
 def _optional_float(body: dict[str, Any], key: str) -> float | None:
     return float(body[key]) if key in body and body[key] is not None else None
+
+
+_SCENE_FIELDS = {field.name for field in fields(Scene)}
+
+
+def _scene_fields_from_body(body: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in body.items() if key in _SCENE_FIELDS}
+
+
+def _scene_from_body(body: dict[str, Any], *, obj: int = 1) -> Scene:
+    return Scene(
+        obj=int(body.get("obj", obj)),
+        brightness=_optional_float(body, "brightness"),
+        kelvin=_optional_int(body, "kelvin"),
+        sleep=_optional_int(body, "sleep"),
+        red=_optional_int(body, "red"),
+        green=_optional_int(body, "green"),
+        blue=_optional_int(body, "blue"),
+        hue=_optional_float(body, "hue"),
+        saturation=_optional_float(body, "saturation"),
+        intensity=_optional_int(body, "intensity"),
+    )

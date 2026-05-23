@@ -152,6 +152,24 @@ class SyncBleLight:
     def apply_scene(self, scene: Scene):
         return self._run_light("apply_scene", scene)
 
+    def transition_scene(
+        self,
+        start: Scene,
+        end: Scene,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+    ):
+        return self._run_light(
+            "transition_scene",
+            start,
+            end,
+            steps=steps,
+            duration=duration,
+            easing=easing,
+        )
+
     def _run_light(self, method: str, *args: Any, **kwargs: Any):
         if self._light is None:
             raise RuntimeError("BLE light is not open")
