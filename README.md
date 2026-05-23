@@ -661,6 +661,25 @@ Validation reports also have `validation_summary()`, `validation_ready_for()`,
 `validation_unconfirmed_names()` helpers for consuming `summary.ready_for` and
 per-category evidence without hand-parsing the nested JSON.
 
+Host applications can get the same setup model without starting the HTTP bridge
+or shelling out to the CLI:
+
+```python
+from zhiyun_light_control import LightConnectionConfig, LightIntegration
+
+integration = LightIntegration(
+    config=LightConnectionConfig(transport="usb", port="/dev/cu.usbmodem21301"),
+    preset_names=("key",),
+    cue_names=("intro",),
+)
+
+ready = integration.readiness()
+snapshot = integration.snapshot(include_ble_status=True)
+
+print(ready["ready_for"])
+print(snapshot["summary"]["connection_confirmed"])
+```
+
 ```python
 from zhiyun_light_control import LightConnectionConfig, Scene, open_light
 

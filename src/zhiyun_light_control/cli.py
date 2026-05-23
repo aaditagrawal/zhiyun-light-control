@@ -27,6 +27,7 @@ from .discovery import (
     discover_usb_primitives,
 )
 from .http_client import LightBridgeClient, LightBridgeError
+from .integration import local_integration_snapshot, local_readiness
 from .macos_ble_app import (
     macos_ble_app_info,
     macos_ble_app_status,
@@ -48,13 +49,7 @@ from .protocol import (
     sleep_payload,
 )
 from .sacn import serve_sacn
-from .server import (
-    capabilities_response,
-    integration_manifest_response,
-    integration_snapshot_response,
-    readiness_response,
-    serve,
-)
+from .server import serve
 from .status import read_async_status, read_sync_status
 from .transports.ble import (
     BLE_PROFILE_NAMES,
@@ -777,8 +772,9 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_ready(args: argparse.Namespace) -> int:
-    payload = local_readiness_payload(
-        args,
+    payload = local_readiness(
+        light_connection_config_from_args(args),
+        allow_control=args.allow_control,
         include_ble=False,
         include_ble_status=None,
     )
@@ -787,102 +783,17 @@ def cmd_ready(args: argparse.Namespace) -> int:
 
 
 def cmd_integration(args: argparse.Namespace) -> int:
-    ready = local_readiness_payload(
-        args,
+    snapshot = local_integration_snapshot(
+        light_connection_config_from_args(args),
+        allow_control=args.allow_control,
         include_ble=args.include_ble,
         include_ble_status=True if args.include_ble_status else None,
     )
-    ble_backend = "direct" if args.unsafe_in_process else args.ble_backend
-    devices = ready.get("devices")
-    if not isinstance(devices, dict):
-        devices = {}
-    snapshot = integration_snapshot_response(
-        manifest=integration_manifest_response(
-            allow_control=args.allow_control,
-            presets=[],
-            cues=[],
-            transport=args.transport,
-            ble_backend=ble_backend,
-            ble_profile=args.ble_profile,
-            ble_address=args.address,
-            ble_name_contains=args.name_contains,
-        ),
-        capabilities=capabilities_response(
-            allow_control=args.allow_control,
-            presets=[],
-            cues=[],
-        ),
-        ready=ready,
-        devices=devices,
-    )
     print_json(snapshot, compact=args.json)
+    payloads = snapshot.get("payloads")
+    raw_ready = payloads.get("ready") if isinstance(payloads, dict) else {}
+    ready = raw_ready if isinstance(raw_ready, dict) else {}
     return 0 if ready.get("connection_confirmed") is True else 2
-
-
-def local_readiness_payload(
-    args: argparse.Namespace,
-    *,
-    include_ble: bool,
-    include_ble_status: bool | None,
-) -> dict[str, object]:
-    status, connection_confirmed, error = local_status_snapshot(args)
-    ble_backend = "direct" if args.unsafe_in_process else args.ble_backend
-    status_requested = (
-        args.transport == "ble" and ble_backend == "macos-app"
-        if include_ble_status is None
-        else include_ble_status
-    )
-    devices = discover_transport_devices(
-        configured_transport=args.transport,
-        configured_usb_port=args.port,
-        include_ble=include_ble,
-        include_ble_status=status_requested,
-        ble_backend=ble_backend,
-        ble_timeout=args.timeout,
-        ble_name_contains=args.name_contains,
-        ble_python=args.python,
-    )
-    payload = readiness_response(
-        allow_control=args.allow_control,
-        transport=args.transport,
-        ble_backend=ble_backend,
-        ble_profile=args.ble_profile,
-        ble_address=args.address,
-        ble_name_contains=args.name_contains,
-        connection_confirmed=connection_confirmed,
-        status=status,
-        error=error,
-        devices=devices,
-        state_version=0,
-        state=None,
-    )
-    return payload
-
-
-def local_status_snapshot(
-    args: argparse.Namespace,
-) -> tuple[dict[str, object], bool, str | None]:
-    try:
-        if args.transport == "ble":
-            report = asyncio.run(_status_ble(args))
-        else:
-            with sync_usb_light_from_args(args) as light:
-                report = read_sync_status(
-                    light,
-                    transport=args.transport,
-                    timeout=args.timeout,
-                )
-    except Exception as exc:
-        return local_error_status(exc), False, str(exc)
-    return report.to_dict(), report.connection_confirmed, None
-
-
-def local_error_status(exc: Exception) -> dict[str, object]:
-    status: dict[str, object] = {"ok": False, "error": str(exc)}
-    if isinstance(exc, BleWorkerError):
-        status["transport"] = "ble"
-        status["exchange"] = exc.result.to_dict()
-    return status
 
 
 async def _status_ble(args: argparse.Namespace):
@@ -1513,22 +1424,39 @@ def cmd_sacn_serve(args: argparse.Namespace) -> int:
 
 def bridge_light_factory(args: argparse.Namespace):
     return make_light_factory(
-        LightConnectionConfig(
-            transport=args.transport,
-            port=args.light_port,
-            address=args.address,
-            name_contains=args.name_contains,
-            timeout=args.light_timeout,
-            usb_lock_timeout=args.usb_lock_timeout,
-            ble_profile=args.ble_profile,
-            ble_service_uuid=args.ble_service_uuid,
-            ble_write_uuid=args.ble_write_uuid,
-            ble_notify_uuid=args.ble_notify_uuid,
-            ble_backend="direct" if args.unsafe_in_process else args.ble_backend,
-            ble_python=args.ble_python,
-            ble_in_process=args.unsafe_in_process,
+        light_connection_config_from_args(
+            args,
             persistent=not args.no_persistent_light,
         )
+    )
+
+
+def light_connection_config_from_args(
+    args: argparse.Namespace,
+    *,
+    persistent: bool = False,
+) -> LightConnectionConfig:
+    timeout = getattr(args, "light_timeout", getattr(args, "timeout", 1.5))
+    ble_python = getattr(args, "ble_python", getattr(args, "python", None))
+    unsafe_in_process = getattr(args, "unsafe_in_process", False)
+    ble_backend = (
+        "direct" if unsafe_in_process else getattr(args, "ble_backend", "worker")
+    )
+    return LightConnectionConfig(
+        transport=getattr(args, "transport", "usb"),
+        port=getattr(args, "light_port", getattr(args, "port", None)),
+        address=getattr(args, "address", None),
+        name_contains=getattr(args, "name_contains", None),
+        timeout=timeout,
+        usb_lock_timeout=getattr(args, "usb_lock_timeout", DEFAULT_LOCK_TIMEOUT),
+        ble_profile=getattr(args, "ble_profile", DEFAULT_BLE_PROFILE.name),
+        ble_service_uuid=getattr(args, "ble_service_uuid", None),
+        ble_write_uuid=getattr(args, "ble_write_uuid", None),
+        ble_notify_uuid=getattr(args, "ble_notify_uuid", None),
+        ble_backend=ble_backend,
+        ble_python=ble_python,
+        ble_in_process=unsafe_in_process,
+        persistent=persistent,
     )
 
 

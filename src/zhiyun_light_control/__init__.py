@@ -85,6 +85,15 @@ from .http_client import (
     validation_summary,
     validation_unconfirmed_names,
 )
+from .integration import (
+    LightIntegration,
+    local_capabilities,
+    local_error_status,
+    local_integration_snapshot,
+    local_manifest,
+    local_readiness,
+    local_status_snapshot,
+)
 from .macos_ble_app import (
     macos_ble_app_info,
     macos_ble_app_status,
@@ -174,6 +183,7 @@ __all__ = [
     "LightBridgeError",
     "LightBridgeNotReady",
     "LightBridgeUnconfirmed",
+    "LightIntegration",
     "LightStatusReport",
     "HardwareValidationReport",
     "MacosBleAppTransport",
@@ -243,6 +253,12 @@ __all__ = [
     "flatten_command_batches",
     "iter_frames",
     "inspect_ble_device",
+    "local_capabilities",
+    "local_error_status",
+    "local_integration_snapshot",
+    "local_manifest",
+    "local_readiness",
+    "local_status_snapshot",
     "test_ble_endpoint_candidates",
     "macos_ble_app_info",
     "macos_ble_app_status",

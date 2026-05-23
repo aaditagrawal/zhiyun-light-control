@@ -362,11 +362,11 @@ class CliTests(unittest.TestCase):
         stdout = io.StringIO()
         with (
             patch(
-                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                "zhiyun_light_control.bridge.ZhiyunLight.usb",
                 return_value=FakeLight(),
             ),
             patch(
-                "zhiyun_light_control.cli.discover_transport_devices",
+                "zhiyun_light_control.integration.discover_transport_devices",
                 return_value=devices,
             ) as discover,
             contextlib.redirect_stdout(stdout),
@@ -464,11 +464,11 @@ class CliTests(unittest.TestCase):
         stdout = io.StringIO()
         with (
             patch(
-                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                "zhiyun_light_control.bridge.ZhiyunLight.usb",
                 return_value=FakeLight(),
             ),
             patch(
-                "zhiyun_light_control.cli.discover_transport_devices",
+                "zhiyun_light_control.integration.discover_transport_devices",
                 return_value=devices,
             ) as discover,
             contextlib.redirect_stdout(stdout),
@@ -537,9 +537,6 @@ class CliTests(unittest.TestCase):
         )
 
     def test_ready_cli_reports_ble_authorization_error(self) -> None:
-        async def fake_status(_args):
-            raise RuntimeError("Bluetooth state unauthorized: 3")
-
         devices = {
             "api": "zhiyun-light-control",
             "configured_transport": "ble",
@@ -558,9 +555,19 @@ class CliTests(unittest.TestCase):
 
         stdout = io.StringIO()
         with (
-            patch("zhiyun_light_control.cli._status_ble", new=fake_status),
             patch(
-                "zhiyun_light_control.cli.discover_transport_devices",
+                "zhiyun_light_control.integration.local_status_snapshot",
+                return_value=(
+                    {
+                        "ok": False,
+                        "error": "Bluetooth state unauthorized: 3",
+                    },
+                    False,
+                    "Bluetooth state unauthorized: 3",
+                ),
+            ),
+            patch(
+                "zhiyun_light_control.integration.discover_transport_devices",
                 return_value=devices,
             ) as discover,
             contextlib.redirect_stdout(stdout),
@@ -604,9 +611,6 @@ class CliTests(unittest.TestCase):
         )
 
     def test_integration_cli_reports_ble_authorization_error(self) -> None:
-        async def fake_status(_args):
-            raise RuntimeError("Bluetooth state unauthorized: 3")
-
         devices = {
             "api": "zhiyun-light-control",
             "configured_transport": "ble",
@@ -625,9 +629,19 @@ class CliTests(unittest.TestCase):
 
         stdout = io.StringIO()
         with (
-            patch("zhiyun_light_control.cli._status_ble", new=fake_status),
             patch(
-                "zhiyun_light_control.cli.discover_transport_devices",
+                "zhiyun_light_control.integration.local_status_snapshot",
+                return_value=(
+                    {
+                        "ok": False,
+                        "error": "Bluetooth state unauthorized: 3",
+                    },
+                    False,
+                    "Bluetooth state unauthorized: 3",
+                ),
+            ),
+            patch(
+                "zhiyun_light_control.integration.discover_transport_devices",
                 return_value=devices,
             ) as discover,
             contextlib.redirect_stdout(stdout),
