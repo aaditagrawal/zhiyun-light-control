@@ -177,6 +177,15 @@ class SyncBleLight:
             timeout=timeout,
         )
 
+    def exchange_updater(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ):
+        return self._run_light("exchange_updater", cmd, payload, timeout=timeout)
+
     def apply_scene(
         self,
         scene: Scene,

@@ -696,6 +696,8 @@ async def main():
         profile="legacy",
     ) as light:
         print((await read_async_status(light)).to_dict())
+        chip = await light.chip_sync()
+        print(chip.updater_firmware if chip else None)
         await light.transition_scene(
             Scene(obj=1, brightness=10),
             Scene(obj=1, brightness=35, kelvin=5600),
@@ -705,6 +707,10 @@ async def main():
 
 asyncio.run(main())
 ```
+
+`read_async_status()` uses the same updater-frame helpers as USB when the BLE
+endpoint accepts arbitrary Zhiyun frames, so BLE status can include `chip_sync`
+and `read_sn` evidence after Bluetooth authorization and endpoint discovery.
 
 ## Presets
 

@@ -10,7 +10,9 @@ from .models import CommandResult, Scene
 from .protocol import (
     DEFAULT_CONTROL_MODE,
     RUNTIME_TYPE,
+    UPDATER_DEVICE,
     RuntimeCommand,
+    UpdaterCommand,
     brightness_payload,
     build_frame,
     cct_payload,
@@ -18,8 +20,10 @@ from .protocol import (
     hsi_payload,
     iter_frames,
     object_id_payload,
+    parse_chip_sync,
     parse_device_id,
     parse_device_info,
+    parse_read_sn,
     parse_version,
     parse_voltage_status,
     register_payload,
@@ -173,6 +177,24 @@ class AsyncZhiyunLight:
     async def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 1.5):
         return (await self.exchange_runtime(cmd, payload, timeout=timeout)).ack
 
+    async def exchange_updater(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        return await self.exchange_frame(UPDATER_DEVICE, cmd, payload, timeout=timeout)
+
+    async def updater_command(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ):
+        return (await self.exchange_updater(cmd, payload, timeout=timeout)).ack
+
     async def get_device_info(self):
         frame = await self.command(RuntimeCommand.DEVICE_INFO)
         return parse_device_info(frame) if frame else None
@@ -300,6 +322,14 @@ class AsyncZhiyunLight:
 
     async def identify(self, obj: int = 0):
         return await self.command(RuntimeCommand.IDENTIFY, object_id_payload(obj))
+
+    async def chip_sync(self):
+        frame = await self.updater_command(UpdaterCommand.CHIP_SYNC)
+        return parse_chip_sync(frame) if frame else None
+
+    async def read_sn(self):
+        frame = await self.updater_command(UpdaterCommand.READ_SN)
+        return parse_read_sn(frame) if frame else None
 
     async def apply_scene(
         self,

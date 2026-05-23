@@ -65,6 +65,17 @@ class FakeAsyncStatusLight(FakeStatusLight):
         return super().exchange_runtime(cmd, payload, timeout=timeout)
 
 
+class FakeAsyncUpdaterStatusLight(FakeAsyncStatusLight):
+    async def exchange_updater(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        return FakeStatusLight.exchange_updater(self, cmd, payload, timeout=timeout)
+
+
 def _result(first_word: int, cmd: int, payload: bytes) -> CommandResult:
     tx = build_frame(first_word, 1, cmd)
     rx = build_frame(first_word, 1, cmd, payload)
@@ -113,6 +124,25 @@ class AsyncStatusTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(payload["commands"]["device_info"]["acknowledged"])
         self.assertNotIn("updater_chip_sync", payload["commands"])
         self.assertNotIn("updater_read_sn", payload["commands"])
+
+    async def test_read_async_status_uses_updater_exchange_when_available(
+        self,
+    ) -> None:
+        report = await read_async_status(
+            FakeAsyncUpdaterStatusLight(),
+            transport="ble-test",
+        )
+        payload = report.to_dict()
+
+        self.assertEqual(payload["chip_sync"]["core_id"], "HDL")
+        self.assertEqual(payload["chip_sync"]["updater_firmware"], "1.64")
+        self.assertEqual(payload["read_sn"]["product"], "0x0541")
+        self.assertEqual(
+            payload["read_sn"]["device_identifier"],
+            "08a409e0c1100113",
+        )
+        self.assertTrue(payload["commands"]["updater_chip_sync"]["acknowledged"])
+        self.assertTrue(payload["commands"]["updater_read_sn"]["acknowledged"])
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ class FakeAsyncLight:
         self.closed = False
         self.commands: list[tuple[int, bytes, float]] = []
         self.frames: list[tuple[int, int, bytes, float]] = []
+        self.updater_commands: list[tuple[int, bytes, float]] = []
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
 
@@ -62,6 +63,19 @@ class FakeAsyncLight:
         self.frames.append((first_word, cmd, payload, timeout))
         tx = build_frame(first_word, 1, cmd, payload)
         rx = build_frame(first_word, 1, cmd, b"\x00")
+        ack = first_frame(rx, cmd=cmd)
+        return CommandResult(cmd, tx, rx, (ack,), ack)
+
+    async def exchange_updater(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        self.updater_commands.append((cmd, payload, timeout))
+        tx = build_frame(0x0103, 1, cmd, payload)
+        rx = build_frame(0x0103, 1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
@@ -128,6 +142,7 @@ class BridgeFactoryTests(unittest.TestCase):
                     0x2001,
                     timeout=0.35,
                 )
+                updater_result = light.exchange_updater(0x1300, timeout=0.45)
                 scene_results = light.apply_scene(scene, control_mode=0x01)
 
         make_ble.assert_called_once_with(
@@ -145,8 +160,10 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(probe.to_dict()["firmware"], "ble-test")
         self.assertEqual(result.command, 0x1001)
         self.assertEqual(frame_result.command, 0x2001)
+        self.assertEqual(updater_result.command, 0x1300)
         self.assertEqual(fake.commands, [(0x1001, b"\x01", 0.25)])
         self.assertEqual(fake.frames, [(0x0100, 0x2001, b"", 0.35)])
+        self.assertEqual(fake.updater_commands, [(0x1300, b"", 0.45)])
         self.assertEqual(fake.scenes, [scene])
         self.assertEqual(fake.control_modes, [0x01])
         self.assertEqual(scene_results, [])

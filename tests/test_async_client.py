@@ -4,22 +4,26 @@ import unittest
 
 from zhiyun_light_control import AsyncProbeResult, AsyncZhiyunLight, Scene
 from zhiyun_light_control.protocol import (
+    UPDATER_DEVICE,
     RuntimeCommand,
-    build_runtime_frame,
+    UpdaterCommand,
+    build_frame,
     first_frame,
 )
 
 
 class AsyncEchoAckTransport:
-    def __init__(self) -> None:
+    def __init__(self, payload_by_cmd: dict[int, bytes] | None = None) -> None:
         self.sent: list[bytes] = []
+        self.payload_by_cmd = payload_by_cmd or {}
 
     async def exchange(self, tx: bytes, timeout: float = 1.5) -> bytes:
         del timeout
         self.sent.append(tx)
         frame = first_frame(tx)
         assert frame is not None
-        return build_runtime_frame(frame.seq, frame.cmd, b"\x00")
+        payload = self.payload_by_cmd.get(frame.cmd, b"\x00")
+        return build_frame(frame.first_word, frame.seq, frame.cmd, payload)
 
     async def close(self) -> None:
         return
@@ -72,6 +76,31 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(result.acknowledged)
         self.assertEqual(first_frame(transport.sent[0]).first_word, 0x0301)
+
+    async def test_async_updater_helpers_match_sync_status_surface(self) -> None:
+        transport = AsyncEchoAckTransport(
+            {
+                UpdaterCommand.CHIP_SYNC: bytes.fromhex(
+                    "0048444c0000010010030041054008a40065a36075"
+                ),
+                UpdaterCommand.READ_SN: bytes.fromhex("004105130110c1e009a408"),
+            }
+        )
+        light = AsyncZhiyunLight(transport)
+
+        result = await light.exchange_updater(UpdaterCommand.CHIP_SYNC, timeout=0.4)
+        chip = await light.chip_sync()
+        read_sn = await light.read_sn()
+
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(
+            [first_frame(tx).first_word for tx in transport.sent],
+            [UPDATER_DEVICE, UPDATER_DEVICE, UPDATER_DEVICE],
+        )
+        self.assertEqual(chip.core_id, "HDL")
+        self.assertEqual(chip.updater_firmware, "1.64")
+        self.assertEqual(read_sn.product, 0x0541)
+        self.assertEqual(read_sn.device_identifier, "08a409e0c1100113")
 
     async def test_isolated_ble_uses_crash_isolated_transport(self) -> None:
         light = AsyncZhiyunLight.isolated_ble(
