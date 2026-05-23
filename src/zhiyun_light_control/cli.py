@@ -276,6 +276,15 @@ def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--name-contains", help="BLE name substring used for discovery."
     )
+    parser.add_argument(
+        "--ble-python",
+        help="Python executable for crash-isolated BLE bridge exchanges.",
+    )
+    parser.add_argument(
+        "--unsafe-in-process",
+        action="store_true",
+        help="Run BLE bridge commands in this process instead of worker isolation.",
+    )
     parser.add_argument("--light-timeout", type=float, default=1.5)
     parser.add_argument(
         "--no-persistent-light",
@@ -718,6 +727,8 @@ def bridge_light_factory(args: argparse.Namespace):
             address=args.address,
             name_contains=args.name_contains,
             timeout=args.light_timeout,
+            ble_python=args.ble_python,
+            ble_in_process=args.unsafe_in_process,
             persistent=not args.no_persistent_light,
         )
     )

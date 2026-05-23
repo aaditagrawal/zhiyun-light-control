@@ -357,6 +357,33 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["transport"], "ble")
         self.assertEqual(payload["exchange"]["signal"], "SIGABRT")
 
+    def test_bridge_cli_passes_ble_worker_options(self) -> None:
+        with (
+            patch("zhiyun_light_control.cli.make_light_factory") as make_factory,
+            patch("zhiyun_light_control.cli.serve") as serve,
+        ):
+            make_factory.return_value = object()
+            code = main(
+                [
+                    "serve",
+                    "--transport",
+                    "ble",
+                    "--address",
+                    "AA:BB",
+                    "--ble-python",
+                    "python-test",
+                    "--unsafe-in-process",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        config = make_factory.call_args.args[0]
+        self.assertEqual(config.transport, "ble")
+        self.assertEqual(config.address, "AA:BB")
+        self.assertEqual(config.ble_python, "python-test")
+        self.assertTrue(config.ble_in_process)
+        serve.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

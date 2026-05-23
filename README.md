@@ -169,13 +169,22 @@ accidentally send hardware writes during a dry run.
 
 All bridge commands default to USB and can target BLE with the same control
 surface by adding `--transport ble` plus `--address` or `--name-contains`.
-Bridge processes keep one light connection open by default for lower-latency
-live control. Add `--no-persistent-light` when debugging connection setup.
+Bridge processes keep one light context open by default. USB and direct BLE use
+that for lower-latency live control; worker-isolated BLE reconnects per exchange
+so a CoreBluetooth abort does not terminate the bridge process. Add
+`--unsafe-in-process` only on a stable BLE runtime where you want direct bleak
+execution, and add `--no-persistent-light` when debugging connection setup.
 
 HTTP JSON bridge:
 
 ```sh
 uv run zlight serve --host 127.0.0.1 --port 8765 --preset-file examples/scenes.json --allow-control
+```
+
+BLE bridge example:
+
+```sh
+uv run --extra ble zlight serve --transport ble --name-contains MOLUS --allow-control
 ```
 
 Useful HTTP calls:

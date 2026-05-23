@@ -94,9 +94,12 @@ The local bridges default to USB, but `serve`, `osc-serve`, `artnet-serve`, and
 `sacn-serve` also accept `--transport ble` with `--address` or
 `--name-contains`. BLE bridge mode uses the same command payload builders as USB
 and adapts the async BLE client behind the synchronous stdlib bridge servers.
-The bridge CLI keeps one USB/BLE light connection open by default so repeated
-media-control messages do not reconnect for every request. Use
-`--no-persistent-light` to restore per-request connections.
+Like one-shot BLE CLI commands, bridge BLE uses worker-isolated exchanges by
+default; pass `--unsafe-in-process` only when direct bleak is stable enough for a
+long-running media-control process. The bridge CLI keeps one light context open
+by default. USB and direct BLE use that to avoid reconnecting for every request;
+worker-isolated BLE still performs each raw BLE exchange in a child process. Use
+`--no-persistent-light` to restore per-request contexts.
 
 The OSC bridge is UDP-based and dependency-free:
 

@@ -89,7 +89,7 @@ class BridgeFactoryTests(unittest.TestCase):
         scene = Scene(obj=1, brightness=20)
 
         with patch(
-            "zhiyun_light_control.bridge.AsyncZhiyunLight.ble",
+            "zhiyun_light_control.bridge.AsyncZhiyunLight.isolated_ble",
             return_value=fake,
         ) as make_ble:
             factory = make_light_factory(
@@ -98,6 +98,7 @@ class BridgeFactoryTests(unittest.TestCase):
                     address="AA:BB",
                     name_contains="MOLUS",
                     timeout=2.5,
+                    ble_python="python-test",
                 )
             )
             with factory() as light:
@@ -109,6 +110,7 @@ class BridgeFactoryTests(unittest.TestCase):
             address="AA:BB",
             name_contains="MOLUS",
             timeout=2.5,
+            python="python-test",
         )
         self.assertTrue(fake.opened)
         self.assertTrue(fake.closed)
@@ -117,6 +119,38 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(fake.commands, [(0x1001, b"\x01", 0.25)])
         self.assertEqual(fake.scenes, [scene])
         self.assertEqual(scene_results, [])
+
+    def test_ble_factory_can_opt_into_direct_client(self) -> None:
+        fake = FakeAsyncLight()
+
+        with (
+            patch(
+                "zhiyun_light_control.bridge.AsyncZhiyunLight.isolated_ble"
+            ) as isolated_ble,
+            patch(
+                "zhiyun_light_control.bridge.AsyncZhiyunLight.ble",
+                return_value=fake,
+            ) as direct_ble,
+        ):
+            factory = make_light_factory(
+                LightConnectionConfig(
+                    transport="ble",
+                    address="AA:BB",
+                    name_contains="MOLUS",
+                    timeout=2.5,
+                    ble_in_process=True,
+                )
+            )
+            with factory() as light:
+                probe = light.probe()
+
+        isolated_ble.assert_not_called()
+        direct_ble.assert_called_once_with(
+            address="AA:BB",
+            name_contains="MOLUS",
+            timeout=2.5,
+        )
+        self.assertEqual(probe.to_dict()["firmware"], "ble-test")
 
     def test_persistent_factory_reuses_open_light_until_closed(self) -> None:
         contexts: list[FakeSyncContext] = []

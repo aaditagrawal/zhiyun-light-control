@@ -19,6 +19,8 @@ class LightConnectionConfig:
     address: str | None = None
     name_contains: str | None = None
     timeout: float = 1.5
+    ble_python: str | None = None
+    ble_in_process: bool = False
     persistent: bool = False
 
 
@@ -103,7 +105,8 @@ class SyncBleLight:
     """Synchronous adapter around the async BLE client.
 
     The stdlib HTTP, OSC, and Art-Net bridges are synchronous. Keeping one event
-    loop per context manager avoids moving a bleak connection across event loops.
+    loop per context manager gives them a uniform sync interface while the async
+    BLE implementation handles either direct bleak or crash-isolated workers.
     """
 
     def __init__(self, config: LightConnectionConfig):
@@ -113,11 +116,7 @@ class SyncBleLight:
 
     def __enter__(self) -> SyncBleLight:
         self._loop = asyncio.new_event_loop()
-        self._light = AsyncZhiyunLight.ble(
-            address=self.config.address,
-            name_contains=self.config.name_contains,
-            timeout=self.config.timeout,
-        )
+        self._light = self._make_async_light()
         try:
             self._run(self._light.__aenter__())
         except Exception:
@@ -174,6 +173,20 @@ class SyncBleLight:
         if self._light is None:
             raise RuntimeError("BLE light is not open")
         return self._run(getattr(self._light, method)(*args, **kwargs))
+
+    def _make_async_light(self) -> AsyncZhiyunLight:
+        if self.config.ble_in_process:
+            return AsyncZhiyunLight.ble(
+                address=self.config.address,
+                name_contains=self.config.name_contains,
+                timeout=self.config.timeout,
+            )
+        return AsyncZhiyunLight.isolated_ble(
+            address=self.config.address,
+            name_contains=self.config.name_contains,
+            timeout=self.config.timeout,
+            python=self.config.ble_python,
+        )
 
     def _run(self, awaitable):
         if self._loop is None:
