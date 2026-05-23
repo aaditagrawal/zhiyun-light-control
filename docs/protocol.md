@@ -187,7 +187,9 @@ command hints for setup UIs. It also includes `requirements`, keyed by
 discovery. When the bridge is configured as `transport=ble` with
 `ble_backend=macos-app`, the embedded `devices.ble.macos_status` field includes
 the helper authorization/state report without scanning. The Python
-`LightBridgeClient` exposes readiness fields as helper methods.
+`LightBridgeClient` exposes readiness fields as helper methods, and the module
+also includes `devices_*` helper functions that normalize either a `/devices`
+payload or the nested `devices` object from `/ready`.
 
 `POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
 it is deliberately behind the same control gate because arbitrary frames can be
@@ -313,6 +315,9 @@ The Python client exposes `bridge_response_applied()`,
 `bridge_response_statuses()`, and `bridge_response_reason()` so controller code
 can apply the same interpretation to single command results, scenes,
 transitions, sequences, state snapshots, and history events.
+It also exposes `devices_selected_usb_port()`, `devices_usb_available()`,
+`devices_ble_authorization()`, `devices_ble_state()`, `devices_ble_blocker()`,
+and BLE scan helpers for transport preflight payloads.
 This gives media tools a stable polling surface without hiding weak hardware
 evidence.
 

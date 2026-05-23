@@ -532,6 +532,9 @@ from zhiyun_light_control import (
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
+    devices_ble_authorization,
+    devices_ble_blocker,
+    devices_selected_usb_port,
 )
 
 bridge = LightBridgeClient("http://127.0.0.1:8765")
@@ -542,7 +545,9 @@ print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.cues()["cues"])
-print(bridge.devices(include_ble_status=True)["ble"]["macos_status"])
+devices = bridge.devices(include_ble_status=True)
+print(devices_selected_usb_port(devices))
+print(devices_ble_authorization(devices), devices_ble_blocker(devices))
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
 ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
 print(ble["endpoint_candidates"])
@@ -589,6 +594,15 @@ It also includes `readiness_actions()`, `readiness_action(id)`, and
 `readiness_requirements()`, `readiness_requirement()`,
 `readiness_pending_action_ids()`, and `readiness_warnings()` when consuming
 preflight results outside the client class.
+Transport discovery payloads from `GET /devices` and the nested `devices` field
+inside `GET /ready` have `devices_selected_usb_port()`,
+`devices_usb_available()`, `devices_usb_ports()`, `devices_ble_status()`,
+`devices_ble_authorization()`, `devices_ble_state()`,
+`devices_ble_blocker()`, `devices_ble_scan_ok()`, and
+`devices_ble_scan_devices()` helpers.
+The client also exposes `devices_selected_usb_port()`,
+`devices_ble_authorization()`, and `devices_ble_blocker()` convenience methods
+that fetch the needed discovery payload before normalizing it.
 Use `bridge_response_applied()`, `bridge_response_statuses()`, and
 `bridge_response_reason()` to normalize ACK evidence across single commands,
 scenes, transitions, sequences, and state/history responses.

@@ -13,6 +13,15 @@ from zhiyun_light_control import (
     bridge_response_statuses,
     command_result_acknowledged,
     command_result_status,
+    devices_ble_authorization,
+    devices_ble_blocker,
+    devices_ble_scan_devices,
+    devices_ble_scan_ok,
+    devices_ble_state,
+    devices_ble_status,
+    devices_selected_usb_port,
+    devices_usb_available,
+    devices_usb_ports,
     readiness_actions_by_id,
     readiness_pending_action_ids,
     readiness_ready,
@@ -504,6 +513,75 @@ class HttpClientTests(unittest.TestCase):
             ["enable-control", "confirm-control"],
         )
         self.assertEqual(readiness_warnings(payload), payload["warnings"])
+
+    def test_device_helpers_normalize_discovery_and_readiness_payloads(self) -> None:
+        devices = {
+            "usb": {
+                "available": True,
+                "selected_port": "/dev/cu.usbmodem21301",
+                "ports": [
+                    {
+                        "path": "/dev/cu.usbmodem21301",
+                        "selected": True,
+                    }
+                ],
+            },
+            "ble": {
+                "macos_status": {
+                    "ok": False,
+                    "authorization": "not_determined",
+                    "state": "unauthorized",
+                    "error": "Bluetooth state unauthorized: 3",
+                },
+                "scan": {
+                    "ok": True,
+                    "devices": [
+                        {
+                            "address": "UUID-1",
+                            "name": "PL103_EDFE",
+                        }
+                    ],
+                },
+            },
+        }
+        readiness = {"devices": devices}
+
+        self.assertTrue(devices_usb_available(devices))
+        self.assertEqual(
+            devices_selected_usb_port(readiness),
+            "/dev/cu.usbmodem21301",
+        )
+        self.assertEqual(devices_usb_ports(readiness)[0]["selected"], True)
+        self.assertEqual(
+            devices_ble_status(readiness)["authorization"],
+            "not_determined",
+        )
+        self.assertEqual(devices_ble_authorization(readiness), "not_determined")
+        self.assertEqual(devices_ble_state(readiness), "unauthorized")
+        self.assertEqual(
+            devices_ble_blocker(readiness),
+            "Bluetooth state unauthorized: 3",
+        )
+        self.assertTrue(devices_ble_scan_ok(readiness))
+        self.assertEqual(
+            devices_ble_scan_devices(readiness)[0]["address"],
+            "UUID-1",
+        )
+
+        class FakeDevicesClient(LightBridgeClient):
+            def devices(self, **_kwargs: object) -> dict[str, object]:
+                return devices
+
+        client = FakeDevicesClient("http://bridge.test")
+        self.assertEqual(
+            client.devices_selected_usb_port(),
+            "/dev/cu.usbmodem21301",
+        )
+        self.assertEqual(client.devices_ble_authorization(), "not_determined")
+        self.assertEqual(
+            client.devices_ble_blocker(),
+            "Bluetooth state unauthorized: 3",
+        )
 
     def test_client_iterates_state_events(self) -> None:
         light = FakeLight()

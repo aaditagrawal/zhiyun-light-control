@@ -106,6 +106,15 @@ class LightBridgeClient:
         suffix = f"?{urlencode(query)}" if query else ""
         return self._get(f"/devices{suffix}")
 
+    def devices_selected_usb_port(self) -> str | None:
+        return devices_selected_usb_port(self.devices())
+
+    def devices_ble_authorization(self) -> str | None:
+        return devices_ble_authorization(self.devices(include_ble_status=True))
+
+    def devices_ble_blocker(self) -> str | None:
+        return devices_ble_blocker(self.devices(include_ble_status=True))
+
     def openapi(self) -> dict[str, object]:
         return self._get("/openapi.json")
 
@@ -715,6 +724,87 @@ def readiness_actions_by_id(
     return actions
 
 
+def devices_usb(payload: Mapping[str, object]) -> dict[str, object]:
+    devices = _devices_payload(payload)
+    usb = devices.get("usb")
+    if not isinstance(usb, Mapping):
+        return {}
+    return _string_key_dict(usb)
+
+
+def devices_usb_available(payload: Mapping[str, object]) -> bool:
+    return devices_usb(payload).get("available") is True
+
+
+def devices_selected_usb_port(payload: Mapping[str, object]) -> str | None:
+    port = devices_usb(payload).get("selected_port")
+    return str(port) if port is not None else None
+
+
+def devices_usb_ports(payload: Mapping[str, object]) -> list[dict[str, object]]:
+    ports = devices_usb(payload).get("ports")
+    if not isinstance(ports, list):
+        return []
+    return [_string_key_dict(port) for port in ports if isinstance(port, Mapping)]
+
+
+def devices_ble(payload: Mapping[str, object]) -> dict[str, object]:
+    devices = _devices_payload(payload)
+    ble = devices.get("ble")
+    if not isinstance(ble, Mapping):
+        return {}
+    return _string_key_dict(ble)
+
+
+def devices_ble_status(payload: Mapping[str, object]) -> dict[str, object]:
+    status = devices_ble(payload).get("macos_status")
+    if not isinstance(status, Mapping):
+        return {}
+    return _string_key_dict(status)
+
+
+def devices_ble_authorization(payload: Mapping[str, object]) -> str | None:
+    authorization = devices_ble_status(payload).get("authorization")
+    return str(authorization) if authorization is not None else None
+
+
+def devices_ble_state(payload: Mapping[str, object]) -> str | None:
+    state = devices_ble_status(payload).get("state")
+    return str(state) if state is not None else None
+
+
+def devices_ble_scan(payload: Mapping[str, object]) -> dict[str, object]:
+    scan = devices_ble(payload).get("scan")
+    if not isinstance(scan, Mapping):
+        return {}
+    return _string_key_dict(scan)
+
+
+def devices_ble_scan_ok(payload: Mapping[str, object]) -> bool:
+    return devices_ble_scan(payload).get("ok") is True
+
+
+def devices_ble_scan_devices(payload: Mapping[str, object]) -> list[dict[str, object]]:
+    devices = devices_ble_scan(payload).get("devices")
+    if not isinstance(devices, list):
+        return []
+    return [
+        _string_key_dict(device)
+        for device in devices
+        if isinstance(device, Mapping)
+    ]
+
+
+def devices_ble_blocker(payload: Mapping[str, object]) -> str | None:
+    status_error = devices_ble_status(payload).get("error")
+    if status_error is not None:
+        return str(status_error)
+    scan_error = devices_ble_scan(payload).get("error")
+    if scan_error is not None:
+        return str(scan_error)
+    return None
+
+
 def _append_bridge_statuses(value: object, statuses: list[str]) -> None:
     if isinstance(value, list):
         for item in value:
@@ -732,6 +822,23 @@ def _append_bridge_statuses(value: object, statuses: list[str]) -> None:
         return
     for item in value.values():
         _append_bridge_statuses(item, statuses)
+
+
+def _devices_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    if "usb" in payload or "ble" in payload:
+        return _string_key_dict(payload)
+    devices = payload.get("devices")
+    if not isinstance(devices, Mapping):
+        return {}
+    return _string_key_dict(devices)
+
+
+def _string_key_dict(payload: Mapping[object, object]) -> dict[str, object]:
+    return {
+        str(key): value
+        for key, value in payload.items()
+        if isinstance(key, str)
+    }
 
 
 def _with_control_mode(
