@@ -57,6 +57,11 @@ A later sleep-only matrix tested control first words `0x0001`, `0x0100`,
 `0x0000`, `0x0101`, and `0x0301` for object ids `0` and `1`. `0x0301` still
 returned exact write echoes, while the other first words timed out; none were
 ACK-confirmed object control.
+A post-registration read pass then registered device id `1` to group `0` and
+immediately retried all object-read candidates for object id `1`; registration
+ACKed, but all nine post-register object reads still returned
+`sent_no_response`. Device id `0` was re-registered afterward and verified by
+status.
 
 `discover-usb --allow-control` can separately vary control object ids and
 control frame first words with `--control-object-ids` and
@@ -66,12 +71,14 @@ vary the registration prelude with `--register-device-ids` and
 `--register-group-ids`, and restrict state-changing probes with
 `--control-kinds sleep,brightness,cct,brightness-with-mode`. `--control-modes`
 defaults to `0x33,0x01` so one run compares the official Vega write operation
-byte with the older operation byte. Because alternate registration ids are
-visible in later probes, re-register the intended id after experiments.
+byte with the older operation byte. `--post-register-reads` re-runs object read
+candidates after each register-default-group attempt, which tests the hypothesis
+that registration unlocks object-scoped reads. Because alternate registration
+ids are visible in later probes, re-register the intended id after experiments.
 Discovery reports include `summary.status_counts`, `confirmed_names`,
-`echoed_write_names`, and `summary.control` so automated setup tools can
-distinguish confirmed control from transport echoes without parsing every
-attempt.
+`echoed_write_names`, `summary.control`, and `summary.post_register_reads` so
+automated setup tools can distinguish confirmed control from transport echoes
+without parsing every attempt.
 
 The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
 For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,
@@ -247,7 +254,9 @@ HTTP `/discover-usb` exposes the same bounded primitive matrix as
 object ids, first words, control candidate settings, summary counts, notes, and
 every `CommandResult`. Read-only discovery can run without `--allow-control`;
 control/register candidates are only included when the bridge has
-`--allow-control` and the request body sets `allow_control: true`.
+`--allow-control` and the request body sets `allow_control: true`. Set
+`post_register_reads: true` to include the post-registration object-read pass and
+its nested summary.
 
 The OSC bridge is UDP-based and dependency-free:
 

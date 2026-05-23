@@ -840,6 +840,35 @@ class ServerTests(unittest.TestCase):
             self.assertIn("read_brightness", names)
             self.assertIn("register_default_group", names)
             self.assertIn("set_brightness", names)
+
+            discover_request = Request(
+                f"{base}/discover-usb",
+                data=json.dumps(
+                    {
+                        "allow_control": True,
+                        "object_ids": [1],
+                        "first_words": [0x0100],
+                        "control_object_ids": [1],
+                        "register_device_ids": [1],
+                        "register_group_ids": [0],
+                        "control_kinds": [],
+                        "post_register_reads": True,
+                        "timeout": 0.1,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            discovery = json.loads(urlopen(discover_request, timeout=3).read())
+            self.assertTrue(discovery["post_register_reads"])
+            self.assertEqual(
+                discovery["summary"]["post_register_reads"]["attempted"],
+                9,
+            )
+            self.assertIn(
+                "after_register_dev1_group0_read_brightness_obj1",
+                discovery["summary"]["post_register_reads"]["confirmed_names"],
+            )
         finally:
             server.shutdown()
             server.server_close()

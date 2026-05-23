@@ -956,6 +956,11 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     default=DEFAULT_DISCOVERY_CONTROL_KINDS,
                 ),
                 control_modes=_body_optional_int_tuple(body, "control_modes"),
+                post_register_reads=_body_bool(
+                    body,
+                    "post_register_reads",
+                    default=False,
+                ),
                 timeout=float(body.get("timeout", 0.5)),
                 allow_control=_body_bool(body, "allow_control"),
                 brightness=float(body.get("brightness", 35.0)),
@@ -1845,6 +1850,7 @@ def capabilities_response(
                     "register_group_ids",
                     "control_kinds",
                     "control_modes",
+                    "post_register_reads",
                     "timeout",
                     "brightness",
                     "kelvin",
@@ -2510,13 +2516,13 @@ def _body_text_tuple(
         return default
     value = body[key]
     if isinstance(value, str):
+        if value.strip().lower() == "none":
+            return ()
         items = tuple(part.strip() for part in value.split(",") if part.strip())
     elif isinstance(value, list | tuple):
         items = tuple(str(item).strip() for item in value if str(item).strip())
     else:
         raise ValueError(f"{key} must be a list or comma-separated string")
-    if not items:
-        raise ValueError(f"{key} must contain at least one value")
     return items
 
 

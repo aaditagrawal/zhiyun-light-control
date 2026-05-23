@@ -159,6 +159,39 @@ class DiscoveryTests(unittest.TestCase):
         self.assertIn("set_sleep_obj1_mode0x01", attempts)
         self.assertNotIn("set_brightness_obj1_mode0x01", attempts)
 
+    def test_usb_discovery_can_run_post_register_object_reads(self) -> None:
+        light = FakeDiscoveryLight()
+
+        report = discover_usb_primitives(
+            light,
+            object_ids=(1,),
+            first_words=(),
+            control_object_ids=(1,),
+            register_device_ids=(1,),
+            register_group_ids=(0,),
+            control_kinds=(),
+            allow_control=True,
+            post_register_reads=True,
+        )
+        payload = report.to_dict()
+        attempts = {attempt["name"]: attempt for attempt in payload["attempts"]}
+
+        self.assertTrue(payload["post_register_reads"])
+        self.assertIn(
+            "after_register_dev1_group0_read_brightness_obj1",
+            attempts,
+        )
+        self.assertEqual(
+            attempts["after_register_dev1_group0_read_brightness_obj1"]["category"],
+            "post_register_object_read",
+        )
+        self.assertEqual(payload["summary"]["post_register_reads"]["attempted"], 9)
+        self.assertEqual(payload["summary"]["post_register_reads"]["confirmed"], 0)
+        self.assertIn(
+            "after_register_dev1_group0_read_brightness_obj1",
+            payload["summary"]["post_register_reads"]["unconfirmed_names"],
+        )
+
     def test_usb_discovery_rejects_unknown_control_kind(self) -> None:
         with self.assertRaisesRegex(ValueError, "unsupported control kind"):
             discover_usb_primitives(

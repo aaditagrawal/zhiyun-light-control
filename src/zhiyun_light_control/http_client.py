@@ -251,6 +251,7 @@ class LightBridgeClient:
         register_group_ids: Iterable[int | str] | None = None,
         control_kinds: Iterable[str] | None = None,
         control_modes: Iterable[int | str] | None = None,
+        post_register_reads: bool = False,
         timeout: float | None = None,
         brightness: float | None = None,
         kelvin: int | None = None,
@@ -265,6 +266,8 @@ class LightBridgeClient:
         _set_iterable(payload, "register_group_ids", register_group_ids)
         _set_iterable(payload, "control_kinds", control_kinds)
         _set_iterable(payload, "control_modes", control_modes)
+        if post_register_reads:
+            payload["post_register_reads"] = True
         if timeout is not None:
             payload["timeout"] = timeout
         if brightness is not None:

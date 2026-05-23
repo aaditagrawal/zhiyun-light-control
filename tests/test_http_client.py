@@ -314,6 +314,22 @@ class HttpClientTests(unittest.TestCase):
             self.assertFalse(discovery["control_enabled"])
             self.assertEqual(discovery["object_ids"], [1])
             self.assertEqual(discovery["first_words"], [0x0100])
+            post_register = client.discover_usb(
+                allow_control=True,
+                object_ids=[1],
+                first_words=[0x0100],
+                control_object_ids=[1],
+                register_device_ids=[1],
+                register_group_ids=[0],
+                control_kinds=[],
+                post_register_reads=True,
+                timeout=0.1,
+            )
+            self.assertTrue(post_register["post_register_reads"])
+            self.assertEqual(
+                post_register["summary"]["post_register_reads"]["attempted"],
+                9,
+            )
             self.assertEqual(client.status()["firmware"], "1.6.4")
 
             brightness = client.set_brightness(35, obj=1, control_mode=0x01)

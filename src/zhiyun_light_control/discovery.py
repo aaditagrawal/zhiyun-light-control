@@ -92,6 +92,7 @@ class UsbDiscoveryReport:
     register_group_ids: tuple[int, ...]
     control_kinds: tuple[str, ...]
     control_modes: tuple[int, ...]
+    post_register_reads: bool
     control_enabled: bool
     attempts: tuple[DiscoveryAttempt, ...]
     notes: tuple[str, ...] = ()
@@ -123,6 +124,20 @@ class UsbDiscoveryReport:
         return tuple(attempt for attempt in self.control_attempts if attempt.confirmed)
 
     @property
+    def post_register_read_attempts(self) -> tuple[DiscoveryAttempt, ...]:
+        return tuple(
+            attempt
+            for attempt in self.attempts
+            if attempt.category == "post_register_object_read"
+        )
+
+    @property
+    def confirmed_post_register_reads(self) -> tuple[DiscoveryAttempt, ...]:
+        return tuple(
+            attempt for attempt in self.post_register_read_attempts if attempt.confirmed
+        )
+
+    @property
     def responsive_control(self) -> tuple[DiscoveryAttempt, ...]:
         return tuple(
             attempt for attempt in self.control_attempts if not attempt.result.timed_out
@@ -140,6 +155,7 @@ class UsbDiscoveryReport:
             "register_group_ids": list(self.register_group_ids),
             "control_kinds": list(self.control_kinds),
             "control_modes": list(self.control_modes),
+            "post_register_reads": self.post_register_reads,
             "control_enabled": self.control_enabled,
             "summary": {
                 "attempted": len(self.attempts),
@@ -168,6 +184,18 @@ class UsbDiscoveryReport:
                         if not attempt.confirmed
                     ],
                 },
+                "post_register_reads": {
+                    "attempted": len(self.post_register_read_attempts),
+                    "confirmed": len(self.confirmed_post_register_reads),
+                    "confirmed_names": [
+                        attempt.name for attempt in self.confirmed_post_register_reads
+                    ],
+                    "unconfirmed_names": [
+                        attempt.name
+                        for attempt in self.post_register_read_attempts
+                        if not attempt.confirmed
+                    ],
+                },
             },
             "attempts": [attempt.to_dict() for attempt in self.attempts],
             "notes": list(self.notes),
@@ -185,6 +213,7 @@ def discover_usb_primitives(
     register_group_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
     control_kinds: Iterable[str] = DEFAULT_DISCOVERY_CONTROL_KINDS,
     control_modes: Iterable[int] | None = DEFAULT_DISCOVERY_CONTROL_MODES,
+    post_register_reads: bool = False,
     timeout: float = 0.5,
     allow_control: bool = False,
     brightness: float = 35.0,
@@ -263,6 +292,23 @@ def discover_usb_primitives(
                         timeout=timeout,
                     )
                 )
+                if post_register_reads:
+                    for obj in control_object_ids_tuple:
+                        for name, cmd, payload in _object_read_candidates(obj):
+                            attempts.append(
+                                _attempt_runtime(
+                                    light,
+                                    name=(
+                                        f"after_register_dev{device_id}_group{group_id}"
+                                        f"_{name}"
+                                    ),
+                                    category="post_register_object_read",
+                                    cmd=cmd,
+                                    payload=payload,
+                                    timeout=timeout,
+                                    object_id=obj,
+                                )
+                            )
         for obj in control_object_ids_tuple:
             for first_word in control_first_words_tuple:
                 for control_mode in control_modes_tuple:
@@ -296,9 +342,13 @@ def discover_usb_primitives(
         register_group_ids=register_group_ids_tuple if allow_control else (),
         control_kinds=control_kinds_tuple if allow_control else (),
         control_modes=control_modes_tuple if allow_control else (),
+        post_register_reads=post_register_reads if allow_control else False,
         control_enabled=allow_control,
         attempts=tuple(attempts),
-        notes=_notes(allow_control=allow_control),
+        notes=_notes(
+            allow_control=allow_control,
+            post_register_reads=post_register_reads,
+        ),
     )
 
 
@@ -514,7 +564,11 @@ def _normalize_control_kinds(control_kinds: Iterable[str]) -> tuple[str, ...]:
     return values
 
 
-def _notes(*, allow_control: bool) -> tuple[str, ...]:
+def _notes(
+    *,
+    allow_control: bool,
+    post_register_reads: bool = False,
+) -> tuple[str, ...]:
     notes = [
         "confirmed means a non-echo matching ACK frame with valid CRC was received",
         "echoed_write means the transport echoed the exact transmitted frame",
@@ -528,4 +582,9 @@ def _notes(*, allow_control: bool) -> tuple[str, ...]:
             "re-register the intended id after experiments"
         )
         notes.append("control-modes probes Vega controlMode 0x33 and legacy op=1")
+        if post_register_reads:
+            notes.append(
+                "post-register reads re-run object read candidates after each "
+                "register-default-group attempt"
+            )
     return tuple(notes)

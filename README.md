@@ -110,6 +110,7 @@ uv run zlight discover-usb --object-ids 0,1,2,100,0x8001,0x8064,0xffff
 uv run zlight discover-usb --allow-control --timeout 0.5
 uv run zlight discover-usb --allow-control --control-object-ids 0,1 --control-first-words 0x0100,0x0301
 uv run zlight discover-usb --allow-control --register-device-ids 0,1 --control-object-ids 1 --control-kinds sleep --control-modes 0x33,0x01
+uv run zlight discover-usb --allow-control --post-register-reads --register-device-ids 1 --control-object-ids 1 --control-kinds none
 ```
 
 `discover-usb` is for bench work. It records global reads, object-read
@@ -120,7 +121,9 @@ When `--allow-control` is set, control probes default to the same object ids as
 bounded control matrix without expanding read probes. Use
 `--register-device-ids`, `--register-group-ids`, `--control-kinds`, and
 `--control-modes` to separate registration hypotheses from the specific control
-candidates you want to transmit.
+candidates you want to transmit. Add `--post-register-reads` to re-run object
+read candidates immediately after each register-default-group attempt, matching
+the useful bench sequence for testing whether registration unlocks object reads.
 
 Exchange one raw frame when you need to reproduce protocol evidence directly:
 
@@ -409,7 +412,8 @@ the bridge to be started with `--allow-control` and the request body to include
 `allow_control: true`. The response summary includes `status_counts`,
 `confirmed_names`, `echoed_write_names`, and a nested `control` summary so setup
 tools can decide whether any write primitive was actually ACK-confirmed without
-scraping every raw attempt.
+scraping every raw attempt. Set `post_register_reads: true` to add a nested
+post-register object-read summary after the registration prelude.
 
 `GET /status` returns read-only identity/status fields plus the raw
 `CommandResult` evidence for global device info, firmware, voltage/status,
@@ -757,8 +761,12 @@ returned `sent_no_response`. Registering device id `1` changed the next probe's
 reported `device_id` to `1`; re-registering device id `0` restored the original
 probe state. A subsequent sleep-only matrix against first words `0x0001`,
 `0x0100`, `0x0000`, `0x0101`, and `0x0301` confirmed that `0x0301` remains an
-echo-only route while the other first words time out for object control. macOS
-USB descriptors show a single `Zhiyun Virtual ComPort` full-speed device
+echo-only route while the other first words time out for object control. The
+post-register read matrix also confirmed that registering device id `1` before
+object reads does not unlock brightness, CCT, sleep, RGB, HSI, firmware-by-object,
+voltage-by-object, mode, or identify reads on this G60; all nine returned
+`sent_no_response`, then device id `0` was restored. macOS USB descriptors show a
+single `Zhiyun Virtual ComPort` full-speed device
 (`VID 0xfff8`, `PID 0x0180`) exposed as `/dev/cu.usbmodem21301`.
 
 Zhiyun did not expose detailed release notes through the protocol data gathered

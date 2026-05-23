@@ -183,7 +183,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--control-kinds",
         type=parse_control_kind_list,
         default=DEFAULT_DISCOVERY_CONTROL_KINDS,
-        help="Comma-separated control candidates to send under --allow-control.",
+        help=(
+            "Comma-separated control candidates to send under --allow-control. "
+            "Use 'none' to skip write probes."
+        ),
     )
     discover.add_argument(
         "--control-modes",
@@ -191,6 +194,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Comma-separated operation bytes for gated control probes. "
             "Defaults to the Vega control mode and legacy op=1."
+        ),
+    )
+    discover.add_argument(
+        "--post-register-reads",
+        action="store_true",
+        help=(
+            "After each gated register attempt, rerun object read probes for "
+            "the selected control object ids."
         ),
     )
     discover.add_argument("--allow-control", action="store_true")
@@ -597,9 +608,11 @@ def parse_int_list(text: str) -> tuple[int, ...]:
 
 
 def parse_control_kind_list(text: str) -> tuple[str, ...]:
+    if text.strip().lower() == "none":
+        return ()
     values = tuple(part.strip() for part in text.split(",") if part.strip())
     if not values:
-        raise argparse.ArgumentTypeError("expected at least one control kind")
+        return ()
     unsupported = tuple(
         value for value in values if value not in DISCOVERY_CONTROL_KIND_NAMES
     )
@@ -732,6 +745,7 @@ def cmd_discover_usb(args: argparse.Namespace) -> int:
             register_group_ids=args.register_group_ids,
             control_kinds=args.control_kinds,
             control_modes=args.control_modes,
+            post_register_reads=args.post_register_reads,
             timeout=args.timeout,
             allow_control=args.allow_control,
             brightness=args.brightness,

@@ -572,6 +572,7 @@ class CliTests(unittest.TestCase):
                     "sleep",
                     "--control-modes",
                     "0x01",
+                    "--post-register-reads",
                     "--json",
                 ]
             )
@@ -583,7 +584,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["register_group_ids"], [0, 2])
         self.assertEqual(payload["control_kinds"], ["sleep"])
         self.assertEqual(payload["control_modes"], [1])
+        self.assertTrue(payload["post_register_reads"])
         self.assertIn("register_default_group_dev1_group2", attempts)
+        self.assertIn("after_register_dev1_group2_read_brightness_obj1", attempts)
         self.assertIn("set_sleep_obj1_mode0x01", attempts)
         self.assertNotIn("set_brightness_obj1_mode0x01", attempts)
 
