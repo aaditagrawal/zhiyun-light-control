@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 
 from .protocol import ParsedFrame, has_echo_frame, is_echo_frame
@@ -67,6 +68,55 @@ class CommandResult:
             "ack": self.ack.to_dict() if self.ack else None,
             "frames": [frame.to_dict() for frame in self.frames],
         }
+
+
+class UnconfirmedCommandError(RuntimeError):
+    def __init__(
+        self,
+        results: Iterable[CommandResult],
+        *,
+        action: str = "control",
+    ):
+        self.results = list(results)
+        self.action = action
+        self.statuses = [result.transport_status for result in self.results]
+        self.unconfirmed = [
+            result for result in self.results if not result.acknowledged
+        ]
+        details = ", ".join(self.statuses) or "no command results"
+        super().__init__(f"{action} was not ACK-confirmed ({details})")
+
+
+def command_results_acknowledged(results: Iterable[CommandResult]) -> bool:
+    items = list(results)
+    return bool(items) and all(result.acknowledged for result in items)
+
+
+def flatten_command_batches(
+    batches: Iterable[Iterable[CommandResult]],
+) -> list[CommandResult]:
+    return [result for batch in batches for result in batch]
+
+
+def require_command_result(
+    result: CommandResult,
+    *,
+    action: str = "control",
+) -> CommandResult:
+    if not result.acknowledged:
+        raise UnconfirmedCommandError([result], action=action)
+    return result
+
+
+def require_command_results(
+    results: Iterable[CommandResult],
+    *,
+    action: str = "control",
+) -> list[CommandResult]:
+    items = list(results)
+    if not command_results_acknowledged(items):
+        raise UnconfirmedCommandError(items, action=action)
+    return items
 
 
 @dataclass(frozen=True)

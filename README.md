@@ -666,12 +666,21 @@ from zhiyun_light_control import Scene, ZhiyunLight
 
 with ZhiyunLight.usb() as light:
     print(light.probe())
-    light.register(device_id=0)
-    light.set_brightness(obj=1, value=35)
+    light.register_confirmed(device_id=0)
+    light.set_brightness_confirmed(obj=1, value=35)
     light.set_cct(obj=1, kelvin=5600)
-    results = light.apply_scene(Scene(obj=1, sleep=0, brightness=35, kelvin=5600))
+    results = light.apply_scene_confirmed(
+        Scene(obj=1, sleep=0, brightness=35, kelvin=5600)
+    )
     print([result.to_dict() for result in results])
 ```
+
+The `_confirmed` SDK helpers are transport-neutral: they work with USB, direct
+BLE, isolated BLE, and custom transports, and they raise
+`UnconfirmedCommandError` when a command is sent but not ACK-confirmed. Use
+`command_results_acknowledged()`, `require_command_result()`, and
+`require_command_results()` when you want to apply the same policy to raw
+`CommandResult` objects.
 
 Smooth transitions use the same scene model and work with both USB and BLE
 clients:
@@ -733,14 +742,14 @@ import asyncio
 from zhiyun_light_control import AsyncZhiyunLight, Scene, read_async_status
 
 async def main():
-    async with AsyncZhiyunLight.macos_ble_app(
+    async with AsyncZhiyunLight.isolated_ble(
         name_contains="MOLUS",
         profile="legacy",
     ) as light:
         print((await read_async_status(light)).to_dict())
         chip = await light.chip_sync()
         print(chip.updater_firmware if chip else None)
-        await light.transition_scene(
+        await light.transition_scene_confirmed(
             Scene(obj=1, brightness=10),
             Scene(obj=1, brightness=35, kelvin=5600),
             steps=6,

@@ -3,7 +3,13 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from zhiyun_light_control import Scene, ZhiyunLight
+from zhiyun_light_control import (
+    Scene,
+    UnconfirmedCommandError,
+    ZhiyunLight,
+    command_results_acknowledged,
+    require_command_result,
+)
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
     build_runtime_frame,
@@ -30,6 +36,15 @@ class ExactEchoTransport:
     def exchange(self, tx: bytes, timeout: float = 0.8) -> bytes:
         del timeout
         return tx
+
+    def close(self) -> None:
+        return
+
+
+class TimeoutTransport:
+    def exchange(self, tx: bytes, timeout: float = 0.8) -> bytes:
+        del tx, timeout
+        return b""
 
     def close(self) -> None:
         return
@@ -138,6 +153,42 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(result.acknowledged)
         self.assertEqual(result.command, RuntimeCommand.BRIGHTNESS)
         self.assertEqual(frame.payload[2], 0x01)
+
+    def test_confirmed_helpers_return_acknowledged_sdk_results(self) -> None:
+        transport = EchoAckTransport()
+        light = ZhiyunLight(transport)
+
+        register = light.register_confirmed()
+        brightness = light.set_brightness_confirmed(1, 25)
+        scene = light.apply_scene_confirmed(Scene(obj=1, brightness=30, kelvin=5600))
+        batches = light.transition_scene_confirmed(
+            Scene(obj=1, brightness=0),
+            Scene(obj=1, brightness=10),
+            steps=2,
+            duration=0,
+        )
+
+        self.assertTrue(register.acknowledged)
+        self.assertTrue(brightness.acknowledged)
+        self.assertTrue(command_results_acknowledged(scene))
+        self.assertEqual(
+            [result.command for batch in batches for result in batch],
+            [RuntimeCommand.BRIGHTNESS, RuntimeCommand.BRIGHTNESS],
+        )
+
+    def test_confirmed_helpers_raise_for_unacknowledged_sdk_results(self) -> None:
+        light = ZhiyunLight(TimeoutTransport())
+
+        with self.assertRaises(UnconfirmedCommandError) as error:
+            light.set_sleep_confirmed(1, 0)
+
+        self.assertEqual(error.exception.action, "sleep")
+        self.assertEqual(error.exception.statuses, ["sent_no_response"])
+        self.assertEqual(error.exception.unconfirmed[0].command, RuntimeCommand.SLEEP)
+
+        result = light.exchange_runtime(RuntimeCommand.BRIGHTNESS, b"\x01")
+        with self.assertRaises(UnconfirmedCommandError):
+            require_command_result(result, action="raw brightness")
 
     def test_apply_scene_requires_complete_rgb_tuple(self) -> None:
         light = ZhiyunLight(EchoAckTransport())

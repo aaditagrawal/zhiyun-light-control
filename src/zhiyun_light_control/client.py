@@ -6,7 +6,13 @@ import itertools
 import time
 from dataclasses import asdict, dataclass
 
-from .models import CommandResult, Scene
+from .models import (
+    CommandResult,
+    Scene,
+    flatten_command_batches,
+    require_command_result,
+    require_command_results,
+)
 from .protocol import (
     DEFAULT_CONTROL_MODE,
     RUNTIME_TYPE,
@@ -89,6 +95,19 @@ class ZhiyunLight:
     ) -> CommandResult:
         return self.exchange_frame(RUNTIME_TYPE, cmd, payload, timeout=timeout)
 
+    def exchange_runtime_confirmed(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+        action: str = "runtime command",
+    ) -> CommandResult:
+        return require_command_result(
+            self.exchange_runtime(cmd, payload, timeout=timeout),
+            action=action,
+        )
+
     def exchange_frame(
         self,
         first_word: int,
@@ -106,6 +125,20 @@ class ZhiyunLight:
             rx=rx,
             frames=frames,
             ack=first_response_frame(rx, tx=tx, cmd=cmd),
+        )
+
+    def exchange_frame_confirmed(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+        action: str = "frame command",
+    ) -> CommandResult:
+        return require_command_result(
+            self.exchange_frame(first_word, cmd, payload, timeout=timeout),
+            action=action,
         )
 
     def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
@@ -159,6 +192,15 @@ class ZhiyunLight:
             register_payload(device_id, group_id),
         )
 
+    def register_confirmed(self, device_id: int = 0, group_id: int = 0):
+        return require_command_result(
+            self.exchange_runtime(
+                RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                register_payload(device_id, group_id),
+            ),
+            action="register",
+        )
+
     def read_brightness(self, obj: int = 0):
         return self.command(
             RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True)
@@ -176,6 +218,18 @@ class ZhiyunLight:
             brightness_payload(obj, value, read=False, control_mode=control_mode),
         )
 
+    def set_brightness_confirmed(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> CommandResult:
+        return require_command_result(
+            self.set_brightness(obj, value, control_mode=control_mode),
+            action="brightness",
+        )
+
     def read_cct(self, obj: int = 0):
         return self.command(RuntimeCommand.CCT, cct_payload(obj, read=True))
 
@@ -189,6 +243,18 @@ class ZhiyunLight:
         return self.exchange_runtime(
             RuntimeCommand.CCT,
             cct_payload(obj, kelvin, read=False, control_mode=control_mode),
+        )
+
+    def set_cct_confirmed(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> CommandResult:
+        return require_command_result(
+            self.set_cct(obj, kelvin, control_mode=control_mode),
+            action="cct",
         )
 
     def set_rgb(
@@ -205,6 +271,20 @@ class ZhiyunLight:
             rgb_payload(obj, red, green, blue, control_mode=control_mode),
         )
 
+    def set_rgb_confirmed(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> CommandResult:
+        return require_command_result(
+            self.set_rgb(obj, red, green, blue, control_mode=control_mode),
+            action="rgb",
+        )
+
     def set_hsi(
         self,
         obj: int,
@@ -217,6 +297,26 @@ class ZhiyunLight:
         return self.exchange_runtime(
             RuntimeCommand.HSI,
             hsi_payload(obj, hue, saturation, intensity, control_mode=control_mode),
+        )
+
+    def set_hsi_confirmed(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> CommandResult:
+        return require_command_result(
+            self.set_hsi(
+                obj,
+                hue,
+                saturation,
+                intensity,
+                control_mode=control_mode,
+            ),
+            action="hsi",
         )
 
     def read_sleep(self, obj: int = 0):
@@ -232,6 +332,18 @@ class ZhiyunLight:
         return self.exchange_runtime(
             RuntimeCommand.SLEEP,
             sleep_payload(obj, value, read=False, control_mode=control_mode),
+        )
+
+    def set_sleep_confirmed(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> CommandResult:
+        return require_command_result(
+            self.set_sleep(obj, value, control_mode=control_mode),
+            action="sleep",
         )
 
     def apply_scene(
@@ -313,6 +425,17 @@ class ZhiyunLight:
             )
         return results
 
+    def apply_scene_confirmed(
+        self,
+        scene: Scene,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> list[CommandResult]:
+        return require_command_results(
+            self.apply_scene(scene, control_mode=control_mode),
+            action="scene",
+        )
+
     def transition_scene(
         self,
         start: Scene,
@@ -330,6 +453,27 @@ class ZhiyunLight:
             batches.append(self.apply_scene(scene, control_mode=control_mode))
             if delay > 0 and index < len(scenes) - 1:
                 time.sleep(delay)
+        return batches
+
+    def transition_scene_confirmed(
+        self,
+        start: Scene,
+        end: Scene,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: EasingName = "linear",
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> list[list[CommandResult]]:
+        batches = self.transition_scene(
+            start,
+            end,
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            control_mode=control_mode,
+        )
+        require_command_results(flatten_command_batches(batches), action="transition")
         return batches
 
     def get_object_firmware(self, obj: int = 0):

@@ -79,7 +79,15 @@ from .macos_ble_app import (
     macos_ble_app_status,
     open_macos_bluetooth_settings,
 )
-from .models import CommandResult, Scene
+from .models import (
+    CommandResult,
+    Scene,
+    UnconfirmedCommandError,
+    command_results_acknowledged,
+    flatten_command_batches,
+    require_command_result,
+    require_command_results,
+)
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .protocol import (
     DEFAULT_CONTROL_MODE,
@@ -169,6 +177,7 @@ __all__ = [
     "SacnPacket",
     "UsbDiscoveryReport",
     "UsbPortInfo",
+    "UnconfirmedCommandError",
     "ZhiyunLight",
     "build_frame",
     "build_runtime_frame",
@@ -178,6 +187,7 @@ __all__ = [
     "bridge_response_statuses",
     "command_result_acknowledged",
     "command_result_status",
+    "command_results_acknowledged",
     "control_guard",
     "devices_ble",
     "devices_ble_authorization",
@@ -216,6 +226,7 @@ __all__ = [
     "decode_sacn",
     "encode_artdmx",
     "encode_sacn",
+    "flatten_command_batches",
     "iter_frames",
     "inspect_ble_device",
     "test_ble_endpoint_candidates",
@@ -225,6 +236,8 @@ __all__ = [
     "read_async_status",
     "read_sync_status",
     "readiness_actions_by_id",
+    "require_command_result",
+    "require_command_results",
     "resolve_ble_profile",
     "scan_zhiyun_devices_macos_app",
     "suggest_ble_endpoint_candidates",

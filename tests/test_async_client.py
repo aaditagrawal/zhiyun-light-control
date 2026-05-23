@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from zhiyun_light_control import AsyncProbeResult, AsyncZhiyunLight, Scene
+from zhiyun_light_control import (
+    AsyncProbeResult,
+    AsyncZhiyunLight,
+    Scene,
+    UnconfirmedCommandError,
+    command_results_acknowledged,
+)
 from zhiyun_light_control.protocol import (
     UPDATER_DEVICE,
     RuntimeCommand,
@@ -24,6 +30,15 @@ class AsyncEchoAckTransport:
         assert frame is not None
         payload = self.payload_by_cmd.get(frame.cmd, b"\x00")
         return build_frame(frame.first_word, frame.seq, frame.cmd, payload)
+
+    async def close(self) -> None:
+        return
+
+
+class AsyncTimeoutTransport:
+    async def exchange(self, tx: bytes, timeout: float = 1.5) -> bytes:
+        del tx, timeout
+        return b""
 
     async def close(self) -> None:
         return
@@ -170,6 +185,45 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.acknowledged)
         self.assertEqual(result.command, RuntimeCommand.SLEEP)
         self.assertEqual(frame.payload[2], 0x01)
+
+    async def test_async_confirmed_helpers_return_acknowledged_results(self) -> None:
+        transport = AsyncEchoAckTransport()
+        light = AsyncZhiyunLight(transport)
+
+        register = await light.register_confirmed()
+        sleep = await light.set_sleep_confirmed(1, 0)
+        scene = await light.apply_scene_confirmed(
+            Scene(obj=1, brightness=25, kelvin=5600)
+        )
+        batches = await light.transition_scene_confirmed(
+            Scene(obj=1, brightness=0),
+            Scene(obj=1, brightness=10),
+            steps=2,
+            duration=0,
+        )
+
+        self.assertTrue(register.acknowledged)
+        self.assertTrue(sleep.acknowledged)
+        self.assertTrue(command_results_acknowledged(scene))
+        self.assertEqual(
+            [result.command for batch in batches for result in batch],
+            [RuntimeCommand.BRIGHTNESS, RuntimeCommand.BRIGHTNESS],
+        )
+
+    async def test_async_confirmed_helpers_raise_for_unacknowledged_results(
+        self,
+    ) -> None:
+        light = AsyncZhiyunLight(AsyncTimeoutTransport())
+
+        with self.assertRaises(UnconfirmedCommandError) as error:
+            await light.set_brightness_confirmed(1, 25)
+
+        self.assertEqual(error.exception.action, "brightness")
+        self.assertEqual(error.exception.statuses, ["sent_no_response"])
+        self.assertEqual(
+            error.exception.unconfirmed[0].command,
+            RuntimeCommand.BRIGHTNESS,
+        )
 
     async def test_async_transition_scene_matches_sync_surface(self) -> None:
         transport = AsyncEchoAckTransport()
