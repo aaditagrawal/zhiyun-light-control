@@ -752,6 +752,9 @@ Call `setup_profile()` when that evidence should be persisted with the selected
 config. A `LightSetupProfile` is plain JSON and can later answer capability
 checks such as `profile.ready("read_status")` or
 `profile.ready("control_writes")` before a host enables a workflow.
+Use `LightIntegration.from_setup_profile()` or
+`LightIntegration.from_setup_profile_file()` to turn that saved profile back
+into a host integration while requiring capabilities up front.
 The integration facade also exposes direct control helpers:
 `register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
 `set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,
@@ -837,6 +840,12 @@ print(read_brightness.get("value"), read_brightness["transport_status"])
 save_light_setup_profile(profile, "./zhiyun-light-profile.json")
 restored_profile = load_light_setup_profile("./zhiyun-light-profile.json")
 print(restored_profile.config.to_dict())
+restored_profile.require_ready("read_status")
+restored_integration = LightIntegration.from_setup_profile(
+    restored_profile,
+    require="read_status",
+)
+print(restored_integration.config.to_dict())
 
 result = integration.apply_scene(
     {"brightness": 35, "kelvin": 5600},

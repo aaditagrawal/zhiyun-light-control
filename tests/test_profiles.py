@@ -7,6 +7,7 @@ from pathlib import Path
 from zhiyun_light_control import (
     LightConnectionConfig,
     LightSetupProfile,
+    SetupProfileNotReady,
     light_setup_profile_from_json,
     light_setup_profile_to_json,
     load_light_setup_profile,
@@ -29,6 +30,17 @@ class SetupProfileTests(unittest.TestCase):
         self.assertTrue(profile.ready("read_status"))
         self.assertFalse(profile.ready("control_writes"))
         self.assertEqual(profile.validation_unconfirmed, ["set_brightness"])
+        self.assertEqual(
+            profile.capabilities,
+            {
+                "read_status": True,
+                "control_writes": False,
+            },
+        )
+        self.assertEqual(
+            profile.unready_capabilities("read_status", "control_writes"),
+            ["control_writes"],
+        )
 
         payload = profile.to_dict()
         self.assertEqual(payload["kind"], "setup-profile")
@@ -72,6 +84,23 @@ class SetupProfileTests(unittest.TestCase):
         self.assertEqual(restored.config.address, "UUID-1")
         self.assertEqual(restored.config.ble_backend, "macos-app")
         self.assertEqual(restored.config.ble_profile, "legacy")
+
+    def test_require_ready_reports_profile_evidence(self) -> None:
+        profile = LightSetupProfile.from_setup_report(setup_report())
+
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes") as error:
+            profile.require_ready("read_status", "control_writes")
+
+        self.assertEqual(error.exception.capabilities, ("control_writes",))
+        self.assertEqual(error.exception.ready_for, {"read_status": True})
+        self.assertEqual(
+            error.exception.validation_ready_for,
+            {
+                "read_status": True,
+                "control_writes": False,
+            },
+        )
+        self.assertEqual(error.exception.validation_unconfirmed, ["set_brightness"])
 
 
 def setup_report(

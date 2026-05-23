@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from zhiyun_light_control import (
@@ -10,9 +12,11 @@ from zhiyun_light_control import (
     LightConnectionCandidate,
     LightConnectionConfig,
     LightIntegration,
+    LightSetupProfile,
     PersistentLightFactory,
     Scene,
     ScenePresetLibrary,
+    SetupProfileNotReady,
     integration_pending_action_ids,
     integration_ready,
     integration_ready_for,
@@ -36,6 +40,7 @@ from zhiyun_light_control import (
     local_status_snapshot,
     local_usb_discovery,
     local_validation,
+    save_light_setup_profile,
 )
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.protocol import (
@@ -1758,6 +1763,68 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profile.validation_unconfirmed, ["set_brightness"])
         self.assertTrue(setup.call_args.kwargs["include_object_reads"])
 
+    def test_light_integration_uses_setup_profile_config(self) -> None:
+        profile = LightSetupProfile.from_setup_report(
+            {
+                "ok": True,
+                "config": LightConnectionConfig.usb(
+                    port="/dev/cu.usbmodem21301"
+                ).to_dict(),
+                "route_confirmed": True,
+                "status_ok": True,
+                "ready_for": {"read_status": True},
+                "validation_ready_for": {"control_writes": False},
+                "validation_unconfirmed": ["set_brightness"],
+            }
+        )
+
+        integration = LightIntegration.from_setup_profile(
+            profile,
+            require="read_status",
+            allow_control=True,
+            cue_names=("intro",),
+        )
+        configured = LightIntegration(obj=2).with_setup_profile(
+            profile,
+            require=("read_status",),
+        )
+
+        self.assertEqual(integration.config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(integration.allow_control)
+        self.assertEqual(integration.cue_names, ("intro",))
+        self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(configured.obj, 2)
+        with self.assertRaises(SetupProfileNotReady):
+            LightIntegration.from_setup_profile(profile, require="control_writes")
+
+    def test_light_integration_loads_setup_profile_file(self) -> None:
+        profile = LightSetupProfile.from_setup_report(
+            {
+                "ok": True,
+                "config": LightConnectionConfig.ble(
+                    address="UUID-1",
+                    backend="macos-app",
+                ).to_dict(),
+                "route_confirmed": True,
+                "status_ok": True,
+                "ready_for": {"read_status": True},
+                "validation_ready_for": {},
+                "validation_unconfirmed": [],
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "profile.json"
+            save_light_setup_profile(profile, path)
+            integration = LightIntegration.from_setup_profile_file(
+                path,
+                require="read_status",
+            )
+
+        self.assertEqual(integration.config.transport, "ble")
+        self.assertEqual(integration.config.address, "UUID-1")
+        self.assertEqual(integration.config.ble_backend, "macos-app")
+
     async def test_async_light_integration_setup_profile_wraps_report(self) -> None:
         report = {
             "ok": True,
@@ -1786,6 +1853,39 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(profile.ready("object_reads"))
         self.assertEqual(profile.validation_unconfirmed, ["read_brightness"])
         self.assertTrue(setup.call_args.kwargs["include_object_reads"])
+
+    async def test_async_light_integration_uses_setup_profile_config(self) -> None:
+        profile = LightSetupProfile.from_setup_report(
+            {
+                "ok": True,
+                "config": LightConnectionConfig.ble(
+                    address="UUID-1",
+                    backend="macos-app",
+                ).to_dict(),
+                "route_confirmed": True,
+                "status_ok": True,
+                "ready_for": {"read_status": True},
+                "validation_ready_for": {"object_reads": False},
+                "validation_unconfirmed": ["read_brightness"],
+            }
+        )
+
+        integration = AsyncLightIntegration.from_setup_profile(
+            profile,
+            require="read_status",
+            allow_control=True,
+        )
+        configured = AsyncLightIntegration(obj=3).with_setup_profile(
+            profile,
+            require=("read_status",),
+        )
+
+        self.assertEqual(integration.config.address, "UUID-1")
+        self.assertTrue(integration.allow_control)
+        self.assertEqual(configured.config.address, "UUID-1")
+        self.assertEqual(configured.obj, 3)
+        with self.assertRaises(SetupProfileNotReady):
+            AsyncLightIntegration.from_setup_profile(profile, require="object_reads")
 
     async def test_async_integration_exposes_status_probed_routes(self) -> None:
         usb_candidate = LightConnectionCandidate(

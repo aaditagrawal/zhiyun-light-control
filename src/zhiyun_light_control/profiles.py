@@ -79,6 +79,16 @@ class LightSetupProfile:
         return self.setup_report.get("status_ok") is True
 
     @property
+    def capabilities(self) -> dict[str, bool]:
+        capabilities = self.ready_for
+        for name, ready in self.validation_ready_for.items():
+            if name in capabilities:
+                capabilities[name] = capabilities[name] and ready
+            else:
+                capabilities[name] = ready
+        return capabilities
+
+    @property
     def ready_for(self) -> dict[str, bool]:
         return _bool_mapping(self.setup_report.get("ready_for"))
 
@@ -107,6 +117,19 @@ class LightSetupProfile:
             return self.validation_ready_for[capability]
         return False
 
+    def unready_capabilities(self, *capabilities: str) -> list[str]:
+        return [
+            capability
+            for capability in capabilities
+            if not self.ready(capability)
+        ]
+
+    def require_ready(self, *capabilities: str) -> LightSetupProfile:
+        missing = self.unready_capabilities(*capabilities)
+        if missing:
+            raise SetupProfileNotReady(self, missing)
+        return self
+
     def to_dict(self) -> dict[str, object]:
         return {
             "api": "zhiyun-light-control",
@@ -120,6 +143,21 @@ class LightSetupProfile:
             "validation_unconfirmed": self.validation_unconfirmed,
             "setup_report": _dict_from_mapping(self.setup_report),
         }
+
+
+class SetupProfileNotReady(RuntimeError):
+    def __init__(
+        self,
+        profile: LightSetupProfile,
+        capabilities: list[str],
+    ) -> None:
+        self.profile = profile
+        self.capabilities = tuple(capabilities)
+        self.ready_for = profile.ready_for
+        self.validation_ready_for = profile.validation_ready_for
+        self.validation_unconfirmed = profile.validation_unconfirmed
+        missing = ", ".join(self.capabilities)
+        super().__init__(f"setup profile not ready for {missing}")
 
 
 def light_setup_profile_from_mapping(

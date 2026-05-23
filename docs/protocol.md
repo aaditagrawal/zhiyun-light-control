@@ -277,7 +277,11 @@ independently usable on the selected transport.
 with the selected `LightConnectionConfig`, summary booleans, validation
 capabilities, and unconfirmed primitive names. Use
 `save_light_setup_profile`/`load_light_setup_profile` when a host needs to carry
-the same setup evidence between processes or operating systems.
+the same setup evidence between processes or operating systems. Profiles expose
+`ready`, `unready_capabilities`, and `require_ready`, and the integration
+facades expose `from_setup_profile`, `from_setup_profile_file`, and
+`with_setup_profile` so host applications can rebuild SDK clients from saved
+evidence while failing fast on missing capabilities.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.

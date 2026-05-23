@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
+from os import PathLike
 
 from .bridge import (
     LightConnectionConfig,
@@ -45,7 +46,7 @@ from .discovery import (
 )
 from .models import Scene
 from .presets import ScenePresetLibrary
-from .profiles import LightSetupProfile
+from .profiles import LightSetupProfile, load_light_setup_profile
 from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .server import (
     capabilities_response,
@@ -101,6 +102,31 @@ class LightIntegration:
         return local_status_snapshot(
             self.config,
             light_factory=self.light_factory,
+        )
+
+    @classmethod
+    def from_setup_profile(
+        cls,
+        profile: LightSetupProfile,
+        *,
+        require: str | Iterable[str] = (),
+        **options: object,
+    ) -> LightIntegration:
+        profile.require_ready(*_profile_requirements(require))
+        return cls(config=profile.config, **options)
+
+    @classmethod
+    def from_setup_profile_file(
+        cls,
+        path: str | PathLike[str],
+        *,
+        require: str | Iterable[str] = (),
+        **options: object,
+    ) -> LightIntegration:
+        return cls.from_setup_profile(
+            load_light_setup_profile(path),
+            require=require,
+            **options,
         )
 
     def readiness(
@@ -393,6 +419,15 @@ class LightIntegration:
 
     def with_config(self, config: LightConnectionConfig) -> LightIntegration:
         return replace(self, config=config)
+
+    def with_setup_profile(
+        self,
+        profile: LightSetupProfile,
+        *,
+        require: str | Iterable[str] = (),
+    ) -> LightIntegration:
+        profile.require_ready(*_profile_requirements(require))
+        return self.with_config(profile.config)
 
     def with_best_connection(
         self,
@@ -1252,6 +1287,31 @@ class AsyncLightIntegration:
             light_factory=self.light_factory,
         )
 
+    @classmethod
+    def from_setup_profile(
+        cls,
+        profile: LightSetupProfile,
+        *,
+        require: str | Iterable[str] = (),
+        **options: object,
+    ) -> AsyncLightIntegration:
+        profile.require_ready(*_profile_requirements(require))
+        return cls(config=profile.config, **options)
+
+    @classmethod
+    def from_setup_profile_file(
+        cls,
+        path: str | PathLike[str],
+        *,
+        require: str | Iterable[str] = (),
+        **options: object,
+    ) -> AsyncLightIntegration:
+        return cls.from_setup_profile(
+            load_light_setup_profile(path),
+            require=require,
+            **options,
+        )
+
     async def readiness(
         self,
         *,
@@ -1547,6 +1607,15 @@ class AsyncLightIntegration:
 
     def with_config(self, config: LightConnectionConfig) -> AsyncLightIntegration:
         return replace(self, config=config)
+
+    def with_setup_profile(
+        self,
+        profile: LightSetupProfile,
+        *,
+        require: str | Iterable[str] = (),
+    ) -> AsyncLightIntegration:
+        profile.require_ready(*_profile_requirements(require))
+        return self.with_config(profile.config)
 
     async def with_best_connection(
         self,
@@ -3447,6 +3516,12 @@ def _candidate_status_confirmed(candidate: LightConnectionCandidate) -> bool:
     if not isinstance(status_probe, Mapping):
         return False
     return status_probe.get("connection_confirmed") is True
+
+
+def _profile_requirements(require: str | Iterable[str]) -> tuple[str, ...]:
+    if isinstance(require, str):
+        return (require,)
+    return tuple(require)
 
 
 def _setup_selected_route(

@@ -179,6 +179,7 @@ from .models import (
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .profiles import (
     LightSetupProfile,
+    SetupProfileNotReady,
     light_setup_profile_from_json,
     light_setup_profile_from_mapping,
     light_setup_profile_to_json,
@@ -324,6 +325,7 @@ __all__ = [
     "SceneTransition",
     "ScenePresetLibrary",
     "SacnPacket",
+    "SetupProfileNotReady",
     "UsbDiscoveryReport",
     "UsbPortInfo",
     "UpdaterCommand",
