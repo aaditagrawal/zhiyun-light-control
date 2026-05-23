@@ -301,6 +301,7 @@ curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/capabilities
 curl http://127.0.0.1:8765/diagnostics
+curl 'http://127.0.0.1:8765/integration?include_ble_status=true'
 curl http://127.0.0.1:8765/ready
 curl http://127.0.0.1:8765/devices
 curl 'http://127.0.0.1:8765/devices?include_ble=true&ble_backend=macos-app&timeout=6&name_contains=PL103'
@@ -392,6 +393,12 @@ dashboards. It opens the bridge's configured transport, returns ACK-backed
 status evidence when
 available, echoes the active BLE backend/profile/address filters, and includes
 next-step hints for cases such as macOS Bluetooth authorization failures.
+
+`GET /integration` is the controller snapshot endpoint. It combines the
+manifest, capabilities, readiness, and local device-discovery payloads under
+`payloads`, and exposes a compact `summary` with readiness booleans, pending
+setup action IDs, selected USB port, BLE authorization/blocker state, and
+ACK-confirmed identity fields.
 
 `GET /ready` is the one-call controller preflight. It combines ACK-backed
 transport status, non-scanning device discovery, current requested-state
@@ -549,6 +556,7 @@ bridge = LightBridgeClient("http://127.0.0.1:8765")
 
 print(bridge.manifest()["osc"]["addresses"])
 print(bridge.diagnostics()["connection_confirmed"])
+print(bridge.integration(include_ble_status=True)["summary"])
 print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
@@ -596,6 +604,9 @@ print(server_named["cue"], server_named["applied"])
 This wrapper preserves the bridge's JSON evidence fields, so callers should
 still check `acknowledged`, `transport_status`, and `/state` rather than assuming
 that a transmitted command was applied.
+Use `integration()` when a controller needs one setup payload containing the
+bridge manifest, capabilities, readiness, device discovery, and the client-side
+control guard configuration.
 It also includes `readiness_actions()`, `readiness_action(id)`, and
 `pending_readiness_actions()` helpers for setup dashboards that consume
 `GET /ready`. Create `LightBridgeClient(..., require_ready_for_controls=True)` to

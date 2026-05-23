@@ -80,6 +80,34 @@ class LightBridgeClient:
     def diagnostics(self) -> dict[str, object]:
         return self._get("/diagnostics")
 
+    def integration(
+        self,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool = False,
+        ble_backend: str | None = None,
+        timeout: float | None = None,
+        name_contains: str | None = None,
+    ) -> dict[str, object]:
+        query: dict[str, object] = {}
+        if include_ble:
+            query["include_ble"] = "true"
+        if include_ble_status:
+            query["include_ble_status"] = "true"
+        if ble_backend is not None:
+            query["ble_backend"] = ble_backend
+        if timeout is not None:
+            query["timeout"] = timeout
+        if name_contains is not None:
+            query["name_contains"] = name_contains
+        suffix = f"?{urlencode(query)}" if query else ""
+        snapshot = self._get(f"/integration{suffix}")
+        snapshot["client"] = {
+            "require_ready_for_controls": self.require_ready_for_controls,
+            "control_readiness": list(self.control_readiness),
+        }
+        return snapshot
+
     def ready(self) -> dict[str, object]:
         return self._get("/ready")
 

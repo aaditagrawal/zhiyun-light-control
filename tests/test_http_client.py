@@ -536,6 +536,104 @@ class HttpClientTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_integration_snapshot_summarizes_controller_setup(self) -> None:
+        light = FakeLight()
+        devices = {
+            "api": "zhiyun-light-control",
+            "configured_transport": "usb",
+            "usb": {
+                "available": True,
+                "selected_port": "/dev/cu.usbmodem21301",
+                "ports": [
+                    {
+                        "path": "/dev/cu.usbmodem21301",
+                        "selected": True,
+                    }
+                ],
+            },
+            "ble": {
+                "included": False,
+                "backend": "macos-app",
+                "macos_status": {
+                    "ok": False,
+                    "authorization": "not_determined",
+                    "state": "unauthorized",
+                    "error": "Bluetooth state unauthorized: 3",
+                },
+                "scan": None,
+            },
+        }
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=False,
+            light_factory=lambda: light,
+            transport="usb",
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(
+            f"http://127.0.0.1:{server.server_port}",
+            require_ready_for_controls=True,
+            control_readiness=["confirmed_control"],
+        )
+        try:
+            with patch(
+                "zhiyun_light_control.server.discover_transport_devices",
+                return_value=devices,
+            ):
+                snapshot = client.integration(
+                    include_ble_status=True,
+                    ble_backend="macos-app",
+                    timeout=0.1,
+                    name_contains="PL103",
+                )
+
+            self.assertEqual(snapshot["api"], "zhiyun-light-control")
+            self.assertEqual(snapshot["version"], "0.1.0")
+            self.assertIn("/integration", client.commands()["get"])
+            self.assertIn("/integration", client.openapi()["paths"])
+
+            summary = snapshot["summary"]
+            self.assertEqual(summary["transport"], "usb")
+            self.assertFalse(summary["control_enabled"])
+            self.assertTrue(summary["connection_confirmed"])
+            self.assertTrue(summary["ready_for"]["read_status"])
+            self.assertFalse(summary["ready_for"]["control_requests"])
+            self.assertFalse(summary["ready_for"]["confirmed_control"])
+            self.assertEqual(
+                summary["pending_action_ids"],
+                ["enable-control", "confirm-control"],
+            )
+            self.assertEqual(
+                summary["selected_usb_port"],
+                "/dev/cu.usbmodem21301",
+            )
+            self.assertEqual(summary["firmware"], "1.6.4")
+            self.assertEqual(summary["generation"], "pl103")
+            self.assertEqual(summary["device_identifier"], "device-test")
+            self.assertEqual(summary["ble_authorization"], "not_determined")
+            self.assertEqual(summary["ble_state"], "unauthorized")
+            self.assertEqual(
+                summary["ble_blocker"],
+                "Bluetooth state unauthorized: 3",
+            )
+
+            self.assertEqual(
+                snapshot["client"],
+                {
+                    "require_ready_for_controls": True,
+                    "control_readiness": ["confirmed_control"],
+                },
+            )
+            self.assertEqual(
+                snapshot["payloads"]["manifest"]["setup"]["preflight"]["path"],
+                "/ready",
+            )
+            self.assertEqual(snapshot["payloads"]["devices"], devices)
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_bridge_response_helpers_normalize_unconfirmed_payloads(self) -> None:
         command = {
             "acknowledged": False,

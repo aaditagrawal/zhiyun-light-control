@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import fields
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -102,6 +102,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/commands",
                         "/capabilities",
                         "/diagnostics",
+                        "/integration",
                         "/ready",
                         "/devices",
                         "/events",
@@ -172,6 +173,12 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/diagnostics":
             self._json(self._handle_diagnostics())
+            return
+        if path == "/integration":
+            try:
+                self._json(self._handle_integration(parsed.query))
+            except ValueError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if path == "/ready":
             self._json(self._handle_ready())
@@ -875,6 +882,35 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             error=error,
         )
 
+    def _handle_integration(self, query: str) -> dict[str, object]:
+        presets = (
+            self.server.preset_library.names() if self.server.preset_library else []
+        )
+        cues = self.server.cue_library.names() if self.server.cue_library else []
+        manifest = integration_manifest_response(
+            allow_control=self.server.allow_control,
+            presets=presets,
+            cues=cues,
+            transport=self.server.transport,
+            ble_backend=self.server.ble_backend,
+            ble_profile=self.server.ble_profile,
+            ble_address=self.server.ble_address,
+            ble_name_contains=self.server.ble_name_contains,
+        )
+        capabilities = capabilities_response(
+            allow_control=self.server.allow_control,
+            presets=presets,
+            cues=cues,
+        )
+        ready = self._handle_ready()
+        devices = self._handle_devices(query)
+        return integration_snapshot_response(
+            manifest=manifest,
+            capabilities=capabilities,
+            ready=ready,
+            devices=devices,
+        )
+
     def _handle_ready(self) -> dict[str, object]:
         status, connection_confirmed, error = self._status_snapshot()
         version, state = self.server.state_tracker.versioned_snapshot()
@@ -1159,6 +1195,12 @@ def openapi_schema() -> dict[str, object]:
                     "Diagnostics",
                 )
             },
+            "/integration": {
+                "get": _operation(
+                    "Return a controller integration snapshot",
+                    "Integration",
+                )
+            },
             "/ready": {
                 "get": _operation(
                     "Summarize controller readiness",
@@ -1383,6 +1425,7 @@ def _openapi_schemas() -> dict[str, object]:
         },
         "Capabilities": {"type": "object", "additionalProperties": True},
         "Diagnostics": {"type": "object", "additionalProperties": True},
+        "Integration": {"type": "object", "additionalProperties": True},
         "ReadinessAction": {
             "type": "object",
             "additionalProperties": True,
@@ -1773,6 +1816,227 @@ def integration_manifest_response(
                 "physical light measurement."
             ),
         },
+    }
+
+
+def integration_snapshot_response(
+    *,
+    manifest: Mapping[str, object],
+    capabilities: Mapping[str, object],
+    ready: Mapping[str, object],
+    devices: Mapping[str, object],
+) -> dict[str, object]:
+    """Return a compact controller snapshot plus raw discovery payloads."""
+
+    version = manifest.get("version")
+    return {
+        "api": _integration_text(
+            manifest.get("api") or ready.get("api"),
+            default="zhiyun-light-control",
+        ),
+        "version": str(version) if version is not None else None,
+        "summary": _integration_summary(ready=ready, devices=devices),
+        "payloads": {
+            "manifest": dict(manifest),
+            "capabilities": dict(capabilities),
+            "ready": dict(ready),
+            "devices": dict(devices),
+        },
+    }
+
+
+def _integration_summary(
+    *,
+    ready: Mapping[str, object],
+    devices: Mapping[str, object],
+) -> dict[str, object]:
+    bridge = _integration_mapping(ready, "bridge")
+    if not bridge:
+        bridge = _integration_mapping(ready, "transport")
+    status = _integration_mapping(ready, "status")
+    transport = bridge.get("transport") or bridge.get("active")
+    return {
+        "transport": str(transport) if transport is not None else None,
+        "ble_backend": _integration_optional_text(bridge.get("ble_backend")),
+        "ble_profile": _integration_optional_text(bridge.get("ble_profile")),
+        "ble_address": _integration_optional_text(bridge.get("ble_address")),
+        "ble_name_contains": _integration_optional_text(
+            bridge.get("ble_name_contains")
+        ),
+        "control_enabled": ready.get("control_enabled") is True,
+        "connection_confirmed": ready.get("connection_confirmed") is True,
+        "ready_for": _integration_bool_map(ready, "ready_for"),
+        "pending_action_ids": _integration_pending_action_ids(ready),
+        "warnings": _integration_text_list(ready.get("warnings")),
+        "selected_usb_port": _integration_selected_usb_port(devices),
+        "usb_available": _integration_usb(devices).get("available") is True,
+        "ble_authorization": _integration_ble_authorization(devices),
+        "ble_state": _integration_ble_state(devices),
+        "ble_blocker": _integration_ble_blocker(devices),
+        "ble_scan_ok": _integration_ble_scan(devices).get("ok") is True,
+        "ble_devices": _integration_ble_scan_devices(devices),
+        "firmware": _integration_optional_text(status.get("firmware")),
+        "generation": _integration_optional_text(status.get("generation")),
+        "device_identifier": _integration_optional_text(
+            status.get("device_identifier")
+        ),
+    }
+
+
+def _integration_pending_action_ids(payload: Mapping[str, object]) -> list[str]:
+    pending: list[str] = []
+    seen: set[str] = set()
+
+    def append(action_id: object) -> None:
+        if action_id is None:
+            return
+        value = str(action_id)
+        if value in seen:
+            return
+        seen.add(value)
+        pending.append(value)
+
+    requirements = payload.get("requirements")
+    if isinstance(requirements, Mapping):
+        for requirement in requirements.values():
+            if not isinstance(requirement, Mapping):
+                continue
+            action_ids = requirement.get("pending_actions")
+            if isinstance(action_ids, list):
+                for action_id in action_ids:
+                    append(action_id)
+    if pending:
+        return pending
+
+    actions = payload.get("actions")
+    if isinstance(actions, list):
+        for action in actions:
+            if not isinstance(action, Mapping):
+                continue
+            if action.get("ready") is True:
+                continue
+            append(action.get("id"))
+    return pending
+
+
+def _integration_selected_usb_port(payload: Mapping[str, object]) -> str | None:
+    port = _integration_usb(payload).get("selected_port")
+    return str(port) if port is not None else None
+
+
+def _integration_ble_authorization(payload: Mapping[str, object]) -> str | None:
+    authorization = _integration_ble_status(payload).get("authorization")
+    return str(authorization) if authorization is not None else None
+
+
+def _integration_ble_state(payload: Mapping[str, object]) -> str | None:
+    state = _integration_ble_status(payload).get("state")
+    return str(state) if state is not None else None
+
+
+def _integration_ble_blocker(payload: Mapping[str, object]) -> str | None:
+    status_error = _integration_ble_status(payload).get("error")
+    if status_error is not None:
+        return str(status_error)
+    scan_error = _integration_ble_scan(payload).get("error")
+    if scan_error is not None:
+        return str(scan_error)
+    return None
+
+
+def _integration_ble_scan_devices(
+    payload: Mapping[str, object],
+) -> list[dict[str, object]]:
+    devices = _integration_ble_scan(payload).get("devices")
+    if not isinstance(devices, list):
+        return []
+    return [
+        _integration_string_key_dict(device)
+        for device in devices
+        if isinstance(device, Mapping)
+    ]
+
+
+def _integration_usb(payload: Mapping[str, object]) -> dict[str, object]:
+    usb = _integration_devices(payload).get("usb")
+    if not isinstance(usb, Mapping):
+        return {}
+    return _integration_string_key_dict(usb)
+
+
+def _integration_ble(payload: Mapping[str, object]) -> dict[str, object]:
+    ble = _integration_devices(payload).get("ble")
+    if not isinstance(ble, Mapping):
+        return {}
+    return _integration_string_key_dict(ble)
+
+
+def _integration_ble_status(payload: Mapping[str, object]) -> dict[str, object]:
+    status = _integration_ble(payload).get("macos_status")
+    if not isinstance(status, Mapping):
+        return {}
+    return _integration_string_key_dict(status)
+
+
+def _integration_ble_scan(payload: Mapping[str, object]) -> dict[str, object]:
+    scan = _integration_ble(payload).get("scan")
+    if not isinstance(scan, Mapping):
+        return {}
+    return _integration_string_key_dict(scan)
+
+
+def _integration_devices(payload: Mapping[str, object]) -> dict[str, object]:
+    if "usb" in payload or "ble" in payload:
+        return _integration_string_key_dict(payload)
+    devices = payload.get("devices")
+    if not isinstance(devices, Mapping):
+        return {}
+    return _integration_string_key_dict(devices)
+
+
+def _integration_mapping(
+    payload: Mapping[str, object],
+    key: str,
+) -> dict[str, object]:
+    value = payload.get(key)
+    if not isinstance(value, Mapping):
+        return {}
+    return _integration_string_key_dict(value)
+
+
+def _integration_bool_map(
+    payload: Mapping[str, object],
+    key: str,
+) -> dict[str, bool]:
+    value = payload.get(key)
+    if not isinstance(value, Mapping):
+        return {}
+    return {
+        str(item_key): item
+        for item_key, item in value.items()
+        if isinstance(item_key, str) and isinstance(item, bool)
+    }
+
+
+def _integration_text_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None]
+
+
+def _integration_optional_text(value: object) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _integration_text(value: object, *, default: str) -> str:
+    return str(value) if value is not None else default
+
+
+def _integration_string_key_dict(payload: Mapping[object, object]) -> dict[str, object]:
+    return {
+        str(key): value
+        for key, value in payload.items()
+        if isinstance(key, str)
     }
 
 
