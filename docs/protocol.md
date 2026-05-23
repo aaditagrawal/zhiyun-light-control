@@ -194,8 +194,8 @@ to run a bounded BLE scan with `ble_backend=worker`, `macos-app`, or `direct`;
 BLE scan errors are returned in the `ble.scan` object with the same `ok`,
 `error`, `returncode`, and `signal` fields as `zlight scan-ble`. Scan devices
 include advertised service UUIDs in `services` when the selected backend reports
-them; controllers can use that to suggest `direct`, `legacy`, or `yc` profiles.
-The response also includes `ble.macos_helper`, which names the cached
+them, plus `suggested_profile` when those services match `direct`, `legacy`, or
+`yc`. The response also includes `ble.macos_helper`, which names the cached
 `ZhiyunBleScan.app`, bundle id, app path, and settings hint needed for macOS
 Bluetooth authorization.
 

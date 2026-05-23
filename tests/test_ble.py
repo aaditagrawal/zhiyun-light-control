@@ -37,6 +37,7 @@ from zhiyun_light_control.transports.ble import (
     scan_zhiyun_devices,
     scan_zhiyun_devices_macos_app,
     scan_zhiyun_devices_safe,
+    suggest_ble_profile,
 )
 
 
@@ -107,10 +108,12 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(result.devices[0].name, "MOLUS G60")
         self.assertEqual(result.devices[0].rssi, -55)
         self.assertEqual(result.devices[0].services, (DIRECT_ZY_SERVICE_UUID,))
+        self.assertEqual(result.devices[0].suggested_profile, "direct")
         self.assertEqual(
             result.devices[0].to_dict()["services"],
             [DIRECT_ZY_SERVICE_UUID],
         )
+        self.assertEqual(result.devices[0].to_dict()["suggested_profile"], "direct")
         self.assertEqual(result.worker_python, "python-test")
 
     def test_safe_scan_reports_worker_abort(self) -> None:
@@ -186,6 +189,7 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(result.devices[0].address, "UUID-1")
         self.assertEqual(result.devices[0].name, "PL103_EDFE")
         self.assertEqual(result.devices[0].services, (LEGACY_ZY_SERVICE_UUID,))
+        self.assertEqual(result.devices[0].suggested_profile, "legacy")
         self.assertEqual(
             run.call_args.args[0],
             ["scan", "--timeout", "1.0", "--name-contains", "PL103"],
@@ -238,6 +242,16 @@ class SafeBleExchangeTests(unittest.TestCase):
 
         self.assertEqual(custom.name, "bench")
         self.assertEqual(custom.write_uuid, "write-test")
+
+    def test_suggest_ble_profile_maps_advertised_services(self) -> None:
+        self.assertEqual(
+            suggest_ble_profile([DIRECT_ZY_SERVICE_UUID.upper()]),
+            "direct",
+        )
+        self.assertEqual(
+            suggest_ble_profile(["00001827-0000-1000-8000-00805f9b34fb"]),
+            None,
+        )
 
     def test_safe_exchange_parses_worker_response(self) -> None:
         tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
@@ -409,10 +423,13 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(devices[0].address, "AA")
         self.assertEqual(devices[0].name, "MOLUS G60")
         self.assertEqual(devices[0].services, ())
+        self.assertIsNone(devices[0].suggested_profile)
         self.assertEqual(devices[1].address, "CC")
         self.assertEqual(devices[1].services, (DIRECT_ZY_SERVICE_UUID,))
+        self.assertEqual(devices[1].suggested_profile, "direct")
         self.assertEqual(devices[2].address, "DD")
         self.assertEqual(devices[2].services, (YC_SERVICE_UUID,))
+        self.assertEqual(devices[2].suggested_profile, "yc")
 
     async def test_transport_exchange_uses_write_and_notify_characteristics(
         self,

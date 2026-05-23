@@ -87,12 +87,17 @@ class BleDevice:
     rssi: int | None = None
     services: tuple[str, ...] = ()
 
+    @property
+    def suggested_profile(self) -> str | None:
+        return suggest_ble_profile(self.services)
+
     def to_dict(self) -> dict[str, object]:
         return {
             "address": self.address,
             "name": self.name,
             "rssi": self.rssi,
             "services": list(self.services),
+            "suggested_profile": self.suggested_profile,
         }
 
 
@@ -708,6 +713,14 @@ def resolve_ble_profile(
         write_uuid=resolved.write_uuid,
         notify_uuid=resolved.notify_uuid,
     )
+
+
+def suggest_ble_profile(services: Iterable[str]) -> str | None:
+    advertised = {service.lower() for service in services}
+    for profile in BLE_PROFILES.values():
+        if profile.service_uuid in advertised:
+            return profile.name
+    return None
 
 
 def _profile_arg(profile: str | BleProfile) -> str:

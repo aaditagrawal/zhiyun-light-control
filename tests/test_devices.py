@@ -101,6 +101,10 @@ class DeviceDiscoveryTests(unittest.TestCase):
             payload["ble"]["scan"]["devices"][0]["services"],
             ["0000fee9-0000-1000-8000-00805f9b34fb"],
         )
+        self.assertEqual(
+            payload["ble"]["scan"]["devices"][0]["suggested_profile"],
+            "legacy",
+        )
         scan_macos.assert_called_once_with(timeout=1.25, name_contains="PL103")
 
     def test_worker_scan_passes_python_override(self) -> None:

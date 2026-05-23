@@ -49,6 +49,7 @@ from .transports.ble import (
     MacosBleAppTransport,
     resolve_ble_profile,
     scan_zhiyun_devices_macos_app,
+    suggest_ble_profile,
 )
 from .validation import (
     HardwareValidationReport,
@@ -115,6 +116,7 @@ __all__ = [
     "read_sync_status",
     "resolve_ble_profile",
     "scan_zhiyun_devices_macos_app",
+    "suggest_ble_profile",
     "make_light_factory",
     "merge_scene",
     "open_macos_bluetooth_settings",
