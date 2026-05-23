@@ -410,6 +410,89 @@ class LightIntegration:
             )
         )
 
+    def probe_connection_candidates(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        confirmed_only: bool = False,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return local_probe_connection_candidates(
+            self.config,
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            confirmed_only=confirmed_only,
+        )
+
+    def confirmed_connection_candidates(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return self.probe_connection_candidates(
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            confirmed_only=True,
+        )
+
+    def best_confirmed_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionCandidate:
+        return _best_connection_candidate(
+            self.confirmed_connection_candidates(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    def best_confirmed_connection_config(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionConfig:
+        return self.best_confirmed_connection(
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+        ).config
+
+    def with_confirmed_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightIntegration:
+        return self.with_config(
+            self.best_confirmed_connection_config(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
     def ble_endpoint_connection_candidates(
         self,
         *,
@@ -1428,6 +1511,91 @@ class AsyncLightIntegration:
             )
         )
 
+    async def probe_connection_candidates(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        confirmed_only: bool = False,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return await local_async_probe_connection_candidates(
+            self.config,
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            confirmed_only=confirmed_only,
+        )
+
+    async def confirmed_connection_candidates(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return await self.probe_connection_candidates(
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            confirmed_only=True,
+        )
+
+    async def best_confirmed_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionCandidate:
+        return _best_connection_candidate(
+            await self.confirmed_connection_candidates(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    async def best_confirmed_connection_config(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionConfig:
+        return (
+            await self.best_confirmed_connection(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        ).config
+
+    async def with_confirmed_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> AsyncLightIntegration:
+        return self.with_config(
+            await self.best_confirmed_connection_config(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
     async def ble_endpoint_connection_candidates(
         self,
         *,
@@ -2259,6 +2427,32 @@ def local_connection_candidates(
     )
 
 
+def local_probe_connection_candidates(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+    confirmed_only: bool = False,
+) -> tuple[LightConnectionCandidate, ...]:
+    candidates = local_connection_candidates(
+        config,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+        persistent=persistent,
+    )
+    probed = tuple(_probe_connection_candidate(candidate) for candidate in candidates)
+    if confirmed_only:
+        probed = tuple(
+            candidate
+            for candidate in probed
+            if _candidate_status_confirmed(candidate)
+        )
+    return _rank_connection_candidates(probed)
+
+
 async def local_async_connection_candidates(
     config: LightConnectionConfig | None = None,
     *,
@@ -2274,6 +2468,26 @@ async def local_async_connection_candidates(
         include_ble=include_ble,
         include_ble_status=include_ble_status,
         persistent=persistent,
+    )
+
+
+async def local_async_probe_connection_candidates(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+    confirmed_only: bool = False,
+) -> tuple[LightConnectionCandidate, ...]:
+    return await asyncio.to_thread(
+        local_probe_connection_candidates,
+        config,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+        persistent=persistent,
+        confirmed_only=confirmed_only,
     )
 
 
@@ -2915,6 +3129,95 @@ def _include_ble_status(
     if requested is not None:
         return requested
     return config.transport == "ble" and _ble_backend(config) == "macos-app"
+
+
+def _probe_connection_candidate(
+    candidate: LightConnectionCandidate,
+) -> LightConnectionCandidate:
+    status, confirmed, error = local_status_snapshot(candidate.config)
+    evidence = dict(candidate.evidence or {})
+    evidence["status_probe"] = _status_probe_evidence(status, confirmed, error)
+    if confirmed:
+        return LightConnectionCandidate(
+            config=candidate.config,
+            source=f"{candidate.source}.status",
+            confidence="status-confirmed",
+            confidence_score=max(100, candidate.confidence_score + 20),
+            reason=(
+                f"{candidate.reason}; status probe confirmed "
+                f"{_status_probe_label(status)}"
+            ),
+            evidence=evidence,
+        )
+    return LightConnectionCandidate(
+        config=candidate.config,
+        source=f"{candidate.source}.status",
+        confidence="status-unconfirmed",
+        confidence_score=min(40, candidate.confidence_score),
+        reason=(
+            f"{candidate.reason}; status probe failed: "
+            f"{error or 'connection not confirmed'}"
+        ),
+        evidence=evidence,
+    )
+
+
+def _status_probe_evidence(
+    status: Mapping[str, object],
+    confirmed: bool,
+    error: str | None,
+) -> dict[str, object]:
+    evidence = {
+        key: status[key]
+        for key in (
+            "transport",
+            "device_identifier",
+            "generation",
+            "firmware",
+            "device_id",
+            "voltage_status",
+            "port",
+        )
+        if key in status
+    }
+    evidence["connection_confirmed"] = confirmed
+    if error is not None:
+        evidence["error"] = error
+    elif "error" in status:
+        evidence["error"] = status["error"]
+    return evidence
+
+
+def _status_probe_label(status: Mapping[str, object]) -> str:
+    parts = [
+        f"{key}={status[key]}"
+        for key in ("firmware", "generation", "device_identifier")
+        if status.get(key) is not None
+    ]
+    return ", ".join(parts) or "read-status"
+
+
+def _candidate_status_confirmed(candidate: LightConnectionCandidate) -> bool:
+    evidence = candidate.evidence or {}
+    status_probe = evidence.get("status_probe")
+    if not isinstance(status_probe, Mapping):
+        return False
+    return status_probe.get("connection_confirmed") is True
+
+
+def _rank_connection_candidates(
+    candidates: Iterable[LightConnectionCandidate],
+) -> tuple[LightConnectionCandidate, ...]:
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda candidate: (
+                -candidate.confidence_score,
+                candidate.transport,
+                candidate.source,
+            ),
+        )
+    )
 
 
 def _report_to_dict(report: object) -> dict[str, object]:

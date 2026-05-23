@@ -263,6 +263,11 @@ For transport setup, embedded hosts can call `connection_candidates` and
 `with_best_connection` to derive ranked USB/BLE `LightConnectionConfig` objects
 from local discovery, or `ble_endpoint_connection_candidates` and
 `with_ble_endpoint_connection` to derive BLE configs from endpoint-test evidence.
+Hosts that need a route proven by a read-only status ACK can call
+`probe_connection_candidates` for `status_probe` evidence on each route, or
+`with_confirmed_connection` to select the best route whose identity/status probe
+succeeds. That status confirmation is separate from control-write confirmation;
+use validation with `allow_control` before enabling production writes.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.

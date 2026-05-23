@@ -31,6 +31,7 @@ from zhiyun_light_control import (
     local_error_status,
     local_integration_snapshot,
     local_manifest,
+    local_probe_connection_candidates,
     local_readiness,
     local_status_snapshot,
     local_usb_discovery,
@@ -859,6 +860,99 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(devices.call_args.kwargs["include_ble"])
         self.assertTrue(devices.call_args.kwargs["include_ble_status"])
 
+    def test_light_integration_probes_connection_routes_with_status_evidence(
+        self,
+    ) -> None:
+        usb_candidate = LightConnectionCandidate(
+            config=LightConnectionConfig.usb(port="/dev/cu.usbmodem21301"),
+            source="devices.usb",
+            confidence="known-usb-descriptor",
+            confidence_score=95,
+            reason="USB descriptor matches Zhiyun Virtual ComPort",
+        )
+        ble_candidate = LightConnectionCandidate(
+            config=LightConnectionConfig.ble(
+                address="UUID-1",
+                backend="macos-app",
+            ),
+            source="devices.ble.scan",
+            confidence="advertised-profile",
+            confidence_score=85,
+            reason="BLE advertisement matched built-in direct profile",
+        )
+        seen_configs: list[LightConnectionConfig] = []
+
+        def fake_status(config: LightConnectionConfig):
+            seen_configs.append(config)
+            if config.transport == "usb":
+                return (
+                    {
+                        "transport": "usb",
+                        "connection_confirmed": True,
+                        "firmware": "1.6.4",
+                        "port": config.port,
+                    },
+                    True,
+                    None,
+                )
+            return (
+                {"ok": False, "error": "Bluetooth state unauthorized: 3"},
+                False,
+                "Bluetooth state unauthorized: 3",
+            )
+
+        integration = LightIntegration(allow_control=True, preset_names=("key",))
+        with (
+            patch(
+                "zhiyun_light_control.integration.local_connection_candidates",
+                return_value=(ble_candidate, usb_candidate),
+            ) as candidates,
+            patch(
+                "zhiyun_light_control.integration.local_status_snapshot",
+                side_effect=fake_status,
+            ),
+        ):
+            routes = integration.probe_connection_candidates(
+                include_ble=True,
+                persistent=True,
+            )
+            confirmed = integration.confirmed_connection_candidates(
+                include_ble=True,
+                persistent=True,
+            )
+            best_config = integration.best_confirmed_connection_config(
+                include_ble=True,
+                persistent=True,
+            )
+            configured = integration.with_confirmed_connection(
+                include_ble=True,
+                persistent=True,
+            )
+
+        self.assertEqual(
+            [route.confidence for route in routes],
+            ["status-confirmed", "status-unconfirmed"],
+        )
+        self.assertEqual(routes[0].config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(routes[0].evidence["status_probe"]["firmware"], "1.6.4")
+        self.assertTrue(routes[0].evidence["status_probe"]["connection_confirmed"])
+        self.assertEqual(
+            routes[1].evidence["status_probe"]["error"],
+            "Bluetooth state unauthorized: 3",
+        )
+        self.assertEqual(confirmed, (routes[0],))
+        self.assertEqual(best_config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(configured.allow_control)
+        self.assertEqual(configured.preset_names, ("key",))
+        self.assertIs(configured.state_tracker, integration.state_tracker)
+        self.assertEqual(
+            [config.transport for config in seen_configs],
+            ["ble", "usb", "ble", "usb", "ble", "usb", "ble", "usb"],
+        )
+        self.assertEqual(candidates.call_args.kwargs["include_ble"], True)
+        self.assertEqual(candidates.call_args.kwargs["persistent"], True)
+
     def test_light_integration_exposes_ble_endpoint_connection_routes(self) -> None:
         integration = LightIntegration(
             config=LightConnectionConfig(
@@ -953,6 +1047,39 @@ class IntegrationTests(unittest.TestCase):
             )
 
         self.assertEqual(ble_candidates[0].config.ble_write_uuid, "write-uuid")
+
+        with (
+            patch(
+                "zhiyun_light_control.integration.local_connection_candidates",
+                return_value=(
+                    LightConnectionCandidate(
+                        config=LightConnectionConfig.usb(port="/dev/cu.test"),
+                        source="devices.usb",
+                        confidence="serial-port",
+                        confidence_score=70,
+                        reason="USB serial port is available",
+                    ),
+                ),
+            ),
+            patch(
+                "zhiyun_light_control.integration.local_status_snapshot",
+                return_value=(
+                    {
+                        "transport": "usb",
+                        "connection_confirmed": True,
+                        "firmware": "1.6.4",
+                    },
+                    True,
+                    None,
+                ),
+            ),
+        ):
+            probed = local_probe_connection_candidates(
+                LightConnectionConfig(transport="usb"),
+            )
+
+        self.assertEqual(probed[0].confidence, "status-confirmed")
+        self.assertEqual(probed[0].evidence["status_probe"]["firmware"], "1.6.4")
 
     def test_local_devices_can_override_ble_status_probe(self) -> None:
         with patch(
@@ -1516,6 +1643,51 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(configured.state_tracker, integration.state_tracker)
         self.assertEqual(candidates.call_args.kwargs["include_ble"], True)
         self.assertEqual(candidates.call_args.kwargs["persistent"], True)
+
+    async def test_async_integration_exposes_status_probed_routes(self) -> None:
+        usb_candidate = LightConnectionCandidate(
+            config=LightConnectionConfig.usb(port="/dev/cu.usbmodem21301"),
+            source="devices.usb.status",
+            confidence="status-confirmed",
+            confidence_score=115,
+            reason="USB descriptor matches Zhiyun Virtual ComPort; status confirmed",
+            evidence={"status_probe": {"connection_confirmed": True}},
+        )
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="PL103"),
+            allow_control=True,
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.local_probe_connection_candidates",
+            return_value=(usb_candidate,),
+        ) as candidates:
+            routes = await integration.probe_connection_candidates(
+                include_ble=True,
+                persistent=True,
+            )
+            confirmed = await integration.confirmed_connection_candidates(
+                include_ble=True,
+                persistent=True,
+            )
+            best_config = await integration.best_confirmed_connection_config(
+                include_ble=True,
+                persistent=True,
+            )
+            configured = await integration.with_confirmed_connection(
+                include_ble=True,
+                persistent=True,
+            )
+
+        self.assertEqual(routes, (usb_candidate,))
+        self.assertEqual(confirmed, (usb_candidate,))
+        self.assertEqual(best_config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(configured.allow_control)
+        self.assertIs(configured.state_tracker, integration.state_tracker)
+        self.assertEqual(candidates.call_args.kwargs["include_ble"], True)
+        self.assertEqual(candidates.call_args.kwargs["persistent"], True)
+        self.assertTrue(candidates.call_args.kwargs["confirmed_only"])
 
     async def test_async_integration_exposes_ble_endpoint_routes(self) -> None:
         ble_candidate = LightConnectionCandidate(

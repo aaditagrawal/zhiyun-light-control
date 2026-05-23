@@ -727,6 +727,12 @@ They also expose `connection_candidates()`, `best_connection_config()`,
 `best_ble_endpoint_config()`, and `with_ble_endpoint_connection()` so embedded
 hosts can turn USB/BLE discovery and BLE endpoint ACK evidence into reusable
 SDK configs without starting the HTTP bridge.
+When setup code needs a route that has actually ACKed read-only status, use
+`probe_connection_candidates()` for ranked routes with `status_probe` evidence,
+or `with_confirmed_connection()` to select the best USB/BLE config whose status
+probe succeeded. This confirms identity/status access only; keep using
+`validate(..., allow_control=True)` before treating object reads or writes as
+confirmed for show control.
 The integration facade also exposes direct control helpers:
 `register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
 `set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,
