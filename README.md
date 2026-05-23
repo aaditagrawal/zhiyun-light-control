@@ -120,6 +120,7 @@ Example HTTP calls:
 ```sh
 curl http://127.0.0.1:8765/probe
 curl http://127.0.0.1:8765/commands
+curl http://127.0.0.1:8765/state
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
@@ -131,6 +132,10 @@ curl -X POST http://127.0.0.1:8765/preset \
   -H 'content-type: application/json' \
   -d '{"name": "key", "brightness": 45}'
 ```
+
+`/state` returns the last accepted scene request across HTTP bridge controls.
+OSC, Art-Net, and sACN dispatchers expose the same `SceneStateTracker` for
+embedded use.
 
 Start the local OSC bridge:
 

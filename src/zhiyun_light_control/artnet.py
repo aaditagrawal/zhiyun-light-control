@@ -10,6 +10,7 @@ from typing import Any, Callable
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
+from .state import SceneStateTracker
 
 
 ARTNET_ID = b"Art-Net\x00"
@@ -126,12 +127,14 @@ class ArtNetLightDispatcher:
         universe: int = 0,
         mapping: DmxMapping = DmxMapping(),
         allow_control: bool = False,
+        state_tracker: SceneStateTracker | None = None,
     ):
         self.light_factory = light_factory
         self.universe = universe
         self.mapping = mapping
         self.allow_control = allow_control
         self._last_scene: Scene | None = None
+        self.state_tracker = state_tracker or SceneStateTracker()
 
     def dispatch(self, packet: ArtDmxPacket) -> ArtNetDispatchResult:
         if packet.universe != self.universe:
@@ -140,11 +143,30 @@ class ArtNetLightDispatcher:
         if scene == self._last_scene:
             return ArtNetDispatchResult(packet=packet, scene=scene, applied=False, reason="unchanged")
         if not self.allow_control:
+            self._record_scene(scene, applied=False, reason="control_disabled")
             return ArtNetDispatchResult(packet=packet, scene=scene, applied=False, reason="control_disabled")
         with self.light_factory() as light:
-            light.apply_scene(scene)
+            results = light.apply_scene(scene)
+        self._record_scene(scene, applied=True, results=results)
         self._last_scene = scene
         return ArtNetDispatchResult(packet=packet, scene=scene, applied=True)
+
+    def _record_scene(
+        self,
+        scene: Scene,
+        *,
+        applied: bool,
+        reason: str | None = None,
+        results=(),
+    ) -> None:
+        self.state_tracker.record(
+            scene,
+            source="artnet",
+            action="scene",
+            applied=applied,
+            reason=reason,
+            results=results,
+        )
 
 
 def scene_from_dmx(data: bytes, mapping: DmxMapping = DmxMapping()) -> Scene:
@@ -171,12 +193,14 @@ def serve_artnet(
     allow_control: bool = False,
     once: bool = False,
     light_factory: Callable[[], Any] | None = None,
+    state_tracker: SceneStateTracker | None = None,
 ) -> None:
     dispatcher = ArtNetLightDispatcher(
         light_factory=light_factory or (lambda: ZhiyunLight.usb(port=light_port)),
         universe=universe,
         mapping=mapping,
         allow_control=allow_control,
+        state_tracker=state_tracker,
     )
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:

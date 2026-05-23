@@ -10,6 +10,7 @@ from zhiyun_light_control.osc import (
 )
 from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import build_runtime_frame, first_frame
+from zhiyun_light_control.state import SceneStateTracker
 
 
 class FakeProbe:
@@ -78,13 +79,18 @@ class OscTests(unittest.TestCase):
 
     def test_dispatch_scene_maps_to_light_scene(self) -> None:
         light = FakeLight()
+        tracker = SceneStateTracker()
         dispatcher = OscLightDispatcher(lambda: light, allow_control=True)
+        dispatcher.state_tracker = tracker
 
         result = dispatcher.dispatch(decode_message(encode_message("/zhiyun/scene", 25.0, 5600, 0)))
 
         self.assertEqual(result.action, "scene")
         self.assertEqual([item["command"] for item in result.result["results"]], [0x1001, 0x1002, 0x1008])
         self.assertEqual(light.commands, [0x1001, 0x1002, 0x1008])
+        state = tracker.to_dict()
+        self.assertEqual(state["source"], "osc")
+        self.assertEqual(state["scene"]["kelvin"], 5600)
 
     def test_dispatch_preset_maps_named_scene(self) -> None:
         light = FakeLight()

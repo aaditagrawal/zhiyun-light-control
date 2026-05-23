@@ -10,6 +10,7 @@ from zhiyun_light_control.sacn import (
     encode_sacn,
     sacn_multicast_address,
 )
+from zhiyun_light_control.state import SceneStateTracker
 
 
 class FakeLight:
@@ -60,7 +61,13 @@ class SacnTests(unittest.TestCase):
 
     def test_dispatch_applies_changed_scene_once(self) -> None:
         light = FakeLight()
-        dispatcher = SacnLightDispatcher(lambda: light, universe=1, allow_control=True)
+        tracker = SceneStateTracker()
+        dispatcher = SacnLightDispatcher(
+            lambda: light,
+            universe=1,
+            allow_control=True,
+            state_tracker=tracker,
+        )
         packet = decode_sacn(encode_sacn(bytes([255, 255]), universe=1))
 
         first = dispatcher.dispatch(packet)
@@ -70,6 +77,10 @@ class SacnTests(unittest.TestCase):
         self.assertFalse(second.applied)
         self.assertEqual(second.reason, "unchanged")
         self.assertEqual(len(light.scenes), 1)
+        state = tracker.to_dict()
+        self.assertEqual(state["source"], "sacn")
+        self.assertTrue(state["applied"])
+        self.assertEqual(state["scene"]["kelvin"], 6500)
 
     def test_dispatch_ignores_other_universe(self) -> None:
         light = FakeLight()

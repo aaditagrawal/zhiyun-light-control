@@ -9,6 +9,7 @@ from zhiyun_light_control.artnet import (
     encode_artdmx,
     scene_from_dmx,
 )
+from zhiyun_light_control.state import SceneStateTracker
 
 
 class FakeLight:
@@ -69,7 +70,13 @@ class ArtNetTests(unittest.TestCase):
 
     def test_dispatch_applies_changed_scene_once(self) -> None:
         light = FakeLight()
-        dispatcher = ArtNetLightDispatcher(lambda: light, universe=0, allow_control=True)
+        tracker = SceneStateTracker()
+        dispatcher = ArtNetLightDispatcher(
+            lambda: light,
+            universe=0,
+            allow_control=True,
+            state_tracker=tracker,
+        )
         packet = decode_artdmx(encode_artdmx(bytes([255, 255]), universe=0))
 
         first = dispatcher.dispatch(packet)
@@ -79,8 +86,11 @@ class ArtNetTests(unittest.TestCase):
         self.assertFalse(second.applied)
         self.assertEqual(second.reason, "unchanged")
         self.assertEqual(len(light.scenes), 1)
+        state = tracker.to_dict()
+        self.assertEqual(state["source"], "artnet")
+        self.assertTrue(state["applied"])
+        self.assertEqual(state["scene"]["brightness"], 100.0)
 
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -62,6 +62,8 @@ class ServerTests(unittest.TestCase):
         try:
             probe = json.loads(urlopen(f"{base}/probe", timeout=3).read())
             self.assertEqual(probe["firmware"], "test")
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertIsNone(state["scene"])
 
             request = Request(
                 f"{base}/scene",
@@ -72,6 +74,11 @@ class ServerTests(unittest.TestCase):
             scene = json.loads(urlopen(request, timeout=3).read())
             self.assertEqual([result["command"] for result in scene["results"]], [0x1001, 0x1002])
             self.assertEqual(light.commands, [0x1001, 0x1002])
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["source"], "http")
+            self.assertEqual(state["action"], "scene")
+            self.assertTrue(state["applied"])
+            self.assertEqual(state["scene"]["brightness"], 30.0)
         finally:
             server.shutdown()
             server.server_close()
@@ -105,6 +112,9 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(response["scene"]["brightness"], 55.0)
             self.assertEqual(response["scene"]["kelvin"], 5200)
             self.assertEqual([result["command"] for result in response["results"]], [0x1001, 0x1002])
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["action"], "preset")
+            self.assertEqual(state["scene"]["brightness"], 55.0)
         finally:
             server.shutdown()
             server.server_close()

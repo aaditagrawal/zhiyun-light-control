@@ -52,6 +52,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/probe` | Global light probe |
 | `GET` | `/commands` | List bridge commands |
 | `GET` | `/presets` | List loaded named scene presets |
+| `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
 | `POST` | `/cct` | Set color temperature |
@@ -102,6 +103,12 @@ top-level mapping of names to scene objects or an object with a `scenes` mapping
 CLI scene fields override preset values when supplied, and HTTP `/preset`
 accepts the same scene fields plus `name`. Use `zlight apply --dry-run` to
 resolve a preset and override set without opening a USB/BLE connection.
+
+Bridge state is in-memory and intentionally reports requested state, not a
+device-confirmed physical measurement. It includes the last scene payload,
+source protocol, action name, timestamp, applied flag, optional reason, and
+transport status strings from any command results. This gives media tools a
+stable polling surface even while some device commands remain fire-and-forget.
 
 The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and maps DMX channels to a `Scene`:
 

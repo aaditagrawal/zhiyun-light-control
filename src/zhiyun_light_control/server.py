@@ -21,6 +21,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
+from .state import SceneStateTracker
 
 
 class LightHttpServer(ThreadingHTTPServer):
@@ -32,12 +33,14 @@ class LightHttpServer(ThreadingHTTPServer):
         allow_control: bool = False,
         light_factory: Any | None = None,
         preset_library: ScenePresetLibrary | None = None,
+        state_tracker: SceneStateTracker | None = None,
     ):
         super().__init__(server_address, LightRequestHandler)
         self.light_port = port
         self.allow_control = allow_control
         self.light_factory = light_factory or (lambda: ZhiyunLight.usb(port=port))
         self.preset_library = preset_library
+        self.state_tracker = state_tracker or SceneStateTracker()
 
 
 class LightRequestHandler(BaseHTTPRequestHandler):
@@ -51,7 +54,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         if path == "/commands":
             self._json(
                 {
-                    "get": ["/health", "/probe", "/commands", "/presets"],
+                    "get": ["/health", "/probe", "/commands", "/presets", "/state"],
                     "post": [
                         "/register",
                         "/brightness",
@@ -72,6 +75,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         if path == "/presets":
             library = self.server.preset_library
             self._json(library.to_dict() if library else {"scenes": {}})
+            return
+        if path == "/state":
+            self._json(self.server.state_tracker.to_dict())
             return
         if path == "/probe":
             with self.server.light_factory() as light:
@@ -117,17 +123,32 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     RuntimeCommand.BRIGHTNESS,
                     brightness_payload(obj, float(body["value"])),
                 )
+                self._record_scene(
+                    Scene(obj=obj, brightness=float(body["value"])),
+                    action="brightness",
+                    results=[result],
+                )
                 return result.to_dict()
             if path == "/cct":
                 result = light.exchange_runtime(
                     RuntimeCommand.CCT,
                     cct_payload(obj, int(body["kelvin"])),
                 )
+                self._record_scene(
+                    Scene(obj=obj, kelvin=int(body["kelvin"])),
+                    action="cct",
+                    results=[result],
+                )
                 return result.to_dict()
             if path == "/sleep":
                 result = light.exchange_runtime(
                     RuntimeCommand.SLEEP,
                     sleep_payload(obj, int(body["value"])),
+                )
+                self._record_scene(
+                    Scene(obj=obj, sleep=int(body["value"])),
+                    action="sleep",
+                    results=[result],
                 )
                 return result.to_dict()
             if path == "/rgb":
@@ -140,6 +161,16 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         int(body["blue"]),
                     ),
                 )
+                self._record_scene(
+                    Scene(
+                        obj=obj,
+                        red=int(body["red"]),
+                        green=int(body["green"]),
+                        blue=int(body["blue"]),
+                    ),
+                    action="rgb",
+                    results=[result],
+                )
                 return result.to_dict()
             if path == "/hsi":
                 result = light.exchange_runtime(
@@ -150,6 +181,16 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         float(body["saturation"]),
                         int(body["intensity"]),
                     ),
+                )
+                self._record_scene(
+                    Scene(
+                        obj=obj,
+                        hue=float(body["hue"]),
+                        saturation=float(body["saturation"]),
+                        intensity=int(body["intensity"]),
+                    ),
+                    action="hsi",
+                    results=[result],
                 )
                 return result.to_dict()
             if path == "/scene":
@@ -165,9 +206,11 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     saturation=_optional_float(body, "saturation"),
                     intensity=_optional_int(body, "intensity"),
                 )
+                results = light.apply_scene(scene)
+                self._record_scene(scene, action="scene", results=results)
                 return {
                     "scene": scene.to_dict(),
-                    "results": [result.to_dict() for result in light.apply_scene(scene)],
+                    "results": [result.to_dict() for result in results],
                 }
             if path == "/preset":
                 library = self.server.preset_library
@@ -184,12 +227,29 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     scene_from_optional_mapping(overrides, obj=obj),
                     override_obj="obj" in body,
                 )
+                results = light.apply_scene(scene)
+                self._record_scene(scene, action="preset", results=results)
                 return {
                     "preset": name,
                     "scene": scene.to_dict(),
-                    "results": [result.to_dict() for result in light.apply_scene(scene)],
+                    "results": [result.to_dict() for result in results],
                 }
         raise ValueError("unknown endpoint")
+
+    def _record_scene(
+        self,
+        scene: Scene,
+        *,
+        action: str,
+        results,
+    ) -> None:
+        self.server.state_tracker.record(
+            scene,
+            source="http",
+            action=action,
+            applied=True,
+            results=results,
+        )
 
     def _read_json(self) -> dict[str, Any]:
         length = int(self.headers.get("content-length", "0"))
@@ -220,6 +280,7 @@ def serve(
     allow_control: bool = False,
     light_factory: Any | None = None,
     preset_library: ScenePresetLibrary | None = None,
+    state_tracker: SceneStateTracker | None = None,
 ) -> None:
     httpd = LightHttpServer(
         (host, port),
@@ -227,6 +288,7 @@ def serve(
         allow_control=allow_control,
         light_factory=light_factory,
         preset_library=preset_library,
+        state_tracker=state_tracker,
     )
     try:
         httpd.serve_forever()

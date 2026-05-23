@@ -13,6 +13,7 @@ from .protocol import (
     iter_frames,
 )
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
+from .state import SceneState, SceneStateTracker
 
 __all__ = [
     "AsyncZhiyunLight",
@@ -26,6 +27,8 @@ __all__ = [
     "ParsedFrame",
     "ProbeResult",
     "Scene",
+    "SceneState",
+    "SceneStateTracker",
     "ScenePresetLibrary",
     "SacnPacket",
     "ZhiyunLight",
