@@ -192,9 +192,12 @@ metadata from IOKit such as `vendor_id_hex`, `product_id_hex`, `product_name`,
 `Zhiyun Virtual ComPort` at `VID 0xfff8`, `PID 0x0180`. Add `include_ble=true`
 to run a bounded BLE scan with `ble_backend=worker`, `macos-app`, or `direct`;
 BLE scan errors are returned in the `ble.scan` object with the same `ok`,
-`error`, `returncode`, and `signal` fields as `zlight scan-ble`. The response
-also includes `ble.macos_helper`, which names the cached `ZhiyunBleScan.app`,
-bundle id, app path, and settings hint needed for macOS Bluetooth authorization.
+`error`, `returncode`, and `signal` fields as `zlight scan-ble`. Scan devices
+include advertised service UUIDs in `services` when the selected backend reports
+them; controllers can use that to suggest `direct`, `legacy`, or `yc` profiles.
+The response also includes `ble.macos_helper`, which names the cached
+`ZhiyunBleScan.app`, bundle id, app path, and settings hint needed for macOS
+Bluetooth authorization.
 
 HTTP `/discover-usb` exposes the same bounded primitive matrix as
 `zlight discover-usb` for dashboard-driven bench work. The endpoint returns the

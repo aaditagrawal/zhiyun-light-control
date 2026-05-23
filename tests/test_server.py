@@ -596,7 +596,14 @@ class ServerTests(unittest.TestCase):
         base = f"http://127.0.0.1:{server.server_port}"
         scan = BleScanResult(
             ok=True,
-            devices=(BleDevice(address="UUID-1", name="PL103_EDFE", rssi=-47),),
+            devices=(
+                BleDevice(
+                    address="UUID-1",
+                    name="PL103_EDFE",
+                    rssi=-47,
+                    services=("0000fee9-0000-1000-8000-00805f9b34fb",),
+                ),
+            ),
             returncode=0,
             worker_python="macos-app",
         )
@@ -642,6 +649,10 @@ class ServerTests(unittest.TestCase):
             )
             self.assertEqual(devices["ble"]["backend"], "macos-app")
             self.assertEqual(devices["ble"]["scan"]["devices"][0]["name"], "PL103_EDFE")
+            self.assertEqual(
+                devices["ble"]["scan"]["devices"][0]["services"],
+                ["0000fee9-0000-1000-8000-00805f9b34fb"],
+            )
             scan_macos.assert_called_once_with(timeout=1.25, name_contains="PL103")
         finally:
             server.shutdown()

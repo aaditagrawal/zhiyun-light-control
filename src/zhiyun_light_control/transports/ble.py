@@ -85,9 +85,15 @@ class BleDevice:
     address: str
     name: str | None
     rssi: int | None = None
+    services: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
-        return {"address": self.address, "name": self.name, "rssi": self.rssi}
+        return {
+            "address": self.address,
+            "name": self.name,
+            "rssi": self.rssi,
+            "services": list(self.services),
+        }
 
 
 @dataclass(frozen=True)
@@ -386,7 +392,14 @@ async def scan_zhiyun_devices(timeout: float = 5.0) -> list[BleDevice]:
         )
         service_hit = bool(KNOWN_ZHIYUN_SERVICE_UUIDS & service_uuids)
         if name_hit or service_hit:
-            found.append(BleDevice(address=device.address, name=name, rssi=adv.rssi))
+            found.append(
+                BleDevice(
+                    address=device.address,
+                    name=name,
+                    rssi=adv.rssi,
+                    services=tuple(sorted(service_uuids)),
+                )
+            )
     return found
 
 
@@ -407,10 +420,12 @@ def filter_ble_devices_by_name(
 def _ble_device_from_payload(item: dict[str, object]) -> BleDevice:
     name_value = item.get("name")
     rssi_value = item.get("rssi")
+    services = tuple(service.lower() for service in _payload_strings(item, "services"))
     return BleDevice(
         address=str(item.get("address", "")),
         name=str(name_value) if name_value is not None else None,
         rssi=rssi_value if isinstance(rssi_value, int) else None,
+        services=services,
     )
 
 
@@ -801,6 +816,13 @@ def _payload_items(
     if not isinstance(value, list):
         return ()
     return tuple(item for item in value if isinstance(item, dict))
+
+
+def _payload_strings(payload: dict[str, object], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(str(item) for item in value if item is not None)
 
 
 def _format_worker_returncode(returncode: int) -> str:

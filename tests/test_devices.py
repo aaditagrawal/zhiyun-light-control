@@ -59,7 +59,14 @@ class DeviceDiscoveryTests(unittest.TestCase):
     def test_discovers_ble_with_selected_backend(self) -> None:
         scan = BleScanResult(
             ok=True,
-            devices=(BleDevice(address="UUID-1", name="PL103_EDFE", rssi=-47),),
+            devices=(
+                BleDevice(
+                    address="UUID-1",
+                    name="PL103_EDFE",
+                    rssi=-47,
+                    services=("0000fee9-0000-1000-8000-00805f9b34fb",),
+                ),
+            ),
             returncode=0,
             worker_python="macos-app",
         )
@@ -90,6 +97,10 @@ class DeviceDiscoveryTests(unittest.TestCase):
         self.assertTrue(payload["ble"]["included"])
         self.assertEqual(payload["ble"]["backend"], "macos-app")
         self.assertEqual(payload["ble"]["scan"]["devices"][0]["address"], "UUID-1")
+        self.assertEqual(
+            payload["ble"]["scan"]["devices"][0]["services"],
+            ["0000fee9-0000-1000-8000-00805f9b34fb"],
+        )
         scan_macos.assert_called_once_with(timeout=1.25, name_contains="PL103")
 
     def test_worker_scan_passes_python_override(self) -> None:

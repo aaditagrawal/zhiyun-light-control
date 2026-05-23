@@ -83,7 +83,12 @@ class SafeBleScanTests(unittest.TestCase):
     def test_safe_scan_parses_worker_devices(self) -> None:
         payload = {
             "devices": [
-                {"address": "AA:BB", "name": "MOLUS G60", "rssi": -55},
+                {
+                    "address": "AA:BB",
+                    "name": "MOLUS G60",
+                    "rssi": -55,
+                    "services": [DIRECT_ZY_SERVICE_UUID.upper()],
+                },
             ]
         }
         proc = types.SimpleNamespace(
@@ -101,6 +106,11 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(result.devices[0].address, "AA:BB")
         self.assertEqual(result.devices[0].name, "MOLUS G60")
         self.assertEqual(result.devices[0].rssi, -55)
+        self.assertEqual(result.devices[0].services, (DIRECT_ZY_SERVICE_UUID,))
+        self.assertEqual(
+            result.devices[0].to_dict()["services"],
+            [DIRECT_ZY_SERVICE_UUID],
+        )
         self.assertEqual(result.worker_python, "python-test")
 
     def test_safe_scan_reports_worker_abort(self) -> None:
@@ -149,7 +159,12 @@ class SafeBleScanTests(unittest.TestCase):
             ok=True,
             payload={
                 "devices": [
-                    {"address": "UUID-1", "name": "PL103_EDFE", "rssi": -47},
+                    {
+                        "address": "UUID-1",
+                        "name": "PL103_EDFE",
+                        "rssi": -47,
+                        "services": [LEGACY_ZY_SERVICE_UUID.upper()],
+                    },
                     {"address": "UUID-2", "name": "Keyboard", "rssi": -52},
                 ]
             },
@@ -170,6 +185,7 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(len(result.devices), 1)
         self.assertEqual(result.devices[0].address, "UUID-1")
         self.assertEqual(result.devices[0].name, "PL103_EDFE")
+        self.assertEqual(result.devices[0].services, (LEGACY_ZY_SERVICE_UUID,))
         self.assertEqual(
             run.call_args.args[0],
             ["scan", "--timeout", "1.0", "--name-contains", "PL103"],
@@ -392,8 +408,11 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(devices), 3)
         self.assertEqual(devices[0].address, "AA")
         self.assertEqual(devices[0].name, "MOLUS G60")
+        self.assertEqual(devices[0].services, ())
         self.assertEqual(devices[1].address, "CC")
+        self.assertEqual(devices[1].services, (DIRECT_ZY_SERVICE_UUID,))
         self.assertEqual(devices[2].address, "DD")
+        self.assertEqual(devices[2].services, (YC_SERVICE_UUID,))
 
     async def test_transport_exchange_uses_write_and_notify_characteristics(
         self,

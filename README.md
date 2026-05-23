@@ -335,8 +335,10 @@ On macOS it also attaches best-effort USB descriptor metadata such as
 is the Zhiyun Virtual ComPort. Add `include_ble=true` to run a bounded BLE scan
 through the selected `ble_backend` (`worker`, `macos-app`, or `direct`); scan
 failures such as macOS Bluetooth authorization errors are returned as JSON
-diagnostics. The response also includes `ble.macos_helper` so local dashboards
-can point users at the exact helper bundle that needs Bluetooth permission.
+diagnostics. BLE scan devices include advertised `services` when the backend
+reports them, which lets setup tools suggest the matching BLE profile. The
+response also includes `ble.macos_helper` so local dashboards can point users at
+the exact helper bundle that needs Bluetooth permission.
 
 `POST /discover-usb` runs the same bounded USB protocol matrix as
 `zlight discover-usb` and returns every attempt with ACK/timeout evidence.
