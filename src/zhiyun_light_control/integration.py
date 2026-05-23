@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
@@ -81,6 +82,18 @@ class LightIntegration:
             allow_control=self.allow_control,
             presets=self.preset_names,
             cues=self.cue_names,
+        )
+
+    def devices(
+        self,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        return local_devices(
+            self.config,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
         )
 
     def controller(
@@ -216,6 +229,18 @@ class AsyncLightIntegration:
             cues=self.cue_names,
         )
 
+    async def devices(
+        self,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        return await local_async_devices(
+            self.config,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+        )
+
     def controller(
         self,
         *,
@@ -322,6 +347,40 @@ def local_status_snapshot(
     return payload, payload.get("connection_confirmed") is True, None
 
 
+def local_devices(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig()
+    return discover_transport_devices(
+        configured_transport=resolved.transport,
+        configured_usb_port=resolved.port,
+        include_ble=include_ble,
+        include_ble_status=_include_ble_status(resolved, include_ble_status),
+        ble_backend=_ble_backend(resolved),
+        ble_timeout=resolved.timeout,
+        ble_name_contains=resolved.name_contains,
+        ble_python=resolved.ble_python,
+    )
+
+
+async def local_async_devices(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig(transport="ble")
+    return await asyncio.to_thread(
+        local_devices,
+        resolved,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+    )
+
+
 async def local_async_status_snapshot(
     config: LightConnectionConfig | None = None,
     *,
@@ -362,20 +421,10 @@ def local_readiness(
         light_factory=light_factory,
     )
     backend = _ble_backend(resolved)
-    status_requested = (
-        resolved.transport == "ble" and backend == "macos-app"
-        if include_ble_status is None
-        else include_ble_status
-    )
-    devices = discover_transport_devices(
-        configured_transport=resolved.transport,
-        configured_usb_port=resolved.port,
+    devices = local_devices(
+        resolved,
         include_ble=include_ble,
-        include_ble_status=status_requested,
-        ble_backend=backend,
-        ble_timeout=resolved.timeout,
-        ble_name_contains=resolved.name_contains,
-        ble_python=resolved.ble_python,
+        include_ble_status=include_ble_status,
     )
     return readiness_response(
         allow_control=allow_control,
@@ -409,20 +458,10 @@ async def local_async_readiness(
         light_factory=light_factory,
     )
     backend = _ble_backend(resolved)
-    status_requested = (
-        resolved.transport == "ble" and backend == "macos-app"
-        if include_ble_status is None
-        else include_ble_status
-    )
-    devices = discover_transport_devices(
-        configured_transport=resolved.transport,
-        configured_usb_port=resolved.port,
+    devices = await local_async_devices(
+        resolved,
         include_ble=include_ble,
-        include_ble_status=status_requested,
-        ble_backend=backend,
-        ble_timeout=resolved.timeout,
-        ble_name_contains=resolved.name_contains,
-        ble_python=resolved.ble_python,
+        include_ble_status=include_ble_status,
     )
     return readiness_response(
         allow_control=allow_control,
@@ -667,6 +706,15 @@ def local_error_status(exc: Exception) -> dict[str, object]:
 
 def _ble_backend(config: LightConnectionConfig) -> str:
     return "direct" if config.ble_in_process else config.ble_backend
+
+
+def _include_ble_status(
+    config: LightConnectionConfig,
+    requested: bool | None,
+) -> bool:
+    if requested is not None:
+        return requested
+    return config.transport == "ble" and _ble_backend(config) == "macos-app"
 
 
 def _report_to_dict(report: object) -> dict[str, object]:

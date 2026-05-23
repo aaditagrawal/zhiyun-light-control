@@ -8,11 +8,13 @@ from zhiyun_light_control import (
     LightConnectionConfig,
     LightIntegration,
     Scene,
+    local_async_devices,
     local_async_integration_snapshot,
     local_async_readiness,
     local_async_status_snapshot,
     local_async_validation,
     local_capabilities,
+    local_devices,
     local_error_status,
     local_integration_snapshot,
     local_manifest,
@@ -376,6 +378,56 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(devices.call_args_list[0].kwargs["include_ble_status"])
         self.assertTrue(devices.call_args_list[1].kwargs["include_ble"])
 
+    def test_light_integration_devices_use_configured_backend(self) -> None:
+        integration = LightIntegration(
+            config=LightConnectionConfig(
+                transport="ble",
+                port="/dev/cu.test",
+                name_contains="PL103",
+                ble_backend="macos-app",
+                timeout=2.0,
+            )
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.test",
+                    "ports": [],
+                },
+                "ble": {"macos_status": {"state": "powered_on"}, "scan": {}},
+            },
+        ) as devices:
+            payload = integration.devices(include_ble=True)
+
+        self.assertEqual(payload["usb"]["selected_port"], "/dev/cu.test")
+        kwargs = devices.call_args.kwargs
+        self.assertEqual(kwargs["configured_transport"], "ble")
+        self.assertEqual(kwargs["configured_usb_port"], "/dev/cu.test")
+        self.assertEqual(kwargs["ble_backend"], "macos-app")
+        self.assertEqual(kwargs["ble_timeout"], 2.0)
+        self.assertEqual(kwargs["ble_name_contains"], "PL103")
+        self.assertTrue(kwargs["include_ble"])
+        self.assertTrue(kwargs["include_ble_status"])
+
+    def test_local_devices_can_override_ble_status_probe(self) -> None:
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ) as devices:
+            payload = local_devices(
+                LightConnectionConfig(transport="ble", ble_backend="macos-app"),
+                include_ble_status=False,
+            )
+
+        self.assertFalse(devices.call_args.kwargs["include_ble_status"])
+        self.assertFalse(payload["usb"]["available"])
+
     def test_local_validation_runs_configured_transport_report(self) -> None:
         payload = local_validation(
             LightConnectionConfig(transport="usb", port="/dev/cu.test"),
@@ -548,6 +600,46 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["payloads"]["manifest"]["presets"], ["key"])
         self.assertTrue(devices.call_args_list[0].kwargs["include_ble_status"])
         self.assertTrue(devices.call_args_list[1].kwargs["include_ble"])
+
+    async def test_async_light_integration_devices_use_threaded_local_path(
+        self,
+    ) -> None:
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="PL103")
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.local_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"included": True, "name_contains": "PL103"},
+            },
+        ) as devices:
+            payload = await integration.devices(include_ble=True)
+
+        self.assertTrue(payload["ble"]["included"])
+        self.assertEqual(devices.call_args.args[0].name_contains, "PL103")
+        self.assertTrue(devices.call_args.kwargs["include_ble"])
+
+    async def test_local_async_devices_uses_ble_defaults(self) -> None:
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": {"state": "unauthorized"}, "scan": None},
+            },
+        ) as devices:
+            payload = await local_async_devices(
+                LightConnectionConfig(
+                    transport="ble",
+                    ble_backend="macos-app",
+                    name_contains="PL103",
+                )
+            )
+
+        self.assertEqual(payload["ble"]["macos_status"]["state"], "unauthorized")
+        self.assertTrue(devices.call_args.kwargs["include_ble_status"])
+        self.assertEqual(devices.call_args.kwargs["ble_name_contains"], "PL103")
 
     async def test_local_async_snapshot_includes_manifest_and_summary(self) -> None:
         with patch(

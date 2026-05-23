@@ -674,10 +674,12 @@ integration = LightIntegration(
 )
 
 ready = integration.readiness()
+devices = integration.devices(include_ble_status=True)
 snapshot = integration.snapshot(include_ble_status=True)
 validation = integration.validate(include_object_reads=True)
 
 print(ready["ready_for"])
+print(devices["usb"]["selected_port"])
 print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
 
@@ -705,9 +707,11 @@ async def main() -> None:
     )
 
     ready = await integration.readiness(include_ble=True)
+    devices = await integration.devices(include_ble=True)
     validation = await integration.validate(include_object_reads=True)
 
     print(ready["ready_for"])
+    print(devices["ble"]["included"])
     print(validation["summary"]["ready_for"])
 
     async with integration.controller(require_acknowledged=True) as controller:
