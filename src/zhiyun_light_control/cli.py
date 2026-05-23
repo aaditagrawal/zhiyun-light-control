@@ -175,7 +175,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a bounded USB protocol discovery matrix.",
     )
     discover.add_argument(
-        "--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*."
+        "--port",
+        help="USB serial port. Defaults to the first detected USB CDC candidate.",
     )
     discover.add_argument("--timeout", type=float, default=0.5)
     discover.add_argument(
@@ -555,7 +556,8 @@ def build_parser() -> argparse.ArgumentParser:
 def add_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--transport", choices=["usb", "ble"], default="usb")
     parser.add_argument(
-        "--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*."
+        "--port",
+        help="USB serial port. Defaults to the first detected USB CDC candidate.",
     )
     parser.add_argument("--address", help="BLE address/identifier.")
     parser.add_argument(
@@ -626,7 +628,7 @@ def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--transport", choices=["usb", "ble"], default="usb")
     parser.add_argument(
         "--light-port",
-        help="USB serial port. Defaults to first /dev/cu.usbmodem*.",
+        help="USB serial port. Defaults to the first detected USB CDC candidate.",
     )
     parser.add_argument("--address", help="BLE address/identifier.")
     parser.add_argument(

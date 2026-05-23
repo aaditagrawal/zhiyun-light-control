@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from zhiyun_light_control import (
@@ -9,8 +12,12 @@ from zhiyun_light_control import (
     LightConnectionConfig,
     LightFixture,
     LightRig,
+    RigConfigError,
     Scene,
+    async_rig_from_mapping,
     fixture_from_mapping,
+    load_rig,
+    rig_from_mapping,
 )
 from zhiyun_light_control.protocol import (
     RUNTIME_TYPE,
@@ -33,6 +40,7 @@ class FakeLight:
         self.name = name
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
+        self.control_modes: list[int] = []
         self.payloads: list[tuple[int, bytes]] = []
 
     def __enter__(self) -> FakeLight:
@@ -50,8 +58,8 @@ class FakeLight:
         *,
         control_mode: int = 0x33,
     ) -> list[CommandResult]:
-        del control_mode
         self.scenes.append(scene)
+        self.control_modes.append(control_mode)
         return [_result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)]
 
     def exchange_runtime(
@@ -81,6 +89,7 @@ class AsyncFakeLight:
         self.name = name
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
+        self.control_modes: list[int] = []
         self.payloads: list[tuple[int, bytes]] = []
 
     async def __aenter__(self) -> AsyncFakeLight:
@@ -98,8 +107,8 @@ class AsyncFakeLight:
         *,
         control_mode: int = 0x33,
     ) -> list[CommandResult]:
-        del control_mode
         self.scenes.append(scene)
+        self.control_modes.append(control_mode)
         return [_result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)]
 
     async def exchange_runtime(
@@ -149,6 +158,68 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(fixture.config.port, "/dev/cu.test")
         self.assertEqual(fixture.obj, 2)
         self.assertEqual(fixture.tags, ("stage-left", "warm"))
+
+    def test_rig_from_mapping_loads_fixtures_presets_and_cues(self) -> None:
+        key = FakeLight("key")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "usb",
+                        "port": "/dev/cu.key",
+                        "obj": 2,
+                        "tags": ["set"],
+                    }
+                },
+                "presets": {"scenes": {"look": {"brightness": 22}}},
+                "cues": {"cues": {"intro": {"steps": [{"preset": "look"}]}}},
+                "control_mode": "0x01",
+                "require_acknowledged": True,
+            },
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        response = rig.apply_preset("key", "look")
+
+        self.assertTrue(rig.require_acknowledged)
+        self.assertEqual(rig.control_mode, 0x01)
+        self.assertEqual(rig.fixture("key").config.port, "/dev/cu.key")
+        self.assertEqual(rig.fixture("key").tags, ("set",))
+        self.assertEqual(response["scene"]["brightness"], 22.0)
+        self.assertEqual(key.scenes[0].obj, 2)
+        self.assertEqual(key.control_modes, [0x01])
+        self.assertEqual(rig.to_dict()["presets"]["scenes"]["look"]["brightness"], 22.0)
+
+    def test_load_rig_reads_json_config(self) -> None:
+        key = FakeLight("key")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rig.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "fixtures": [
+                            {
+                                "name": "key",
+                                "transport": "usb",
+                                "port": "/dev/cu.key",
+                            }
+                        ],
+                        "presets": {"key": {"brightness": 30}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            rig = load_rig(path, light_factories={"key": FakeFactory(key)})
+
+        self.assertEqual(rig.fixture_names(), ("key",))
+        self.assertEqual(rig.fixture("key").config.port, "/dev/cu.key")
+        response = rig.controller("key").apply_preset("key")
+        self.assertEqual(response["scene"]["brightness"], 30.0)
+
+    def test_rig_from_mapping_requires_fixtures(self) -> None:
+        with self.assertRaisesRegex(RigConfigError, "fixtures"):
+            rig_from_mapping({"presets": {}})
 
     def test_apply_all_uses_fixture_object_defaults_and_tracks_state(self) -> None:
         key = FakeLight("key")
@@ -289,6 +360,33 @@ class LightRigTests(unittest.TestCase):
 
 
 class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
+    async def test_async_rig_from_mapping_loads_presets(self) -> None:
+        key = AsyncFakeLight("key")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "ble",
+                        "name_contains": "KEY",
+                        "obj": 4,
+                    }
+                },
+                "presets": {"scenes": {"look": {"brightness": 55}}},
+                "control_mode": "0x01",
+                "require_acknowledged": True,
+            },
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        response = await rig.apply_preset("key", "look")
+
+        self.assertTrue(rig.require_acknowledged)
+        self.assertEqual(rig.control_mode, 0x01)
+        self.assertEqual(rig.fixture("key").config.transport, "ble")
+        self.assertEqual(response["scene"]["brightness"], 55.0)
+        self.assertEqual(key.scenes[0].obj, 4)
+        self.assertEqual(key.control_modes, [0x01])
+
     async def test_async_apply_all_uses_fixture_object_defaults(self) -> None:
         key = AsyncFakeLight("key")
         fill = AsyncFakeLight("fill")

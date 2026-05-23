@@ -1,0 +1,38 @@
+{
+  "fixtures": {
+    "key": {
+      "transport": "usb",
+      "obj": 1,
+      "tags": ["set"]
+    },
+    "rim": {
+      "transport": "ble",
+      "name_contains": "MOLUS",
+      "obj": 1,
+      "tags": ["set"]
+    }
+  },
+  "presets": {
+    "scenes": {
+      "interview": {
+        "brightness": 35,
+        "kelvin": 5600
+      },
+      "blackout": {
+        "sleep": 1
+      }
+    }
+  },
+  "cues": {
+    "cues": {
+      "intro": {
+        "steps": [
+          {"preset": "interview"}
+        ],
+        "stop_on_unconfirmed": true
+      }
+    }
+  },
+  "control_mode": "0x33",
+  "require_acknowledged": true
+}

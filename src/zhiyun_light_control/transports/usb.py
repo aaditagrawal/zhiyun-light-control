@@ -1,29 +1,47 @@
-"""USB CDC transport for Zhiyun Virtual ComPort devices on POSIX systems."""
+"""USB CDC transport for Zhiyun Virtual ComPort devices."""
 
 from __future__ import annotations
 
-import errno
-import fcntl
 import glob
 import hashlib
 import os
 import plistlib
 import re
-import select
 import subprocess
 import sys
 import tempfile
-import termios
 import time
 from collections.abc import Iterator
 
+import serial
+from serial.tools import list_ports
+
+if os.name == "posix":
+    import errno
+    import fcntl
+    import select
+    import termios
+
 DEFAULT_TIMEOUT = 0.8
 DEFAULT_LOCK_TIMEOUT = 10.0
+ZHIYUN_VENDOR_ID = 0xFFF8
+ZHIYUN_PRODUCT_ID = 0x0180
 _USBMODEM_LOCATION_RE = re.compile(r"usbmodem([0-9a-fA-F]+)")
+_USB_GLOB_PATTERNS = (
+    "/dev/cu.usbmodem*",
+    "/dev/tty.usbmodem*",
+    "/dev/ttyACM*",
+    "/dev/ttyUSB*",
+)
 
 
 class UsbTransport:
-    """Synchronous USB CDC transport using the POSIX serial device."""
+    """Synchronous USB CDC transport.
+
+    POSIX systems use direct file-descriptor I/O so the local macOS bench path
+    keeps its lock and termios behavior. Windows and other non-POSIX runtimes
+    use pyserial with the same ``exchange(tx, timeout)`` SDK contract.
+    """
 
     def __init__(
         self,
@@ -39,6 +57,7 @@ class UsbTransport:
         self.lock_path = lock_path
         self.fd: int | None = None
         self._lock_fd: int | None = None
+        self._serial: object | None = None
 
     def __enter__(self) -> UsbTransport:
         self.open()
@@ -48,9 +67,12 @@ class UsbTransport:
         self.close()
 
     def open(self) -> None:
-        if self.fd is not None:
+        if self.fd is not None or self._serial is not None:
             return
         path = find_usb_port(self.port)
+        if _should_use_pyserial(path):
+            self._open_pyserial(path)
+            return
         lock_fd = _acquire_usb_lock(
             path,
             timeout=self.lock_timeout,
@@ -88,6 +110,15 @@ class UsbTransport:
         self.fd = fd
         self._lock_fd = lock_fd
 
+    def _open_pyserial(self, path: str) -> None:
+        self._serial = serial.Serial(
+            port=path,
+            baudrate=9600,
+            timeout=0.05,
+            write_timeout=self.timeout,
+        )
+        self.port = path
+
     def close(self) -> None:
         if self.fd is not None:
             os.close(self.fd)
@@ -95,10 +126,19 @@ class UsbTransport:
         if self._lock_fd is not None:
             _release_usb_lock(self._lock_fd)
             self._lock_fd = None
+        if self._serial is not None:
+            self._serial.close()
+            self._serial = None
 
     def exchange(self, tx: bytes, timeout: float | None = None) -> bytes:
-        if self.fd is None:
+        if self.fd is None and self._serial is None:
             self.open()
+        if self._serial is not None:
+            return _exchange_pyserial(
+                self._serial,
+                tx,
+                self.timeout if timeout is None else timeout,
+            )
         if self.fd is None:
             raise RuntimeError("USB transport is not open")
         os.write(self.fd, tx)
@@ -126,8 +166,31 @@ def find_usb_port(port: str | None = None) -> str:
     return ports[0]
 
 
+def _should_use_pyserial(path: str) -> bool:
+    return os.name != "posix" or not path.startswith("/dev/")
+
+
+def _exchange_pyserial(serial_port: object, tx: bytes, timeout: float) -> bytes:
+    serial_port.write(tx)
+    serial_port.flush()
+    deadline = time.time() + timeout
+    buf = bytearray()
+    while time.time() < deadline:
+        waiting = getattr(serial_port, "in_waiting", 0)
+        size = waiting if isinstance(waiting, int) and waiting > 0 else 1
+        chunk = serial_port.read(size)
+        if chunk:
+            buf.extend(chunk)
+            continue
+        time.sleep(0.01)
+    return bytes(buf)
+
+
 def list_usb_ports() -> tuple[str, ...]:
-    return tuple(sorted(glob.glob("/dev/cu.usbmodem*")))
+    ports = set(_pyserial_usb_ports())
+    for pattern in _USB_GLOB_PATTERNS:
+        ports.update(glob.glob(pattern))
+    return tuple(sorted(ports))
 
 
 def list_usb_port_metadata(
@@ -137,8 +200,87 @@ def list_usb_port_metadata(
 
     ports = list_usb_ports() if ports is None else ports
     if sys.platform != "darwin":
-        return {port: {} for port in ports}
-    return _darwin_usb_port_metadata(ports)
+        return _pyserial_usb_port_metadata(ports)
+    serial_metadata = _pyserial_usb_port_metadata(ports)
+    darwin_metadata = _darwin_usb_port_metadata(ports)
+    return {
+        port: serial_metadata.get(port, {}) | darwin_metadata.get(port, {})
+        for port in ports
+    }
+
+
+def _pyserial_usb_ports() -> tuple[str, ...]:
+    matches: list[str] = []
+    for info in list_ports.comports():
+        device = getattr(info, "device", None)
+        if isinstance(device, str) and device and _serial_port_matches_zhiyun(info):
+            matches.append(device)
+    return tuple(matches)
+
+
+def _pyserial_usb_port_metadata(
+    ports: tuple[str, ...],
+) -> dict[str, dict[str, object]]:
+    by_device = {
+        str(device): info
+        for info in list_ports.comports()
+        if isinstance((device := getattr(info, "device", None)), str)
+    }
+    return {
+        port: _pyserial_port_metadata(by_device[port]) if port in by_device else {}
+        for port in ports
+    }
+
+
+def _pyserial_port_metadata(info: object) -> dict[str, object]:
+    metadata: dict[str, object] = {}
+    if (vendor_id := _serial_port_int(info, "vid")) is not None:
+        metadata["vendor_id"] = vendor_id
+        metadata["vendor_id_hex"] = f"0x{vendor_id:04x}"
+    if (product_id := _serial_port_int(info, "pid")) is not None:
+        metadata["product_id"] = product_id
+        metadata["product_id_hex"] = f"0x{product_id:04x}"
+    for target, source in (
+        ("serial_number", "serial_number"),
+        ("manufacturer", "manufacturer"),
+        ("product_name", "product"),
+        ("description", "description"),
+        ("hardware_id", "hwid"),
+    ):
+        value = _serial_port_text(info, source)
+        if value:
+            metadata[target] = value
+    if metadata:
+        metadata["source"] = "pyserial"
+    return metadata
+
+
+def _serial_port_matches_zhiyun(info: object) -> bool:
+    vendor_id = _serial_port_int(info, "vid")
+    product_id = _serial_port_int(info, "pid")
+    if vendor_id == ZHIYUN_VENDOR_ID and product_id == ZHIYUN_PRODUCT_ID:
+        return True
+    haystack = " ".join(
+        text
+        for text in (
+            _serial_port_text(info, "manufacturer"),
+            _serial_port_text(info, "product"),
+            _serial_port_text(info, "description"),
+            _serial_port_text(info, "hwid"),
+        )
+        if text
+    ).lower()
+    return "zhiyun" in haystack
+
+
+def _serial_port_int(info: object, name: str) -> int | None:
+    value = getattr(info, name, None)
+    return value if isinstance(value, int) else None
+
+
+def _serial_port_text(info: object, name: str) -> str:
+    value = getattr(info, name, None)
+    return value if isinstance(value, str) else ""
 
 
 def _darwin_usb_port_metadata(
@@ -284,6 +426,8 @@ def _acquire_usb_lock(
     timeout: float | None,
     lock_path: str | None,
 ) -> int:
+    if os.name != "posix":
+        raise RuntimeError("USB port locks require a POSIX serial device")
     path = lock_path or _default_lock_path(port)
     flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)
@@ -307,6 +451,8 @@ def _acquire_usb_lock(
 
 
 def _release_usb_lock(fd: int) -> None:
+    if os.name != "posix":
+        return
     try:
         fcntl.flock(fd, fcntl.LOCK_UN)
     finally:

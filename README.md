@@ -1,9 +1,10 @@
 # Zhiyun Light Control
 
-Python tooling for controlling Zhiyun MOLUS lights over USB CDC and, where the
-local Bluetooth stack is stable, BLE. The project started from live protocol
+Python SDK tooling for controlling Zhiyun MOLUS lights over USB CDC and, where
+the local Bluetooth stack is stable, BLE. The project started from live protocol
 work against a MOLUS G60 on macOS and is built for local media-production
-automation: command line control, Python APIs, HTTP, OSC, Art-Net, and sACN.
+automation: Python APIs first, plus command line control, HTTP, OSC, Art-Net,
+and sACN adapters.
 
 The current verified target is a MOLUS G60 on firmware `1.6.4`, visible on
 macOS as `Zhiyun Virtual ComPort` (`fff8:0180`) at `/dev/cu.usbmodem21301`.
@@ -35,9 +36,10 @@ updater for firmware writes.
 - macOS, Linux, or Windows with Python `>=3.10`. This repository defaults to
   Python `3.12` through `.python-version`.
 - [`uv`](https://docs.astral.sh/uv/) for Python runtime and package management.
-- A USB data cable for USB control. Some C-to-C charging cables do not enumerate
-  the serial interface; a known data-capable USB-A-to-C cable through an adapter
-  is a useful fallback.
+- A USB data cable for USB control. USB CDC uses pyserial for portable
+  Windows/Linux serial access and a direct POSIX serial path on macOS/Linux.
+  Some C-to-C charging cables do not enumerate the serial interface; a known
+  data-capable USB-A-to-C cable through an adapter is a useful fallback.
 - For a MOLUS G60, keep the light on its normal PD power supply while using USB
   data from the computer.
 
@@ -53,8 +55,7 @@ uv run zlight probe --transport usb
 uv run zlight status --transport usb
 ```
 
-USB-only operation has no runtime dependencies, so this also works for the
-smallest environment:
+For USB-only operation, the default dependency set is enough:
 
 ```sh
 uv sync
@@ -66,6 +67,10 @@ If the light is not found automatically, pass the serial port explicitly:
 
 ```sh
 uv run zlight probe --transport usb --port /dev/cu.usbmodem21301
+# Windows example:
+uv run zlight probe --transport usb --port COM7
+# Linux example:
+uv run zlight probe --transport usb --port /dev/ttyACM0
 ```
 
 Register the current session to the default group before object-scoped control:
@@ -816,6 +821,17 @@ look = rig.apply_scene_map(
 )
 print(look["applied"], look["reason"])
 print(rig.blackout(tag="set")["applied"])
+```
+
+Rig definitions can also be loaded from JSON so host projects can keep fixture
+setup beside their show/media configuration:
+
+```python
+from zhiyun_light_control import load_rig
+
+rig = load_rig("examples/rig.json")
+print(rig.fixture_names())
+print(rig.to_dict()["fixtures"])
 ```
 
 For event-loop based systems, use the async controller directly. This is the

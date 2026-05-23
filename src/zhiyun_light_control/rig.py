@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field, fields
+from pathlib import Path
 
 from .bridge import LightConnectionConfig, LightFactory
 from .controller import AsyncLightController, AsyncLightFactory, LightController
@@ -33,6 +35,10 @@ class LightFixture:
         }
 
 
+class RigConfigError(ValueError):
+    pass
+
+
 FixtureInput = LightFixture | Mapping[str, object]
 SceneInput = Scene | Mapping[str, object]
 
@@ -51,6 +57,10 @@ class LightRig:
         require_acknowledged: bool = False,
     ) -> None:
         self.fixtures = _fixture_map(fixtures)
+        self.preset_library = preset_library
+        self.cue_library = cue_library
+        self.control_mode = control_mode
+        self.require_acknowledged = require_acknowledged
         factories = dict(light_factories or {})
         self.controllers = {
             name: LightController(
@@ -65,6 +75,53 @@ class LightRig:
             for name, fixture in self.fixtures.items()
         }
 
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Mapping[str, object],
+        *,
+        light_factories: Mapping[str, LightFactory] | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> LightRig:
+        definition = _rig_definition_from_mapping(payload)
+        return cls(
+            definition.fixtures,
+            light_factories=light_factories,
+            preset_library=preset_library or definition.preset_library,
+            cue_library=cue_library or definition.cue_library,
+            control_mode=definition.control_mode
+            if control_mode is None
+            else control_mode,
+            require_acknowledged=(
+                definition.require_acknowledged
+                if require_acknowledged is None
+                else require_acknowledged
+            ),
+        )
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        light_factories: Mapping[str, LightFactory] | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> LightRig:
+        return cls.from_mapping(
+            load_rig_mapping(path),
+            light_factories=light_factories,
+            preset_library=preset_library,
+            cue_library=cue_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+
     def __enter__(self) -> LightRig:
         return self
 
@@ -74,6 +131,18 @@ class LightRig:
     def close(self) -> None:
         for controller in self.controllers.values():
             controller.close()
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "fixtures": [fixture.to_dict() for fixture in self.fixtures.values()],
+            "control_mode": self.control_mode,
+            "require_acknowledged": self.require_acknowledged,
+        }
+        if self.preset_library is not None:
+            data["presets"] = self.preset_library.to_dict()
+        if self.cue_library is not None:
+            data["cues"] = self.cue_library.to_dict()
+        return data
 
     def fixture_names(self, *, tag: str | None = None) -> tuple[str, ...]:
         return tuple(
@@ -293,6 +362,25 @@ class LightRig:
         )
         return {"fixture": name, **response}
 
+    def apply_preset(
+        self,
+        name: str,
+        preset: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        response = self.controller(name).apply_preset(
+            preset,
+            overrides=overrides,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
     def apply_all(
         self,
         scene: SceneInput,
@@ -411,6 +499,10 @@ class AsyncLightRig:
         require_acknowledged: bool = False,
     ) -> None:
         self.fixtures = _fixture_map(fixtures)
+        self.preset_library = preset_library
+        self.cue_library = cue_library
+        self.control_mode = control_mode
+        self.require_acknowledged = require_acknowledged
         factories = dict(light_factories or {})
         self.controllers = {
             name: AsyncLightController(
@@ -425,6 +517,53 @@ class AsyncLightRig:
             for name, fixture in self.fixtures.items()
         }
 
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Mapping[str, object],
+        *,
+        light_factories: Mapping[str, AsyncLightFactory] | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> AsyncLightRig:
+        definition = _rig_definition_from_mapping(payload)
+        return cls(
+            definition.fixtures,
+            light_factories=light_factories,
+            preset_library=preset_library or definition.preset_library,
+            cue_library=cue_library or definition.cue_library,
+            control_mode=definition.control_mode
+            if control_mode is None
+            else control_mode,
+            require_acknowledged=(
+                definition.require_acknowledged
+                if require_acknowledged is None
+                else require_acknowledged
+            ),
+        )
+
+    @classmethod
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        light_factories: Mapping[str, AsyncLightFactory] | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> AsyncLightRig:
+        return cls.from_mapping(
+            load_rig_mapping(path),
+            light_factories=light_factories,
+            preset_library=preset_library,
+            cue_library=cue_library,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+
     async def __aenter__(self) -> AsyncLightRig:
         return self
 
@@ -434,6 +573,18 @@ class AsyncLightRig:
     async def close(self) -> None:
         for controller in self.controllers.values():
             await controller.close()
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {
+            "fixtures": [fixture.to_dict() for fixture in self.fixtures.values()],
+            "control_mode": self.control_mode,
+            "require_acknowledged": self.require_acknowledged,
+        }
+        if self.preset_library is not None:
+            data["presets"] = self.preset_library.to_dict()
+        if self.cue_library is not None:
+            data["cues"] = self.cue_library.to_dict()
+        return data
 
     def fixture_names(self, *, tag: str | None = None) -> tuple[str, ...]:
         return tuple(
@@ -653,6 +804,25 @@ class AsyncLightRig:
         )
         return {"fixture": name, **response}
 
+    async def apply_preset(
+        self,
+        name: str,
+        preset: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        response = await self.controller(name).apply_preset(
+            preset,
+            overrides=overrides,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
     async def apply_all(
         self,
         scene: SceneInput,
@@ -774,6 +944,169 @@ def fixture_from_mapping(payload: Mapping[str, object]) -> LightFixture:
         obj=raw_obj,
         tags=tags,
     )
+
+
+def rig_from_mapping(
+    payload: Mapping[str, object],
+    *,
+    light_factories: Mapping[str, LightFactory] | None = None,
+    preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
+    control_mode: int | None = None,
+    require_acknowledged: bool | None = None,
+) -> LightRig:
+    return LightRig.from_mapping(
+        payload,
+        light_factories=light_factories,
+        preset_library=preset_library,
+        cue_library=cue_library,
+        control_mode=control_mode,
+        require_acknowledged=require_acknowledged,
+    )
+
+
+def async_rig_from_mapping(
+    payload: Mapping[str, object],
+    *,
+    light_factories: Mapping[str, AsyncLightFactory] | None = None,
+    preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
+    control_mode: int | None = None,
+    require_acknowledged: bool | None = None,
+) -> AsyncLightRig:
+    return AsyncLightRig.from_mapping(
+        payload,
+        light_factories=light_factories,
+        preset_library=preset_library,
+        cue_library=cue_library,
+        control_mode=control_mode,
+        require_acknowledged=require_acknowledged,
+    )
+
+
+def load_rig(
+    path: str | Path,
+    *,
+    light_factories: Mapping[str, LightFactory] | None = None,
+    preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
+    control_mode: int | None = None,
+    require_acknowledged: bool | None = None,
+) -> LightRig:
+    return LightRig.load(
+        path,
+        light_factories=light_factories,
+        preset_library=preset_library,
+        cue_library=cue_library,
+        control_mode=control_mode,
+        require_acknowledged=require_acknowledged,
+    )
+
+
+def load_async_rig(
+    path: str | Path,
+    *,
+    light_factories: Mapping[str, AsyncLightFactory] | None = None,
+    preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
+    control_mode: int | None = None,
+    require_acknowledged: bool | None = None,
+) -> AsyncLightRig:
+    return AsyncLightRig.load(
+        path,
+        light_factories=light_factories,
+        preset_library=preset_library,
+        cue_library=cue_library,
+        control_mode=control_mode,
+        require_acknowledged=require_acknowledged,
+    )
+
+
+def load_rig_mapping(path: str | Path) -> dict[str, object]:
+    with Path(path).open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if not isinstance(payload, Mapping):
+        raise RigConfigError("rig file must contain a JSON object")
+    return {str(key): value for key, value in payload.items()}
+
+
+@dataclass(frozen=True)
+class _RigDefinition:
+    fixtures: tuple[LightFixture, ...]
+    preset_library: ScenePresetLibrary | None
+    cue_library: CueLibrary | None
+    control_mode: int
+    require_acknowledged: bool
+
+
+def _rig_definition_from_mapping(payload: Mapping[str, object]) -> _RigDefinition:
+    return _RigDefinition(
+        fixtures=_fixtures_from_rig_mapping(payload),
+        preset_library=_preset_library_from_mapping(payload),
+        cue_library=_cue_library_from_mapping(payload),
+        control_mode=_mapping_int(payload, "control_mode", DEFAULT_CONTROL_MODE),
+        require_acknowledged=bool(payload.get("require_acknowledged", False)),
+    )
+
+
+def _fixtures_from_rig_mapping(
+    payload: Mapping[str, object],
+) -> tuple[LightFixture, ...]:
+    raw_fixtures = payload.get("fixtures")
+    if raw_fixtures is None:
+        raise RigConfigError("rig config requires fixtures")
+    if isinstance(raw_fixtures, Mapping):
+        return tuple(
+            _named_fixture_from_mapping(str(name), value)
+            for name, value in raw_fixtures.items()
+        )
+    if isinstance(raw_fixtures, str | bytes) or not isinstance(
+        raw_fixtures,
+        Iterable,
+    ):
+        raise RigConfigError("rig fixtures must be an array or object")
+    return tuple(_fixture_payload(fixture) for fixture in raw_fixtures)
+
+
+def _named_fixture_from_mapping(name: str, value: object) -> LightFixture:
+    if isinstance(value, LightFixture):
+        return value
+    if not isinstance(value, Mapping):
+        raise RigConfigError(f"fixture {name!r} must be an object")
+    payload = dict(value)
+    payload.setdefault("name", name)
+    return fixture_from_mapping(payload)
+
+
+def _preset_library_from_mapping(
+    payload: Mapping[str, object],
+) -> ScenePresetLibrary | None:
+    raw_presets = payload.get("presets")
+    if raw_presets is None:
+        return None
+    if not isinstance(raw_presets, Mapping):
+        raise RigConfigError("rig presets must be an object")
+    return ScenePresetLibrary.from_mapping(raw_presets)
+
+
+def _cue_library_from_mapping(payload: Mapping[str, object]) -> CueLibrary | None:
+    raw_cues = payload.get("cues")
+    if raw_cues is None:
+        return None
+    if not isinstance(raw_cues, Mapping):
+        raise RigConfigError("rig cues must be an object")
+    return CueLibrary.from_mapping(raw_cues)
+
+
+def _mapping_int(
+    payload: Mapping[str, object],
+    key: str,
+    default: int,
+) -> int:
+    value = payload.get(key, default)
+    if isinstance(value, str):
+        return int(value, 0)
+    return int(value)
 
 
 def _fixture_map(fixtures: Iterable[FixtureInput]) -> dict[str, LightFixture]:

@@ -14,7 +14,32 @@ from zhiyun_light_control.transports.usb import (
     _darwin_usbmodem_location_id,
     _default_lock_path,
     _release_usb_lock,
+    list_usb_port_metadata,
+    list_usb_ports,
 )
+
+
+class FakeSerialPort:
+    def __init__(
+        self,
+        device: str,
+        *,
+        vid: int | None = None,
+        pid: int | None = None,
+        manufacturer: str | None = None,
+        product: str | None = None,
+        description: str | None = None,
+        serial_number: str | None = None,
+        hwid: str | None = None,
+    ) -> None:
+        self.device = device
+        self.vid = vid
+        self.pid = pid
+        self.manufacturer = manufacturer
+        self.product = product
+        self.description = description
+        self.serial_number = serial_number
+        self.hwid = hwid
 
 
 class UsbLockTests(unittest.TestCase):
@@ -94,6 +119,48 @@ class UsbLockTests(unittest.TestCase):
         self.assertEqual(port["product_id"], 0x0180)
         self.assertEqual(port["product_name"], "Zhiyun Virtual ComPort")
         self.assertEqual(port["source"], "macos-ioreg")
+
+    def test_usb_ports_include_pyserial_zhiyun_matches(self) -> None:
+        with (
+            patch(
+                "zhiyun_light_control.transports.usb.glob.glob",
+                return_value=[],
+            ),
+            patch(
+                "zhiyun_light_control.transports.usb.list_ports.comports",
+                return_value=[
+                    FakeSerialPort("COM7", vid=0xFFF8, pid=0x0180),
+                    FakeSerialPort("COM8", manufacturer="Other"),
+                ],
+            ),
+        ):
+            self.assertEqual(list_usb_ports(), ("COM7",))
+
+    def test_usb_metadata_uses_pyserial_descriptors_off_macos(self) -> None:
+        with (
+            patch("zhiyun_light_control.transports.usb.sys.platform", "win32"),
+            patch(
+                "zhiyun_light_control.transports.usb.list_ports.comports",
+                return_value=[
+                    FakeSerialPort(
+                        "COM7",
+                        vid=0xFFF8,
+                        pid=0x0180,
+                        manufacturer="Zhiyun Tech",
+                        product="Zhiyun Virtual ComPort",
+                        serial_number="SN1",
+                    )
+                ],
+            ),
+        ):
+            metadata = list_usb_port_metadata(("COM7", "COM8"))
+
+        port = metadata["COM7"]
+        self.assertEqual(port["vendor_id_hex"], "0xfff8")
+        self.assertEqual(port["product_id_hex"], "0x0180")
+        self.assertEqual(port["manufacturer"], "Zhiyun Tech")
+        self.assertEqual(port["product_name"], "Zhiyun Virtual ComPort")
+        self.assertEqual(metadata["COM8"], {})
 
 
 if __name__ == "__main__":
