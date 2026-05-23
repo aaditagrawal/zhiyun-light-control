@@ -12,8 +12,12 @@ from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    DEFAULT_DISCOVERY_CONTROL_KINDS,
     DEFAULT_DISCOVERY_FIRST_WORDS,
     DEFAULT_DISCOVERY_OBJECT_IDS,
+    DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+    DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    DISCOVERY_CONTROL_KIND_NAMES,
     discover_usb_primitives,
 )
 from .models import CommandResult, Scene
@@ -134,6 +138,24 @@ def build_parser() -> argparse.ArgumentParser:
         type=parse_int_list,
         default=DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
         help="Comma-separated first-word values for gated control probes.",
+    )
+    discover.add_argument(
+        "--register-device-ids",
+        type=parse_int_list,
+        default=DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+        help="Comma-separated device ids to register before control probes.",
+    )
+    discover.add_argument(
+        "--register-group-ids",
+        type=parse_int_list,
+        default=DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+        help="Comma-separated group ids to register before control probes.",
+    )
+    discover.add_argument(
+        "--control-kinds",
+        type=parse_control_kind_list,
+        default=DEFAULT_DISCOVERY_CONTROL_KINDS,
+        help="Comma-separated control candidates to send under --allow-control.",
     )
     discover.add_argument("--allow-control", action="store_true")
     discover.add_argument("--brightness", type=float, default=35.0)
@@ -400,6 +422,21 @@ def parse_int_list(text: str) -> tuple[int, ...]:
     return values
 
 
+def parse_control_kind_list(text: str) -> tuple[str, ...]:
+    values = tuple(part.strip() for part in text.split(",") if part.strip())
+    if not values:
+        raise argparse.ArgumentTypeError("expected at least one control kind")
+    unsupported = tuple(
+        value for value in values if value not in DISCOVERY_CONTROL_KIND_NAMES
+    )
+    if unsupported:
+        supported = ", ".join(DISCOVERY_CONTROL_KIND_NAMES)
+        raise argparse.ArgumentTypeError(
+            f"unsupported control kind: {', '.join(unsupported)}; expected {supported}"
+        )
+    return values
+
+
 def parse_hex_bytes(text: str) -> bytes:
     normalized = text.strip()
     if normalized.lower().startswith("0x"):
@@ -475,6 +512,9 @@ def cmd_discover_usb(args: argparse.Namespace) -> int:
             first_words=args.first_words,
             control_object_ids=args.control_object_ids,
             control_first_words=args.control_first_words,
+            register_device_ids=args.register_device_ids,
+            register_group_ids=args.register_group_ids,
+            control_kinds=args.control_kinds,
             timeout=args.timeout,
             allow_control=args.allow_control,
             brightness=args.brightness,

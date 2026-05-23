@@ -113,6 +113,38 @@ class DiscoveryTests(unittest.TestCase):
         )
         self.assertIn(0x0301, light.frame_first_words)
 
+    def test_usb_discovery_can_vary_registration_and_control_kinds(self) -> None:
+        light = FakeDiscoveryLight()
+
+        report = discover_usb_primitives(
+            light,
+            object_ids=(1,),
+            first_words=(),
+            control_object_ids=(1,),
+            register_device_ids=(0, 1),
+            register_group_ids=(0, 2),
+            control_kinds=("sleep",),
+            allow_control=True,
+        )
+        payload = report.to_dict()
+        attempts = {attempt["name"]: attempt for attempt in payload["attempts"]}
+
+        self.assertEqual(payload["register_device_ids"], [0, 1])
+        self.assertEqual(payload["register_group_ids"], [0, 2])
+        self.assertEqual(payload["control_kinds"], ["sleep"])
+        self.assertIn("register_default_group_dev1_group2", attempts)
+        self.assertIn("set_sleep_obj1", attempts)
+        self.assertNotIn("set_brightness_obj1", attempts)
+
+    def test_usb_discovery_rejects_unknown_control_kind(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported control kind"):
+            discover_usb_primitives(
+                FakeDiscoveryLight(),
+                first_words=(),
+                control_kinds=("mystery",),
+                allow_control=True,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -22,6 +22,15 @@ from .protocol import (
 DEFAULT_DISCOVERY_OBJECT_IDS = (0, 1)
 DEFAULT_DISCOVERY_FIRST_WORDS = (RUNTIME_TYPE, 0x0101, 0x0103, 0x0301)
 DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS = (RUNTIME_TYPE,)
+DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS = (0,)
+DEFAULT_DISCOVERY_REGISTER_GROUP_IDS = (0,)
+DISCOVERY_CONTROL_KIND_NAMES = (
+    "sleep",
+    "brightness",
+    "cct",
+    "brightness-with-mode",
+)
+DEFAULT_DISCOVERY_CONTROL_KINDS = DISCOVERY_CONTROL_KIND_NAMES
 
 
 @dataclass(frozen=True)
@@ -70,6 +79,9 @@ class UsbDiscoveryReport:
     first_words: tuple[int, ...]
     control_object_ids: tuple[int, ...]
     control_first_words: tuple[int, ...]
+    register_device_ids: tuple[int, ...]
+    register_group_ids: tuple[int, ...]
+    control_kinds: tuple[str, ...]
     control_enabled: bool
     attempts: tuple[DiscoveryAttempt, ...]
     notes: tuple[str, ...] = ()
@@ -95,6 +107,9 @@ class UsbDiscoveryReport:
             "first_words": list(self.first_words),
             "control_object_ids": list(self.control_object_ids),
             "control_first_words": list(self.control_first_words),
+            "register_device_ids": list(self.register_device_ids),
+            "register_group_ids": list(self.register_group_ids),
+            "control_kinds": list(self.control_kinds),
             "control_enabled": self.control_enabled,
             "summary": {
                 "attempted": len(self.attempts),
@@ -116,6 +131,9 @@ def discover_usb_primitives(
     first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
     control_object_ids: Iterable[int] | None = None,
     control_first_words: Iterable[int] = DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    register_device_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+    register_group_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    control_kinds: Iterable[str] = DEFAULT_DISCOVERY_CONTROL_KINDS,
     timeout: float = 0.5,
     allow_control: bool = False,
     brightness: float = 35.0,
@@ -130,6 +148,9 @@ def discover_usb_primitives(
         object_ids_tuple if control_object_ids is None else tuple(control_object_ids)
     )
     control_first_words_tuple = tuple(control_first_words)
+    register_device_ids_tuple = tuple(register_device_ids)
+    register_group_ids_tuple = tuple(register_group_ids)
+    control_kinds_tuple = _normalize_control_kinds(control_kinds)
     attempts: list[DiscoveryAttempt] = []
 
     for name, cmd, payload in _global_read_candidates():
@@ -174,16 +195,18 @@ def discover_usb_primitives(
         )
 
     if allow_control:
-        attempts.append(
-            _attempt_runtime(
-                light,
-                name="register_default_group_dev0_group0",
-                category="control",
-                cmd=RuntimeCommand.REGISTER_DEFAULT_GROUP,
-                payload=register_payload(0, 0),
-                timeout=timeout,
-            )
-        )
+        for device_id in register_device_ids_tuple:
+            for group_id in register_group_ids_tuple:
+                attempts.append(
+                    _attempt_runtime(
+                        light,
+                        name=f"register_default_group_dev{device_id}_group{group_id}",
+                        category="control",
+                        cmd=RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                        payload=register_payload(device_id, group_id),
+                        timeout=timeout,
+                    )
+                )
         for obj in control_object_ids_tuple:
             for first_word in control_first_words_tuple:
                 for name, cmd, payload in _control_candidates(
@@ -191,6 +214,7 @@ def discover_usb_primitives(
                     brightness=brightness,
                     kelvin=kelvin,
                     sleep=sleep,
+                    control_kinds=control_kinds_tuple,
                 ):
                     attempts.append(
                         _attempt_control(
@@ -209,6 +233,9 @@ def discover_usb_primitives(
         first_words=first_words_tuple,
         control_object_ids=control_object_ids_tuple if allow_control else (),
         control_first_words=control_first_words_tuple if allow_control else (),
+        register_device_ids=register_device_ids_tuple if allow_control else (),
+        register_group_ids=register_group_ids_tuple if allow_control else (),
+        control_kinds=control_kinds_tuple if allow_control else (),
         control_enabled=allow_control,
         attempts=tuple(attempts),
         notes=_notes(allow_control=allow_control),
@@ -339,26 +366,53 @@ def _control_candidates(
     brightness: float,
     kelvin: int,
     sleep: int,
+    control_kinds: tuple[str, ...],
 ) -> tuple[tuple[str, int, bytes], ...]:
-    return (
-        (f"set_sleep_obj{obj}", RuntimeCommand.SLEEP, sleep_payload(obj, sleep)),
-        (
-            f"set_brightness_obj{obj}",
-            RuntimeCommand.BRIGHTNESS,
-            brightness_payload(obj, brightness, read=False),
-        ),
-        (f"set_cct_obj{obj}", RuntimeCommand.CCT, cct_payload(obj, kelvin)),
-        (
-            f"set_brightness_with_mode_obj{obj}_mode1",
-            RuntimeCommand.BRIGHTNESS_WITH_MODE,
-            brightness_with_mode_payload(obj, brightness, 1),
-        ),
-        (
-            f"set_brightness_with_mode_obj{obj}_mode0",
-            RuntimeCommand.BRIGHTNESS_WITH_MODE,
-            brightness_with_mode_payload(obj, brightness, 0),
-        ),
+    candidates: list[tuple[str, int, bytes]] = []
+    if "sleep" in control_kinds:
+        candidates.append(
+            (f"set_sleep_obj{obj}", RuntimeCommand.SLEEP, sleep_payload(obj, sleep))
+        )
+    if "brightness" in control_kinds:
+        candidates.append(
+            (
+                f"set_brightness_obj{obj}",
+                RuntimeCommand.BRIGHTNESS,
+                brightness_payload(obj, brightness, read=False),
+            )
+        )
+    if "cct" in control_kinds:
+        candidates.append(
+            (f"set_cct_obj{obj}", RuntimeCommand.CCT, cct_payload(obj, kelvin))
+        )
+    if "brightness-with-mode" in control_kinds:
+        candidates.extend(
+            (
+                (
+                    f"set_brightness_with_mode_obj{obj}_mode1",
+                    RuntimeCommand.BRIGHTNESS_WITH_MODE,
+                    brightness_with_mode_payload(obj, brightness, 1),
+                ),
+                (
+                    f"set_brightness_with_mode_obj{obj}_mode0",
+                    RuntimeCommand.BRIGHTNESS_WITH_MODE,
+                    brightness_with_mode_payload(obj, brightness, 0),
+                ),
+            )
+        )
+    return tuple(candidates)
+
+
+def _normalize_control_kinds(control_kinds: Iterable[str]) -> tuple[str, ...]:
+    values = tuple(
+        dict.fromkeys(kind.strip() for kind in control_kinds if kind.strip())
     )
+    unsupported = tuple(
+        kind for kind in values if kind not in DISCOVERY_CONTROL_KIND_NAMES
+    )
+    if unsupported:
+        raise ValueError(f"unsupported control kind: {', '.join(unsupported)}")
+    return values
 
 
 def _notes(*, allow_control: bool) -> tuple[str, ...]:
@@ -369,4 +423,9 @@ def _notes(*, allow_control: bool) -> tuple[str, ...]:
     ]
     if not allow_control:
         notes.append("control candidates skipped; pass --allow-control to include them")
+    else:
+        notes.append(
+            "register-device-ids can change the device id reported by probe; "
+            "re-register the intended id after experiments"
+        )
     return tuple(notes)

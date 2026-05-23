@@ -39,12 +39,27 @@ Known object commands:
 | `0x1202` | Firmware by object | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
 | `0x1203` | Device mode | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
 
-Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0`, `1`, `2`, `100`, `0x8001`, `0x8064`, and `0xffff` did not respond. The `zlight discover-usb` matrix also tested first-word values `0x0100`, `0x0101`, `0x0103`, and `0x0301`; only `0x0301` produced exact echoes for object read and control probes, not device ACKs. Optional runtime control candidates for sleep, brightness, CCT, and brightness-plus-mode still timed out over USB.
+Object reads still need more live validation. On the upgraded G60, registration
+ACKs over USB, but object reads tested for object ids `0`, `1`, `2`, `100`,
+`0x8001`, `0x8064`, and `0xffff` did not respond. The `zlight discover-usb`
+matrix also tested first-word values `0x0100`, `0x0101`, `0x0103`, and
+`0x0301`; only `0x0301` produced exact echoes for object read and control
+probes, not device ACKs. Optional runtime control candidates for sleep,
+brightness, CCT, and brightness-plus-mode still timed out over USB. A later
+narrowed matrix confirmed `register_default_group_dev0_group0` and
+`register_default_group_dev1_group0`, then `set_sleep_obj1` still timed out.
+After registering device id `1`, a probe reported `device_id: 1`; registering
+device id `0` restored the original reported id.
 
 `discover-usb --allow-control` can separately vary control object ids and
 control frame first words with `--control-object-ids` and
 `--control-first-words`. This keeps broad read discovery separate from the
-smaller write matrix needed to investigate object-control routing.
+smaller write matrix needed to investigate object-control routing. It can also
+vary the registration prelude with `--register-device-ids` and
+`--register-group-ids`, and restrict state-changing probes with
+`--control-kinds sleep,brightness,cct,brightness-with-mode`. Because alternate
+registration ids are visible in later probes, re-register the intended id after
+experiments.
 
 The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
 For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,

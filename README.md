@@ -103,6 +103,7 @@ Run the broader USB discovery matrix while working on unknown primitive shapes:
 uv run zlight discover-usb --object-ids 0,1,2,100,0x8001,0x8064,0xffff
 uv run zlight discover-usb --allow-control --timeout 0.5
 uv run zlight discover-usb --allow-control --control-object-ids 0,1 --control-first-words 0x0100,0x0301
+uv run zlight discover-usb --allow-control --register-device-ids 0,1 --control-object-ids 1 --control-kinds sleep
 ```
 
 `discover-usb` is for bench work. It records global reads, object-read
@@ -110,7 +111,10 @@ candidates, first-word probes, and optional safe control candidates with the
 same ACK/timeout/echo evidence model used by validation.
 When `--allow-control` is set, control probes default to the same object ids as
 `--object-ids`; use `--control-object-ids` and `--control-first-words` to test a
-bounded control matrix without expanding read probes.
+bounded control matrix without expanding read probes. Use
+`--register-device-ids`, `--register-group-ids`, and `--control-kinds` to
+separate registration hypotheses from the specific control candidates you want
+to transmit.
 
 Exchange one raw frame when you need to reproduce protocol evidence directly:
 
@@ -468,6 +472,11 @@ frames for sleep, brightness, CCT, and brightness-plus-mode probes, but those
 are not ACKs and are not treated as applied control. Live HTTP bridge checks
 confirmed `/probe` and `/register`; `/sleep` and `/brightness` transmitted and
 returned `sent_no_response`.
+A later bounded run with `--register-device-ids 0,1 --control-kinds sleep`
+confirmed both registration ids ACK over USB, but `set_sleep_obj1` still
+returned `sent_no_response`. Registering device id `1` changed the next probe's
+reported `device_id` to `1`; re-registering device id `0` restored the original
+probe state.
 
 Zhiyun did not expose detailed release notes through the protocol data gathered
 here, so behavior claims in this project are based on observed commands rather
