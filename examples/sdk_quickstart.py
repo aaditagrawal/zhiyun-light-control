@@ -8,8 +8,11 @@ from pathlib import Path
 from zhiyun_light_control import (
     LightConnectionConfig,
     LightIntegration,
+    LightSetupProfile,
     load_light_connection_config,
+    load_light_setup_profile,
     save_light_connection_config,
+    save_light_setup_profile,
 )
 
 
@@ -21,6 +24,13 @@ def main() -> None:
         "--config",
         default="zhiyun-light.json",
         help="Path to a reusable LightConnectionConfig JSON file.",
+    )
+    parser.add_argument(
+        "--profile",
+        help=(
+            "Path to a reusable LightSetupProfile JSON file. When present, "
+            "the profile is preferred over --config."
+        ),
     )
     parser.add_argument(
         "--rediscover",
@@ -57,10 +67,23 @@ def main() -> None:
         parser.error("--brightness requires --allow-control")
 
     config_path = Path(args.config)
+    profile_path = Path(args.profile) if args.profile else None
 
     integration = LightIntegration()
+    has_saved_profile = (
+        profile_path is not None
+        and profile_path.exists()
+        and profile_path.stat().st_size > 0
+    )
     has_saved_config = config_path.exists() and config_path.stat().st_size > 0
-    if has_saved_config and not args.rediscover:
+    if has_saved_profile and not args.rediscover:
+        profile = load_light_setup_profile(profile_path)
+        profile.require_ready("read_status")
+        integration = integration.with_setup_profile(profile, require="read_status")
+        config = profile.config
+        setup = dict(profile.setup_report)
+        setup_source = "profile"
+    elif has_saved_config and not args.rediscover:
         config = load_light_connection_config(config_path)
         integration = integration.with_config(config)
         setup = integration.setup_report(
@@ -71,6 +94,7 @@ def main() -> None:
             allow_control=args.allow_control,
             include_object_reads=args.include_object_reads,
         )
+        save_profile_if_requested(setup, profile_path)
         setup_source = "saved"
     else:
         setup = integration.setup_report(
@@ -84,11 +108,14 @@ def main() -> None:
             raise SystemExit(json.dumps(setup, indent=2, sort_keys=True))
         config = config_from_setup(setup)
         save_light_connection_config(config, config_path)
+        save_profile_if_requested(setup, profile_path)
         integration = integration.with_config(config)
         setup_source = "discovered"
 
     payload = dict(setup)
     payload["setup_source"] = setup_source
+    if profile_path is not None:
+        payload["profile_path"] = str(profile_path)
 
     if args.brightness is not None:
         register = integration.register(device_id=0, group_id=0)
@@ -110,6 +137,18 @@ def config_from_setup(payload: Mapping[str, object]) -> LightConnectionConfig:
     if not isinstance(config, Mapping):
         raise ValueError("setup report is missing a config object")
     return LightConnectionConfig.from_mapping(config)
+
+
+def profile_from_setup(payload: Mapping[str, object]) -> LightSetupProfile:
+    return LightSetupProfile.from_setup_report(payload)
+
+
+def save_profile_if_requested(
+    payload: Mapping[str, object],
+    path: Path | None,
+) -> None:
+    if path is not None:
+        save_light_setup_profile(profile_from_setup(payload), path)
 
 
 if __name__ == "__main__":

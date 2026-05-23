@@ -123,6 +123,7 @@ The same setup/use split is available as a plain Python SDK script:
 
 ```sh
 uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json
+uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --profile ./zhiyun-light-profile.json
 uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --include-object-reads
 uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --allow-control --brightness 35
 ```
@@ -132,7 +133,8 @@ prints `ready_for`, `validation_ready_for`, and unconfirmed primitive names so a
 host can decide whether status, object reads, or control writes are actually
 usable on the selected transport. The same shape is available directly from
 `LightIntegration.setup_report()` for host applications that do not want to run
-the example script.
+the example script. Add `--profile` when the host should persist and later reuse
+the full `LightSetupProfile` evidence, not just the selected connection config.
 
 `discover-usb` is for bench work. It records global reads, object-read
 candidates, first-word probes, and optional safe control candidates with the
