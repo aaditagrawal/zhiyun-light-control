@@ -20,13 +20,16 @@ from zhiyun_light_control.protocol import (
 )
 from zhiyun_light_control.transports.ble import (
     BLE_PROFILE_NAMES,
+    DIRECT_ZY_NOTIFY_UUID,
     DIRECT_ZY_SERVICE_UUID,
     DIRECT_ZY_WRITE_UUID,
     LEGACY_ZY_NOTIFY_UUID,
     LEGACY_ZY_SERVICE_UUID,
     LEGACY_ZY_WRITE_UUID,
+    MESH_PROVISIONING_SERVICE_UUID,
     YC_SERVICE_UUID,
     BleCharacteristic,
+    BleEndpointCandidate,
     BleExchangeResult,
     BleInspectResult,
     BleProfile,
@@ -43,6 +46,7 @@ from zhiyun_light_control.transports.ble import (
     scan_zhiyun_devices,
     scan_zhiyun_devices_macos_app,
     scan_zhiyun_devices_safe,
+    suggest_ble_endpoint_candidates,
     suggest_ble_profile,
 )
 
@@ -232,6 +236,10 @@ class SafeBleScanTests(unittest.TestCase):
                             properties=("write-without-response",),
                             handle=7,
                         ),
+                        BleCharacteristic(
+                            uuid=DIRECT_ZY_NOTIFY_UUID,
+                            properties=("notify",),
+                        ),
                     ),
                 ),
             ),
@@ -246,6 +254,46 @@ class SafeBleScanTests(unittest.TestCase):
             ["write-without-response"],
         )
         self.assertEqual(payload["services"][0]["characteristics"][0]["handle"], 7)
+        self.assertEqual(payload["endpoint_candidates"][0]["profile"], "direct")
+        self.assertEqual(
+            payload["endpoint_candidates"][0]["cli_args"],
+            [
+                "--ble-profile",
+                "direct",
+                "--ble-service-uuid",
+                DIRECT_ZY_SERVICE_UUID,
+                "--ble-write-uuid",
+                DIRECT_ZY_WRITE_UUID,
+                "--ble-notify-uuid",
+                DIRECT_ZY_NOTIFY_UUID,
+            ],
+        )
+
+    def test_endpoint_candidate_serializes_cli_args(self) -> None:
+        candidate = BleEndpointCandidate(
+            profile="direct",
+            service_uuid="service-test",
+            write_uuid="write-test",
+            notify_uuid="notify-test",
+            confidence="property-pair",
+            confidence_score=45,
+            reason="test",
+        )
+
+        payload = candidate.to_dict()
+        self.assertEqual(
+            payload["cli_args"],
+            [
+                "--ble-profile",
+                "direct",
+                "--ble-service-uuid",
+                "service-test",
+                "--ble-write-uuid",
+                "write-test",
+                "--ble-notify-uuid",
+                "notify-test",
+            ],
+        )
 
     def test_safe_inspect_parses_worker_services(self) -> None:
         payload = {
@@ -257,8 +305,12 @@ class SafeBleScanTests(unittest.TestCase):
                     "characteristics": [
                         {
                             "uuid": DIRECT_ZY_WRITE_UUID.upper(),
-                            "properties": ["WRITE", "Notify"],
+                            "properties": ["WRITE"],
                             "handle": 3,
+                        },
+                        {
+                            "uuid": DIRECT_ZY_NOTIFY_UUID.upper(),
+                            "properties": ["Notify"],
                         }
                     ],
                 }
@@ -289,7 +341,11 @@ class SafeBleScanTests(unittest.TestCase):
         )
         self.assertEqual(
             result.services[0].characteristics[0].properties,
-            ("write", "notify"),
+            ("write",),
+        )
+        self.assertEqual(
+            result.to_dict()["endpoint_candidates"][0]["profile"],
+            "direct",
         )
         worker_args = run.call_args.args[0]
         self.assertIn("inspect", worker_args)
@@ -372,6 +428,44 @@ class SafeBleExchangeTests(unittest.TestCase):
             suggest_ble_profile(["00001827-0000-1000-8000-00805f9b34fb"]),
             None,
         )
+
+    def test_suggest_ble_endpoint_candidates_maps_known_and_custom_pairs(self) -> None:
+        services = (
+            BleService(
+                uuid=LEGACY_ZY_SERVICE_UUID,
+                characteristics=(
+                    BleCharacteristic(
+                        uuid=LEGACY_ZY_WRITE_UUID,
+                        properties=("write-without-response",),
+                    ),
+                    BleCharacteristic(
+                        uuid=LEGACY_ZY_NOTIFY_UUID,
+                        properties=("notify",),
+                    ),
+                ),
+            ),
+            BleService(
+                uuid=MESH_PROVISIONING_SERVICE_UUID,
+                characteristics=(
+                    BleCharacteristic(
+                        uuid="00002adb-0000-1000-8000-00805f9b34fb",
+                        properties=("write",),
+                    ),
+                    BleCharacteristic(
+                        uuid="00002adc-0000-1000-8000-00805f9b34fb",
+                        properties=("notify",),
+                    ),
+                ),
+            ),
+        )
+
+        candidates = suggest_ble_endpoint_candidates(services)
+
+        self.assertEqual(candidates[0].profile, "legacy")
+        self.assertEqual(candidates[0].confidence, "known-profile")
+        self.assertEqual(candidates[1].profile, "direct")
+        self.assertEqual(candidates[1].confidence, "property-pair")
+        self.assertEqual(candidates[1].confidence_score, 75)
 
     def test_safe_exchange_parses_worker_response(self) -> None:
         tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)

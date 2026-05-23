@@ -153,6 +153,42 @@ class BleService:
 
 
 @dataclass(frozen=True)
+class BleEndpointCandidate:
+    profile: str
+    service_uuid: str
+    write_uuid: str
+    notify_uuid: str
+    confidence: str
+    confidence_score: int
+    reason: str
+
+    @property
+    def cli_args(self) -> tuple[str, ...]:
+        return (
+            "--ble-profile",
+            self.profile,
+            "--ble-service-uuid",
+            self.service_uuid,
+            "--ble-write-uuid",
+            self.write_uuid,
+            "--ble-notify-uuid",
+            self.notify_uuid,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "profile": self.profile,
+            "service_uuid": self.service_uuid,
+            "write_uuid": self.write_uuid,
+            "notify_uuid": self.notify_uuid,
+            "confidence": self.confidence,
+            "confidence_score": self.confidence_score,
+            "reason": self.reason,
+            "cli_args": list(self.cli_args),
+        }
+
+
+@dataclass(frozen=True)
 class BleInspectResult:
     ok: bool
     address: str | None
@@ -167,6 +203,10 @@ class BleInspectResult:
             "ok": self.ok,
             "address": self.address,
             "services": [service.to_dict() for service in self.services],
+            "endpoint_candidates": [
+                candidate.to_dict()
+                for candidate in suggest_ble_endpoint_candidates(self.services)
+            ],
             "error": self.error,
             "returncode": self.returncode,
             "signal": self.signal_name,
@@ -902,6 +942,110 @@ def suggest_ble_profile(services: Iterable[str]) -> str | None:
         if profile.service_uuid in advertised:
             return profile.name
     return None
+
+
+def suggest_ble_endpoint_candidates(
+    services: Iterable[BleService],
+) -> tuple[BleEndpointCandidate, ...]:
+    service_list = tuple(services)
+    candidates: list[BleEndpointCandidate] = []
+    seen: set[tuple[str, str, str]] = set()
+    for profile in BLE_PROFILES.values():
+        service = _service_by_uuid(service_list, profile.service_uuid)
+        if service is None:
+            continue
+        write = _characteristic_by_uuid(service, profile.write_uuid)
+        notify = _characteristic_by_uuid(service, profile.notify_uuid)
+        if write is None or notify is None:
+            continue
+        candidate = BleEndpointCandidate(
+            profile=profile.name,
+            service_uuid=service.uuid,
+            write_uuid=write.uuid,
+            notify_uuid=notify.uuid,
+            confidence="known-profile",
+            confidence_score=100,
+            reason=f"matches built-in {profile.name} service/write/notify UUIDs",
+        )
+        candidates.append(candidate)
+        seen.add((candidate.service_uuid, candidate.write_uuid, candidate.notify_uuid))
+    for service in service_list:
+        write_chars = tuple(
+            characteristic
+            for characteristic in service.characteristics
+            if _characteristic_can_write(characteristic)
+        )
+        notify_chars = tuple(
+            characteristic
+            for characteristic in service.characteristics
+            if _characteristic_can_notify(characteristic)
+        )
+        for write in write_chars:
+            for notify in notify_chars:
+                key = (service.uuid, write.uuid, notify.uuid)
+                if key in seen:
+                    continue
+                candidate = BleEndpointCandidate(
+                    profile=DEFAULT_BLE_PROFILE.name,
+                    service_uuid=service.uuid,
+                    write_uuid=write.uuid,
+                    notify_uuid=notify.uuid,
+                    confidence="property-pair",
+                    confidence_score=_property_pair_score(service),
+                    reason=(
+                        "service has a writable characteristic and a "
+                        "notify/indicate characteristic"
+                    ),
+                )
+                candidates.append(candidate)
+                seen.add(key)
+    return tuple(
+        sorted(
+            candidates,
+            key=lambda candidate: (
+                -candidate.confidence_score,
+                candidate.service_uuid,
+                candidate.write_uuid,
+                candidate.notify_uuid,
+            ),
+        )
+    )
+
+
+def _service_by_uuid(
+    services: Iterable[BleService],
+    uuid: str,
+) -> BleService | None:
+    normalized = uuid.lower()
+    for service in services:
+        if service.uuid == normalized:
+            return service
+    return None
+
+
+def _characteristic_by_uuid(
+    service: BleService,
+    uuid: str,
+) -> BleCharacteristic | None:
+    normalized = uuid.lower()
+    for characteristic in service.characteristics:
+        if characteristic.uuid == normalized:
+            return characteristic
+    return None
+
+
+def _characteristic_can_write(characteristic: BleCharacteristic) -> bool:
+    return bool({"write", "write-without-response"} & set(characteristic.properties))
+
+
+def _characteristic_can_notify(characteristic: BleCharacteristic) -> bool:
+    return bool({"notify", "indicate"} & set(characteristic.properties))
+
+
+def _property_pair_score(service: BleService) -> int:
+    if service.uuid in KNOWN_ZHIYUN_SERVICE_UUIDS:
+        return 75
+    return 45
 
 
 def _profile_arg(profile: str | BleProfile) -> str:

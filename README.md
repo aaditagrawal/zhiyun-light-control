@@ -173,7 +173,10 @@ must allow `ZhiyunBleScan` under Bluetooth privacy; otherwise the helper reports
 exact cached helper app path, bundle id, and Bluetooth settings hint.
 `zlight inspect-ble` connects to the matching BLE device and returns GATT
 services, characteristics, and properties so unknown write/notify endpoints can
-be selected without guessing.
+be selected without guessing. Its `endpoint_candidates` field ranks exact
+built-in profile matches first, then writable/notify characteristic pairs with
+ready-to-use `--ble-service-uuid`, `--ble-write-uuid`, and `--ble-notify-uuid`
+CLI overrides.
 
 Full BLE validation sends many exchanges, so run a scan first and choose the
 backend explicitly. On macOS use the bundled app helper; on a stable bleak
@@ -346,7 +349,9 @@ setup UIs that need to inspect the exact target scene before arming writes.
 
 `POST /inspect-ble` is the BLE endpoint-discovery surface. It connects through
 the selected backend and returns GATT services, characteristics, and properties
-without sending Zhiyun runtime frames or requiring `--allow-control`.
+without sending Zhiyun runtime frames or requiring `--allow-control`. The
+response includes `endpoint_candidates` so setup dashboards can show the exact
+profile/UUID override arguments to try next.
 
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
 On macOS it also attaches best-effort USB descriptor metadata such as
@@ -466,7 +471,8 @@ print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
-print(bridge.inspect_ble(backend="macos-app", name_contains="PL103")["services"])
+ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
+print(ble["endpoint_candidates"])
 print(bridge.plan({"preset": "key", "overrides": {"brightness": 45}})["scene"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(next(bridge.state_events(limit=1))["state"])
@@ -630,7 +636,8 @@ that bundle. A standalone native probe previously found the G60 as
 privacy authorizes `ZhiyunBleScan`.
 Use `inspect-ble --backend macos-app` after authorization to capture the live
 GATT surface, including characteristic properties, before trying custom profile
-overrides.
+overrides. Use `endpoint_candidates[0]["cli_args"]` as the first generated
+command-profile override to test.
 
 BLE command exchange supports three named characteristic profiles:
 

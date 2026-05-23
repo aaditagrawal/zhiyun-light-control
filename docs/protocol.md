@@ -200,6 +200,9 @@ HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or
 `name_contains`, and returns GATT services, characteristics, and characteristic
 properties without sending Zhiyun runtime frames or requiring `--allow-control`.
+It also returns `endpoint_candidates`: exact built-in profile matches first,
+then lower-confidence writable/notify characteristic pairs with CLI override
+arguments for custom routing.
 
 HTTP `/devices` exposes transport discovery for dashboards and controller
 setup flows. It always returns USB `/dev/cu.usbmodem*` ports and the configured
@@ -376,7 +379,9 @@ arguments.
 through the selected backend. Use this after Bluetooth authorization to collect
 the exact services, write characteristics, notify characteristics, and
 properties exposed by a specific firmware before choosing a custom command
-profile.
+profile. The `endpoint_candidates` array ranks matching built-in profiles ahead
+of generic write/notify pairs and includes `cli_args` ready to pass to one-shot
+BLE commands or bridge startup.
 
 Native bundled CoreBluetooth inspection with an
 `NSBluetoothAlwaysUsageDescription` plist found service `FEE9` plus mesh service

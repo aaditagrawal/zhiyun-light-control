@@ -57,6 +57,7 @@ from .transports.ble import (
     BLE_PROFILES,
     DEFAULT_BLE_PROFILE,
     BleCharacteristic,
+    BleEndpointCandidate,
     BleExchangeResult,
     BleInspectResult,
     BleProfile,
@@ -66,6 +67,7 @@ from .transports.ble import (
     MacosBleAppTransport,
     resolve_ble_profile,
     scan_zhiyun_devices_macos_app,
+    suggest_ble_endpoint_candidates,
     suggest_ble_profile,
 )
 from .validation import (
@@ -83,6 +85,7 @@ __all__ = [
     "BLE_PROFILES",
     "BLE_BACKENDS",
     "BleCharacteristic",
+    "BleEndpointCandidate",
     "BleExchangeResult",
     "BleInspectResult",
     "BleProfile",
@@ -143,6 +146,7 @@ __all__ = [
     "readiness_actions_by_id",
     "resolve_ble_profile",
     "scan_zhiyun_devices_macos_app",
+    "suggest_ble_endpoint_candidates",
     "suggest_ble_profile",
     "make_light_factory",
     "merge_scene",
