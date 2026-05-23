@@ -11,7 +11,12 @@ from urllib.parse import parse_qs, urlparse
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
-from .devices import BLE_BACKENDS, discover_transport_devices, inspect_ble_device
+from .devices import (
+    BLE_BACKENDS,
+    discover_transport_devices,
+    inspect_ble_device,
+    test_ble_endpoint_candidates,
+)
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_KINDS,
@@ -104,6 +109,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/validate",
                         "/plan",
                         "/inspect-ble",
+                        "/test-ble-endpoints",
                         "/register",
                         "/discover-usb",
                         "/brightness",
@@ -188,6 +194,8 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 result = self._handle_plan(body)
             elif path == "/inspect-ble":
                 result = self._handle_inspect_ble(body)
+            elif path == "/test-ble-endpoints":
+                result = self._handle_test_ble_endpoints(body)
             elif path == "/validate":
                 if _body_bool(body, "allow_control") and not self.server.allow_control:
                     self._json(
@@ -440,6 +448,24 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             }
         )
         return result
+
+    def _handle_test_ble_endpoints(self, body: dict[str, object]) -> dict[str, object]:
+        backend = str(body.get("backend", self.server.ble_backend or "worker"))
+        timeout = float(body.get("timeout", 5.0))
+        address = _optional_text(body, "address") or self.server.ble_address
+        name_contains = (
+            _optional_text(body, "name_contains") or self.server.ble_name_contains
+        )
+        python = _optional_text(body, "python") or self.server.ble_python
+        max_candidates = int(body.get("max_candidates", 4))
+        return test_ble_endpoint_candidates(
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+            max_candidates=max_candidates,
+        ).to_dict()
 
     def _plan_scene(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
         scene_data = body.get("scene", _scene_fields_from_body(body))
@@ -1106,6 +1132,13 @@ def openapi_schema() -> dict[str, object]:
                     request_schema="BleInspectRequest",
                 )
             },
+            "/test-ble-endpoints": {
+                "post": _operation(
+                    "Probe suggested BLE endpoints with read-only identity command",
+                    "BleEndpointTest",
+                    request_schema="BleEndpointTestRequest",
+                )
+            },
             "/discover-usb": {
                 "post": _operation(
                     "Run a bounded USB protocol discovery matrix",
@@ -1334,6 +1367,8 @@ def _openapi_schemas() -> dict[str, object]:
         "PlanResponse": {"type": "object", "additionalProperties": True},
         "BleInspectRequest": {"type": "object", "additionalProperties": True},
         "BleInspect": {"type": "object", "additionalProperties": True},
+        "BleEndpointTestRequest": {"type": "object", "additionalProperties": True},
+        "BleEndpointTest": {"type": "object", "additionalProperties": True},
         "UsbDiscovery": {"type": "object", "additionalProperties": True},
         "Presets": {"type": "object", "additionalProperties": True},
         "State": {"type": "object", "additionalProperties": True},
@@ -1588,6 +1623,24 @@ def capabilities_response(
                     "python",
                 ],
                 "confirmation": "GATT service and characteristic enumeration",
+                "ble_backends": list(BLE_BACKENDS),
+            },
+            {
+                "name": "test-ble-endpoints",
+                "method": "POST",
+                "path": "/test-ble-endpoints",
+                "requires_control": False,
+                "fields": [
+                    "backend",
+                    "address",
+                    "name_contains",
+                    "timeout",
+                    "python",
+                    "max_candidates",
+                ],
+                "confirmation": (
+                    "read-only DEVICE_INFO probe against suggested BLE endpoints"
+                ),
                 "ble_backends": list(BLE_BACKENDS),
             },
             {

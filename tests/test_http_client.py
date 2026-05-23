@@ -206,6 +206,36 @@ class HttpClientTests(unittest.TestCase):
                 name_contains="PL103",
                 python=None,
             )
+
+            class FakeEndpointReport:
+                def to_dict(self):
+                    return {
+                        "ok": True,
+                        "backend": "macos-app",
+                        "tests": [{"acknowledged": True}],
+                    }
+
+            with patch(
+                "zhiyun_light_control.server.test_ble_endpoint_candidates",
+                return_value=FakeEndpointReport(),
+            ) as test_ble:
+                endpoint_test = client.test_ble_endpoints(
+                    backend="macos-app",
+                    name_contains="PL103",
+                    timeout=1,
+                    max_candidates=2,
+                )
+            self.assertTrue(endpoint_test["ok"])
+            self.assertTrue(endpoint_test["tests"][0]["acknowledged"])
+            test_ble.assert_called_once_with(
+                backend="macos-app",
+                timeout=1.0,
+                address=None,
+                name_contains="PL103",
+                python=None,
+                max_candidates=2,
+            )
+
             plan = client.plan(
                 {
                     "preset": "key",

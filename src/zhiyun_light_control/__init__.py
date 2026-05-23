@@ -13,9 +13,12 @@ from .client import ProbeResult, ZhiyunLight
 from .cues import CueError, CueLibrary, cue_from_mapping
 from .devices import (
     BLE_BACKENDS,
+    BleEndpointCandidateReport,
+    BleEndpointCandidateTest,
     UsbPortInfo,
     discover_transport_devices,
     inspect_ble_device,
+    test_ble_endpoint_candidates,
 )
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
@@ -86,6 +89,8 @@ __all__ = [
     "BLE_BACKENDS",
     "BleCharacteristic",
     "BleEndpointCandidate",
+    "BleEndpointCandidateReport",
+    "BleEndpointCandidateTest",
     "BleExchangeResult",
     "BleInspectResult",
     "BleProfile",
@@ -139,6 +144,7 @@ __all__ = [
     "encode_sacn",
     "iter_frames",
     "inspect_ble_device",
+    "test_ble_endpoint_candidates",
     "macos_ble_app_info",
     "sacn_multicast_address",
     "read_async_status",

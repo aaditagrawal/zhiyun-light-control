@@ -11,7 +11,7 @@ from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .cues import CueLibrary
-from .devices import inspect_ble_device
+from .devices import inspect_ble_device, test_ble_endpoint_candidates
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_KINDS,
@@ -240,6 +240,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inspect_ble.add_argument("--json", action="store_true", help="Print compact JSON.")
     inspect_ble.set_defaults(func=cmd_inspect_ble)
+
+    test_ble = sub.add_parser(
+        "test-ble-endpoints",
+        help="Probe suggested BLE endpoints with a read-only identity command.",
+    )
+    test_ble.add_argument("--address", help="BLE address/identifier.")
+    test_ble.add_argument("--name-contains", help="Filter discovered BLE names.")
+    test_ble.add_argument("--timeout", type=float, default=5.0)
+    test_ble.add_argument(
+        "--max-candidates",
+        type=int,
+        default=4,
+        help="Maximum suggested endpoint candidates to test.",
+    )
+    test_ble.add_argument(
+        "--python",
+        help="Python executable for the crash-isolated BLE worker.",
+    )
+    test_ble.add_argument(
+        "--backend",
+        choices=["worker", "macos-app", "direct"],
+        default="worker",
+        help="BLE test backend. macos-app uses a CoreBluetooth app bundle.",
+    )
+    test_ble.add_argument(
+        "--unsafe-in-process",
+        action="store_true",
+        help="Run bleak inspection/exchange in this process instead of the worker.",
+    )
+    test_ble.add_argument("--json", action="store_true", help="Print compact JSON.")
+    test_ble.set_defaults(func=cmd_test_ble_endpoints)
 
     helper = sub.add_parser(
         "ble-helper",
@@ -744,6 +775,20 @@ def cmd_inspect_ble(args: argparse.Namespace) -> int:
         address=args.address,
         name_contains=args.name_contains,
         python=args.python,
+    )
+    print_json(result.to_dict(), compact=args.json)
+    return 0 if result.ok else 2
+
+
+def cmd_test_ble_endpoints(args: argparse.Namespace) -> int:
+    backend = "direct" if args.unsafe_in_process else args.backend
+    result = test_ble_endpoint_candidates(
+        backend=backend,
+        timeout=args.timeout,
+        address=args.address,
+        name_contains=args.name_contains,
+        python=args.python,
+        max_candidates=args.max_candidates,
     )
     print_json(result.to_dict(), compact=args.json)
     return 0 if result.ok else 2

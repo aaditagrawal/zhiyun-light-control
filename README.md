@@ -159,6 +159,7 @@ Scan BLE devices:
 uv run --extra ble zlight scan-ble --timeout 8
 uv run zlight scan-ble --backend macos-app --name-contains PL103 --timeout 8
 uv run zlight inspect-ble --backend macos-app --name-contains PL103 --timeout 8
+uv run zlight test-ble-endpoints --backend macos-app --name-contains PL103 --timeout 5 --max-candidates 4 --json
 uv run zlight ble-helper --ensure --open-settings
 ```
 
@@ -177,6 +178,11 @@ be selected without guessing. Its `endpoint_candidates` field ranks exact
 built-in profile matches first, then writable/notify characteristic pairs with
 ready-to-use `--ble-service-uuid`, `--ble-write-uuid`, and `--ble-notify-uuid`
 CLI overrides.
+`zlight test-ble-endpoints` runs the same inspection first, then sends only the
+read-only `DEVICE_INFO` command to each suggested endpoint candidate. Its report
+marks candidates as confirmed only when the light returns an ACK-backed
+`CommandResult`, so it is the next safe step before using those UUIDs for
+control.
 
 Full BLE validation sends many exchanges, so run a scan first and choose the
 backend explicitly. On macOS use the bundled app helper; on a stable bleak
@@ -277,6 +283,9 @@ curl -X POST http://127.0.0.1:8765/plan \
 curl -X POST http://127.0.0.1:8765/inspect-ble \
   -H 'content-type: application/json' \
   -d '{"backend": "macos-app", "name_contains": "PL103", "timeout": 6}'
+curl -X POST http://127.0.0.1:8765/test-ble-endpoints \
+  -H 'content-type: application/json' \
+  -d '{"backend": "macos-app", "name_contains": "PL103", "timeout": 5, "max_candidates": 4}'
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
@@ -352,6 +361,11 @@ the selected backend and returns GATT services, characteristics, and properties
 without sending Zhiyun runtime frames or requiring `--allow-control`. The
 response includes `endpoint_candidates` so setup dashboards can show the exact
 profile/UUID override arguments to try next.
+
+`POST /test-ble-endpoints` is the read-only BLE endpoint-confirmation surface.
+It inspects GATT, ranks endpoint candidates, and sends only `DEVICE_INFO` to the
+top candidates. Use `confirmed_candidates` from the response to select BLE
+profile and UUID overrides for a bridge or show-control process.
 
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
 On macOS it also attaches best-effort USB descriptor metadata such as
@@ -473,6 +487,7 @@ print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
 ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
 print(ble["endpoint_candidates"])
+print(bridge.test_ble_endpoints(backend="macos-app", name_contains="PL103"))
 print(bridge.plan({"preset": "key", "overrides": {"brightness": 45}})["scene"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(next(bridge.state_events(limit=1))["state"])
@@ -637,7 +652,8 @@ privacy authorizes `ZhiyunBleScan`.
 Use `inspect-ble --backend macos-app` after authorization to capture the live
 GATT surface, including characteristic properties, before trying custom profile
 overrides. Use `endpoint_candidates[0]["cli_args"]` as the first generated
-command-profile override to test.
+command-profile override to test, or run `test-ble-endpoints` to confirm the
+candidate with a read-only ACK before sending control frames.
 
 BLE command exchange supports three named characteristic profiles:
 

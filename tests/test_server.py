@@ -490,6 +490,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/plan", commands["post"])
             self.assertIn("/inspect-ble", commands["post"])
+            self.assertIn("/test-ble-endpoints", commands["post"])
             self.assertIn("/sequence", commands["post"])
 
             capabilities = json.loads(
@@ -510,6 +511,11 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(primitives["plan"]["path"], "/plan")
             self.assertFalse(primitives["inspect-ble"]["requires_control"])
             self.assertEqual(primitives["inspect-ble"]["path"], "/inspect-ble")
+            self.assertFalse(primitives["test-ble-endpoints"]["requires_control"])
+            self.assertEqual(
+                primitives["test-ble-endpoints"]["path"],
+                "/test-ble-endpoints",
+            )
             self.assertTrue(primitives["brightness"]["requires_control"])
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
@@ -577,6 +583,47 @@ class ServerTests(unittest.TestCase):
                 address=None,
                 name_contains="PL103",
                 python=None,
+            )
+
+            endpoint_request = Request(
+                f"{base}/test-ble-endpoints",
+                data=json.dumps(
+                    {
+                        "backend": "macos-app",
+                        "name_contains": "PL103",
+                        "timeout": 1,
+                        "max_candidates": 2,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+
+            class FakeEndpointReport:
+                def to_dict(self):
+                    return {
+                        "ok": True,
+                        "backend": "macos-app",
+                        "tests": [{"acknowledged": True}],
+                    }
+
+            with patch(
+                "zhiyun_light_control.server.test_ble_endpoint_candidates",
+                return_value=FakeEndpointReport(),
+            ) as test_ble:
+                endpoint_response = json.loads(
+                    urlopen(endpoint_request, timeout=3).read()
+                )
+
+            self.assertTrue(endpoint_response["ok"])
+            self.assertTrue(endpoint_response["tests"][0]["acknowledged"])
+            test_ble.assert_called_once_with(
+                backend="macos-app",
+                timeout=1.0,
+                address=None,
+                name_contains="PL103",
+                python=None,
+                max_candidates=2,
             )
 
             ready = json.loads(urlopen(f"{base}/ready", timeout=3).read())
@@ -905,6 +952,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/devices", schema["paths"])
             self.assertIn("/plan", schema["paths"])
             self.assertIn("/inspect-ble", schema["paths"])
+            self.assertIn("/test-ble-endpoints", schema["paths"])
             self.assertIn("/discover-usb", schema["paths"])
             self.assertIn("/events", schema["paths"])
             self.assertIn("/history", schema["paths"])
@@ -928,6 +976,8 @@ class ServerTests(unittest.TestCase):
             self.assertIn("PlanResponse", schema["components"]["schemas"])
             self.assertIn("BleInspectRequest", schema["components"]["schemas"])
             self.assertIn("BleInspect", schema["components"]["schemas"])
+            self.assertIn("BleEndpointTestRequest", schema["components"]["schemas"])
+            self.assertIn("BleEndpointTest", schema["components"]["schemas"])
             self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])
             self.assertIn("UsbDiscovery", schema["components"]["schemas"])
             self.assertIn("SequenceRequest", schema["components"]["schemas"])
@@ -940,6 +990,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/events", commands["get"])
             self.assertIn("/history", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
+            self.assertIn("/test-ble-endpoints", commands["post"])
             self.assertIn("/frame", commands["post"])
 
             options = Request(f"{base}/scene", method="OPTIONS")

@@ -1053,6 +1053,53 @@ class CliTests(unittest.TestCase):
             python=None,
         )
 
+    def test_test_ble_endpoints_can_use_macos_app_backend(self) -> None:
+        class FakeEndpointReport:
+            ok = True
+
+            def to_dict(self):
+                return {
+                    "ok": True,
+                    "backend": "macos-app",
+                    "tests": [{"acknowledged": True}],
+                }
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.test_ble_endpoint_candidates",
+                return_value=FakeEndpointReport(),
+            ) as test_ble,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "test-ble-endpoints",
+                    "--backend",
+                    "macos-app",
+                    "--timeout",
+                    "1",
+                    "--name-contains",
+                    "PL103",
+                    "--max-candidates",
+                    "2",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["backend"], "macos-app")
+        self.assertTrue(payload["tests"][0]["acknowledged"])
+        test_ble.assert_called_once_with(
+            backend="macos-app",
+            timeout=1.0,
+            address=None,
+            name_contains="PL103",
+            python=None,
+            max_candidates=2,
+        )
+
     def test_ble_helper_reports_helper_and_opens_settings(self) -> None:
         stdout = io.StringIO()
         with (

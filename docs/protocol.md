@@ -131,6 +131,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
 | `POST` | `/plan` | Resolve a scene/preset/transition/sequence without writes |
 | `POST` | `/inspect-ble` | Inspect BLE GATT services and characteristics |
+| `POST` | `/test-ble-endpoints` | Confirm suggested BLE endpoints with read-only `DEVICE_INFO` ACK probes |
 | `POST` | `/discover-usb` | Bounded USB primitive discovery matrix with per-attempt evidence |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
@@ -203,6 +204,12 @@ properties without sending Zhiyun runtime frames or requiring `--allow-control`.
 It also returns `endpoint_candidates`: exact built-in profile matches first,
 then lower-confidence writable/notify characteristic pairs with CLI override
 arguments for custom routing.
+
+HTTP `/test-ble-endpoints` is the safe BLE endpoint-confirmation step. It runs
+inspection, selects the top endpoint candidates, and sends only the read-only
+runtime `DEVICE_INFO` command to each candidate. Responses include the raw BLE
+exchange plus the normalized `CommandResult`; a candidate is usable evidence
+only when `acknowledged` is `true` and it appears in `confirmed_candidates`.
 
 HTTP `/devices` exposes transport discovery for dashboards and controller
 setup flows. It always returns USB `/dev/cu.usbmodem*` ports and the configured
@@ -382,6 +389,11 @@ properties exposed by a specific firmware before choosing a custom command
 profile. The `endpoint_candidates` array ranks matching built-in profiles ahead
 of generic write/notify pairs and includes `cli_args` ready to pass to one-shot
 BLE commands or bridge startup.
+
+`zlight test-ble-endpoints` and HTTP `POST /test-ble-endpoints` use those
+candidates directly and report ACK evidence for each read-only `DEVICE_INFO`
+probe. This is the preferred way to promote a guessed write/notify pair into a
+confirmed BLE command route before testing control primitives.
 
 Native bundled CoreBluetooth inspection with an
 `NSBluetoothAlwaysUsageDescription` plist found service `FEE9` plus mesh service

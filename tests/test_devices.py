@@ -8,7 +8,21 @@ from zhiyun_light_control.devices import (
     discover_transport_devices,
     scan_ble_devices,
 )
-from zhiyun_light_control.transports.ble import BleDevice, BleScanResult
+from zhiyun_light_control.devices import (
+    test_ble_endpoint_candidates as run_ble_endpoint_candidate_test,
+)
+from zhiyun_light_control.protocol import RuntimeCommand, build_runtime_frame
+from zhiyun_light_control.transports.ble import (
+    DIRECT_ZY_NOTIFY_UUID,
+    DIRECT_ZY_SERVICE_UUID,
+    DIRECT_ZY_WRITE_UUID,
+    BleCharacteristic,
+    BleDevice,
+    BleExchangeResult,
+    BleInspectResult,
+    BleScanResult,
+    BleService,
+)
 
 
 class DeviceDiscoveryTests(unittest.TestCase):
@@ -140,6 +154,109 @@ class DeviceDiscoveryTests(unittest.TestCase):
         self.assertEqual(BLE_BACKENDS, ("worker", "macos-app", "direct"))
         with self.assertRaisesRegex(ValueError, "unsupported BLE backend"):
             scan_ble_devices(backend="other")
+
+    def test_test_ble_endpoint_candidates_confirms_read_only_ack(self) -> None:
+        inspect = BleInspectResult(
+            ok=True,
+            address="UUID-1",
+            services=(
+                BleService(
+                    uuid=DIRECT_ZY_SERVICE_UUID,
+                    characteristics=(
+                        BleCharacteristic(
+                            uuid=DIRECT_ZY_WRITE_UUID,
+                            properties=("write-without-response",),
+                        ),
+                        BleCharacteristic(
+                            uuid=DIRECT_ZY_NOTIFY_UUID,
+                            properties=("notify",),
+                        ),
+                    ),
+                ),
+            ),
+            worker_python="macos-app",
+        )
+
+        def fake_exchange(tx: bytes, **kwargs: object) -> BleExchangeResult:
+            self.assertEqual(kwargs["address"], "UUID-1")
+            self.assertIsNone(kwargs["name_contains"])
+            self.assertEqual(kwargs["profile"], "direct")
+            self.assertEqual(kwargs["service_uuid"], DIRECT_ZY_SERVICE_UUID)
+            self.assertEqual(kwargs["write_uuid"], DIRECT_ZY_WRITE_UUID)
+            self.assertEqual(kwargs["notify_uuid"], DIRECT_ZY_NOTIFY_UUID)
+            rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"g60\x00pl103\x00")
+            return BleExchangeResult(
+                ok=True,
+                tx=tx,
+                rx=rx,
+                address="UUID-1",
+                worker_python="macos-app",
+            )
+
+        with (
+            patch(
+                "zhiyun_light_control.devices.inspect_ble_device",
+                return_value=inspect,
+            ) as inspect_ble,
+            patch(
+                "zhiyun_light_control.devices.exchange_zhiyun_ble_macos_app",
+                side_effect=fake_exchange,
+            ) as exchange,
+        ):
+            report = run_ble_endpoint_candidate_test(
+                backend="macos-app",
+                timeout=1.25,
+                name_contains="PL103",
+                max_candidates=1,
+            )
+
+        payload = report.to_dict()
+        self.assertTrue(report.ok)
+        self.assertTrue(payload["tests"][0]["acknowledged"])
+        self.assertEqual(payload["tests"][0]["transport_status"], "acknowledged")
+        self.assertEqual(payload["confirmed_candidates"][0]["profile"], "direct")
+        self.assertEqual(
+            payload["tests"][0]["command_result"]["command"],
+            RuntimeCommand.DEVICE_INFO,
+        )
+        inspect_ble.assert_called_once_with(
+            backend="macos-app",
+            timeout=1.25,
+            address=None,
+            name_contains="PL103",
+            python=None,
+        )
+        exchange.assert_called_once()
+
+    def test_test_ble_endpoint_candidates_returns_inspect_failure(self) -> None:
+        inspect = BleInspectResult(
+            ok=False,
+            address=None,
+            error="Bluetooth state unauthorized: 3",
+            worker_python="macos-app",
+        )
+
+        with patch(
+            "zhiyun_light_control.devices.inspect_ble_device",
+            return_value=inspect,
+        ) as inspect_ble:
+            report = run_ble_endpoint_candidate_test(
+                backend="macos-app",
+                timeout=2.0,
+                name_contains="PL103",
+            )
+
+        payload = report.to_dict()
+        self.assertFalse(report.ok)
+        self.assertEqual(payload["inspect"]["error"], "Bluetooth state unauthorized: 3")
+        self.assertEqual(payload["tests"], [])
+        inspect_ble.assert_called_once_with(
+            backend="macos-app",
+            timeout=2.0,
+            address=None,
+            name_contains="PL103",
+            python=None,
+        )
 
 
 if __name__ == "__main__":
