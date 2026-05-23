@@ -10,7 +10,13 @@ from pathlib import Path
 from .bridge import LightConnectionConfig, LightFactory
 from .controller import AsyncLightController, AsyncLightFactory, LightController
 from .cues import CueLibrary
-from .integration import AsyncLightIntegration, LightIntegration, StatusSnapshot
+from .integration import (
+    AsyncLightIntegration,
+    IntegrationNotReady,
+    LightIntegration,
+    StatusSnapshot,
+    integration_require,
+)
 from .models import Scene
 from .presets import ScenePresetLibrary, scene_from_mapping
 from .protocol import DEFAULT_CONTROL_MODE
@@ -37,6 +43,24 @@ class LightFixture:
 
 class RigConfigError(ValueError):
     pass
+
+
+class RigNotReady(RuntimeError):
+    def __init__(
+        self,
+        response: Mapping[str, object],
+        capabilities: Iterable[str],
+        fixture_errors: Mapping[str, IntegrationNotReady],
+    ) -> None:
+        self.response = dict(response)
+        self.capabilities = tuple(capabilities) or ("read_status",)
+        self.fixture_errors = dict(fixture_errors)
+        self.pending_action_ids = {
+            name: error.pending_action_ids
+            for name, error in self.fixture_errors.items()
+        }
+        names = ", ".join(self.fixture_errors) or "no fixtures"
+        super().__init__(f"rig not ready for {', '.join(self.capabilities)}: {names}")
 
 
 FixtureInput = LightFixture | Mapping[str, object]
@@ -319,6 +343,45 @@ class LightRig:
                 stopped = True
                 break
         return _rig_response("rig_readiness", responses, stopped=stopped)
+
+    def require_readiness(
+        self,
+        name: str,
+        *capabilities: str,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        response = self.readiness(
+            name,
+            allow_control=allow_control,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+        )
+        integration_require(_fixture_readiness_payload(response), capabilities)
+        return response
+
+    def require_readiness_all(
+        self,
+        *capabilities: str,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        required = tuple(capabilities) or ("read_status",)
+        response = self.readiness_all(
+            fixture_names=fixture_names,
+            tag=tag,
+            allow_control=allow_control,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+        )
+        failures = _rig_readiness_failures(response, required)
+        if failures:
+            raise RigNotReady(response, required, failures)
+        return response
 
     def validate(
         self,
@@ -821,6 +884,45 @@ class AsyncLightRig:
                 stopped = True
                 break
         return _rig_response("rig_readiness", responses, stopped=stopped)
+
+    async def require_readiness(
+        self,
+        name: str,
+        *capabilities: str,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        response = await self.readiness(
+            name,
+            allow_control=allow_control,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+        )
+        integration_require(_fixture_readiness_payload(response), capabilities)
+        return response
+
+    async def require_readiness_all(
+        self,
+        *capabilities: str,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        required = tuple(capabilities) or ("read_status",)
+        response = await self.readiness_all(
+            fixture_names=fixture_names,
+            tag=tag,
+            allow_control=allow_control,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+        )
+        failures = _rig_readiness_failures(response, required)
+        if failures:
+            raise RigNotReady(response, required, failures)
+        return response
 
     async def validate(
         self,
@@ -1334,6 +1436,35 @@ def _validation_response(
         "ok": payload.get("connection_confirmed") is True,
         "reason": _validation_reason(payload),
     }
+
+
+def _fixture_readiness_payload(response: Mapping[str, object]) -> dict[str, object]:
+    readiness = response.get("readiness")
+    if isinstance(readiness, Mapping):
+        return {str(key): value for key, value in readiness.items()}
+    return {}
+
+
+def _rig_readiness_failures(
+    response: Mapping[str, object],
+    capabilities: Iterable[str],
+) -> dict[str, IntegrationNotReady]:
+    fixtures = response.get("fixtures")
+    if not isinstance(fixtures, Mapping):
+        return {}
+    failures: dict[str, IntegrationNotReady] = {}
+    for name, fixture_response in fixtures.items():
+        if not isinstance(fixture_response, Mapping):
+            failures[str(name)] = IntegrationNotReady({}, capabilities)
+            continue
+        try:
+            integration_require(
+                _fixture_readiness_payload(fixture_response),
+                capabilities,
+            )
+        except IntegrationNotReady as exc:
+            failures[str(name)] = exc
+    return failures
 
 
 def _capabilities_response(

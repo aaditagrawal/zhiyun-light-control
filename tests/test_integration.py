@@ -5,9 +5,15 @@ from unittest.mock import patch
 
 from zhiyun_light_control import (
     AsyncLightIntegration,
+    IntegrationNotReady,
     LightConnectionConfig,
     LightIntegration,
     Scene,
+    integration_pending_action_ids,
+    integration_ready,
+    integration_ready_for,
+    integration_require,
+    integration_warnings,
     local_async_devices,
     local_async_integration_snapshot,
     local_async_readiness,
@@ -388,6 +394,70 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(devices.call_args_list[0].kwargs["include_ble_status"])
         self.assertTrue(devices.call_args_list[1].kwargs["include_ble"])
 
+    def test_light_integration_readiness_guards_fail_closed(self) -> None:
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            allow_control=False,
+            light_factory=FakeFactory(FakeStatusLight()),
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.test",
+                    "ports": [],
+                },
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            self.assertTrue(integration.ready("read_status"))
+            self.assertEqual(
+                integration.pending_action_ids(capability="control_requests"),
+                ["enable-control"],
+            )
+            with self.assertRaises(IntegrationNotReady) as error:
+                integration.require_control_ready()
+
+        self.assertEqual(error.exception.capabilities, ("control_requests",))
+        self.assertEqual(
+            error.exception.pending_action_ids,
+            {"control_requests": ["enable-control"]},
+        )
+        self.assertIn("Write endpoints are disabled", error.exception.warnings[0])
+
+    def test_integration_readiness_helpers_accept_snapshots(self) -> None:
+        snapshot = {
+            "payloads": {
+                "ready": {
+                    "ready_for": {
+                        "read_status": True,
+                        "confirmed_control": False,
+                    },
+                    "requirements": {
+                        "confirmed_control": {
+                            "pending_actions": ["confirm-control"]
+                        }
+                    },
+                    "warnings": ["No ACK-confirmed control request is recorded yet."],
+                }
+            }
+        }
+
+        self.assertTrue(integration_ready(snapshot, "read_status"))
+        self.assertFalse(integration_ready_for(snapshot)["confirmed_control"])
+        self.assertEqual(
+            integration_pending_action_ids(snapshot),
+            ["confirm-control"],
+        )
+        self.assertEqual(
+            integration_warnings(snapshot),
+            ["No ACK-confirmed control request is recorded yet."],
+        )
+        with self.assertRaises(IntegrationNotReady):
+            integration_require(snapshot, ("confirmed_control",))
+
     def test_light_integration_devices_use_configured_backend(self) -> None:
         integration = LightIntegration(
             config=LightConnectionConfig(
@@ -687,6 +757,30 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["payloads"]["manifest"]["presets"], ["key"])
         self.assertTrue(devices.call_args_list[0].kwargs["include_ble_status"])
         self.assertTrue(devices.call_args_list[1].kwargs["include_ble"])
+
+    async def test_async_light_integration_readiness_guard(self) -> None:
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            allow_control=True,
+            light_factory=AsyncFakeFactory(AsyncFakeStatusLight()),
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            self.assertTrue(await integration.ready("control_requests"))
+            with self.assertRaises(IntegrationNotReady) as error:
+                await integration.require_control_ready(strict=True)
+
+        self.assertEqual(error.exception.capabilities, ("confirmed_control",))
+        self.assertEqual(
+            error.exception.pending_action_ids,
+            {"confirmed_control": ["confirm-control"]},
+        )
 
     async def test_async_light_integration_devices_use_threaded_local_path(
         self,

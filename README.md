@@ -665,6 +665,11 @@ Validation reports also have `validation_summary()`, `validation_ready_for()`,
 `validation_ready()`, `validation_category()`, and
 `validation_unconfirmed_names()` helpers for consuming `summary.ready_for` and
 per-category evidence without hand-parsing the nested JSON.
+Embedded SDK integrations expose the same guard semantics with
+`integration.ready()`, `integration.pending_action_ids()`,
+`integration.require_readiness()`, and `integration.require_control_ready()`;
+the rig API also has `require_readiness()` and `require_readiness_all()` for
+fixture-scoped preflights.
 
 Host applications can get the same setup model without starting the HTTP bridge
 or shelling out to the CLI:
@@ -683,6 +688,7 @@ devices = integration.devices(include_ble_status=True)
 snapshot = integration.snapshot(include_ble_status=True)
 validation = integration.validate(include_object_reads=True)
 usb_discovery = integration.discover_usb(object_ids=(0, 1), first_words=(0x0100,))
+integration.require_readiness("read_status")
 
 print(ready["ready_for"])
 print(devices["usb"]["selected_port"])

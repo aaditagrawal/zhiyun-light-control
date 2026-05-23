@@ -49,6 +49,28 @@ from .validation import validate_async_light, validate_sync_light
 StatusSnapshot = tuple[dict[str, object], bool, str | None]
 
 
+class IntegrationNotReady(RuntimeError):
+    def __init__(
+        self,
+        payload: Mapping[str, object],
+        capabilities: Iterable[str],
+    ) -> None:
+        self.payload = _readiness_payload(payload)
+        self.capabilities = _capabilities_or_default(capabilities)
+        self.ready_for = integration_ready_for(self.payload)
+        self.pending_action_ids = {
+            capability: integration_pending_action_ids(
+                self.payload,
+                capability=capability,
+            )
+            for capability in self.capabilities
+            if not self.ready_for.get(capability, False)
+        }
+        self.warnings = integration_warnings(self.payload)
+        missing = ", ".join(self.pending_action_ids) or ", ".join(self.capabilities)
+        super().__init__(f"integration not ready for {missing}")
+
+
 @dataclass(frozen=True)
 class LightIntegration:
     """Reusable setup/preflight facade for embedding in host applications."""
@@ -81,6 +103,92 @@ class LightIntegration:
             state_version=state_version,
             state=state,
             light_factory=self.light_factory,
+        )
+
+    def ready_for(
+        self,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> dict[str, bool]:
+        return integration_ready_for(
+            self.readiness(
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                state_version=state_version,
+                state=state,
+            )
+        )
+
+    def ready(
+        self,
+        capability: str,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> bool:
+        return self.ready_for(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=state_version,
+            state=state,
+        ).get(capability, False)
+
+    def pending_action_ids(
+        self,
+        *,
+        capability: str | None = None,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> list[str]:
+        return integration_pending_action_ids(
+            self.readiness(
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                state_version=state_version,
+                state=state,
+            ),
+            capability=capability,
+        )
+
+    def require_readiness(
+        self,
+        *capabilities: str,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        payload = self.readiness(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=state_version,
+            state=state,
+        )
+        return integration_require(payload, capabilities)
+
+    def require_control_ready(
+        self,
+        *,
+        strict: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        capability = "confirmed_control" if strict else "control_requests"
+        return self.require_readiness(
+            capability,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=state_version,
+            state=state,
         )
 
     def manifest(self) -> dict[str, object]:
@@ -303,6 +411,94 @@ class AsyncLightIntegration:
             state_version=state_version,
             state=state,
             light_factory=self.light_factory,
+        )
+
+    async def ready_for(
+        self,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> dict[str, bool]:
+        return integration_ready_for(
+            await self.readiness(
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                state_version=state_version,
+                state=state,
+            )
+        )
+
+    async def ready(
+        self,
+        capability: str,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> bool:
+        return (
+            await self.ready_for(
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                state_version=state_version,
+                state=state,
+            )
+        ).get(capability, False)
+
+    async def pending_action_ids(
+        self,
+        *,
+        capability: str | None = None,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> list[str]:
+        return integration_pending_action_ids(
+            await self.readiness(
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                state_version=state_version,
+                state=state,
+            ),
+            capability=capability,
+        )
+
+    async def require_readiness(
+        self,
+        *capabilities: str,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        payload = await self.readiness(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=state_version,
+            state=state,
+        )
+        return integration_require(payload, capabilities)
+
+    async def require_control_ready(
+        self,
+        *,
+        strict: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        state_version: int = 0,
+        state: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        capability = "confirmed_control" if strict else "control_requests"
+        return await self.require_readiness(
+            capability,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=state_version,
+            state=state,
         )
 
     def manifest(self) -> dict[str, object]:
@@ -591,6 +787,61 @@ def local_usb_discovery(
             sleep=sleep,
         )
     return report.to_dict()
+
+
+def integration_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:
+    ready_for = _readiness_payload(payload).get("ready_for")
+    if not isinstance(ready_for, Mapping):
+        return {}
+    return {
+        str(capability): ready is True
+        for capability, ready in ready_for.items()
+    }
+
+
+def integration_ready(payload: Mapping[str, object], capability: str) -> bool:
+    return integration_ready_for(payload).get(capability, False)
+
+
+def integration_pending_action_ids(
+    payload: Mapping[str, object],
+    *,
+    capability: str | None = None,
+) -> list[str]:
+    readiness = _readiness_payload(payload)
+    if capability is not None:
+        return _pending_ids_from_requirement(readiness, capability)
+    requirements = readiness.get("requirements")
+    pending: list[str] = []
+    seen: set[str] = set()
+    if isinstance(requirements, Mapping):
+        for requirement in requirements.values():
+            if not isinstance(requirement, Mapping):
+                continue
+            _append_pending_ids(requirement.get("pending_actions"), pending, seen)
+    summary = readiness.get("summary")
+    if isinstance(summary, Mapping):
+        _append_pending_ids(summary.get("pending_action_ids"), pending, seen)
+    return pending
+
+
+def integration_warnings(payload: Mapping[str, object]) -> list[str]:
+    warnings = _readiness_payload(payload).get("warnings")
+    if not isinstance(warnings, list):
+        return []
+    return [str(warning) for warning in warnings]
+
+
+def integration_require(
+    payload: Mapping[str, object],
+    capabilities: Iterable[str],
+) -> dict[str, object]:
+    readiness = _readiness_payload(payload)
+    required = _capabilities_or_default(capabilities)
+    ready_for = integration_ready_for(readiness)
+    if all(ready_for.get(capability, False) for capability in required):
+        return readiness
+    raise IntegrationNotReady(readiness, required)
 
 
 async def local_async_usb_discovery(
@@ -1074,6 +1325,59 @@ def _report_to_dict(report: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError("status reader to_dict() must return a dict")
     return {str(key): value for key, value in payload.items()}
+
+
+def _readiness_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    if isinstance(payload.get("ready_for"), Mapping):
+        return {str(key): value for key, value in payload.items()}
+    nested_payloads = payload.get("payloads")
+    if isinstance(nested_payloads, Mapping):
+        ready = nested_payloads.get("ready")
+        if isinstance(ready, Mapping):
+            return {str(key): value for key, value in ready.items()}
+    snapshot = payload.get("snapshot")
+    if isinstance(snapshot, Mapping):
+        snapshot_payloads = snapshot.get("payloads")
+        if isinstance(snapshot_payloads, Mapping):
+            ready = snapshot_payloads.get("ready")
+            if isinstance(ready, Mapping):
+                return {str(key): value for key, value in ready.items()}
+    return {str(key): value for key, value in payload.items()}
+
+
+def _capabilities_or_default(capabilities: Iterable[str]) -> tuple[str, ...]:
+    items = tuple(str(capability) for capability in capabilities)
+    return items or ("read_status",)
+
+
+def _pending_ids_from_requirement(
+    payload: Mapping[str, object],
+    capability: str,
+) -> list[str]:
+    requirements = payload.get("requirements")
+    if not isinstance(requirements, Mapping):
+        return []
+    requirement = requirements.get(capability)
+    if not isinstance(requirement, Mapping):
+        return []
+    pending: list[str] = []
+    _append_pending_ids(requirement.get("pending_actions"), pending, set())
+    return pending
+
+
+def _append_pending_ids(
+    values: object,
+    pending: list[str],
+    seen: set[str],
+) -> None:
+    if not isinstance(values, list):
+        return
+    for value in values:
+        action_id = str(value)
+        if action_id in seen:
+            continue
+        seen.add(action_id)
+        pending.append(action_id)
 
 
 async def _await_report(report: object) -> object:

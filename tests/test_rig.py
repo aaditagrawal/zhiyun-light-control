@@ -13,6 +13,7 @@ from zhiyun_light_control import (
     LightFixture,
     LightRig,
     RigConfigError,
+    RigNotReady,
     Scene,
     async_rig_from_mapping,
     fixture_from_mapping,
@@ -354,6 +355,31 @@ class LightRigTests(unittest.TestCase):
         self.assertTrue(readiness["ready_for"]["control_requests"])
         self.assertEqual(readiness["state"]["version"], 1)
 
+    def test_require_readiness_all_raises_with_fixture_pending_actions(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [LightFixture("key")],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": True, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            response = rig.require_readiness_all("read_status")
+            with self.assertRaises(RigNotReady) as error:
+                rig.require_readiness_all("control_requests")
+
+        self.assertTrue(response["applied"])
+        self.assertEqual(error.exception.capabilities, ("control_requests",))
+        self.assertEqual(
+            error.exception.pending_action_ids,
+            {"key": {"control_requests": ["enable-control"]}},
+        )
+
     def test_snapshot_all_includes_capabilities_readiness_and_fixture_metadata(
         self,
     ) -> None:
@@ -532,6 +558,39 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response["applied"])
         self.assertTrue(readiness["ready_for"]["read_status"])
         self.assertEqual(readiness["state"]["version"], 1)
+
+    async def test_async_require_readiness_all_raises_for_unready_fixture(
+        self,
+    ) -> None:
+        key = AsyncFakeLight("key")
+        rig = AsyncLightRig(
+            [LightFixture("key")],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            response = await rig.require_readiness_all(
+                "control_requests",
+                allow_control=True,
+            )
+            with self.assertRaises(RigNotReady) as error:
+                await rig.require_readiness_all(
+                    "confirmed_control",
+                    allow_control=True,
+                )
+
+        self.assertTrue(response["applied"])
+        self.assertEqual(error.exception.capabilities, ("confirmed_control",))
+        self.assertEqual(
+            error.exception.pending_action_ids,
+            {"key": {"confirmed_control": ["confirm-control"]}},
+        )
 
     async def test_async_snapshot_all_returns_per_fixture_integration_payload(
         self,
