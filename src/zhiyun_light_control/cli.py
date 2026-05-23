@@ -23,6 +23,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
+from .sacn import serve_sacn
 from .server import serve
 from .transports.ble import scan_zhiyun_devices, scan_zhiyun_devices_safe
 
@@ -127,6 +128,21 @@ def build_parser() -> argparse.ArgumentParser:
     artnet.add_argument("--cct-max", type=int, default=6500)
     artnet.add_argument("--allow-control", action="store_true")
     artnet.set_defaults(func=cmd_artnet_serve)
+
+    sacn = sub.add_parser("sacn-serve", help="Run an sACN / E1.31 DMX bridge.")
+    sacn.add_argument("--host", default="0.0.0.0")
+    sacn.add_argument("--port", type=int, default=5568)
+    sacn.add_argument("--universe", type=parse_int, default=1)
+    add_bridge_transport_args(sacn)
+    sacn.add_argument("--obj", type=parse_int, default=1)
+    sacn.add_argument("--brightness-channel", type=parse_optional_int, default=1)
+    sacn.add_argument("--cct-channel", type=parse_optional_int, default=2)
+    sacn.add_argument("--sleep-channel", type=parse_optional_int)
+    sacn.add_argument("--cct-min", type=int, default=2700)
+    sacn.add_argument("--cct-max", type=int, default=6500)
+    sacn.add_argument("--multicast", action="store_true")
+    sacn.add_argument("--allow-control", action="store_true")
+    sacn.set_defaults(func=cmd_sacn_serve)
 
     return parser
 
@@ -425,6 +441,27 @@ def cmd_artnet_serve(args: argparse.Namespace) -> int:
             cct_min=args.cct_min,
             cct_max=args.cct_max,
         ),
+        allow_control=args.allow_control,
+    )
+    return 0
+
+
+def cmd_sacn_serve(args: argparse.Namespace) -> int:
+    serve_sacn(
+        host=args.host,
+        port=args.port,
+        universe=args.universe,
+        light_port=args.light_port,
+        light_factory=bridge_light_factory(args),
+        mapping=DmxMapping(
+            obj=args.obj,
+            brightness_channel=args.brightness_channel,
+            cct_channel=args.cct_channel,
+            sleep_channel=args.sleep_channel,
+            cct_min=args.cct_min,
+            cct_max=args.cct_max,
+        ),
+        multicast=args.multicast,
         allow_control=args.allow_control,
     )
     return 0

@@ -61,10 +61,10 @@ The local HTTP bridge is intentionally small and JSON-only:
 
 Control endpoints require `zlight serve --allow-control`. Responses include command result details instead of hiding timeouts, because some endpoints are still experimental on the current G60.
 
-The local bridges default to USB, but `serve`, `osc-serve`, and `artnet-serve`
-also accept `--transport ble` with `--address` or `--name-contains`. BLE bridge
-mode uses the same command payload builders as USB and adapts the async BLE
-client behind the synchronous stdlib bridge servers.
+The local bridges default to USB, but `serve`, `osc-serve`, `artnet-serve`, and
+`sacn-serve` also accept `--transport ble` with `--address` or
+`--name-contains`. BLE bridge mode uses the same command payload builders as USB
+and adapts the async BLE client behind the synchronous stdlib bridge servers.
 The bridge CLI keeps one USB/BLE light connection open by default so repeated
 media-control messages do not reconnect for every request. Use
 `--no-persistent-light` to restore per-request connections.
@@ -93,6 +93,12 @@ The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and map
 | 3 | disabled | Sleep/power, values below 128 map to `1`, values 128+ map to `0` |
 
 Power/sleep is opt-in because that command's exact device semantics still need more live validation. Use `zlight artnet-serve --sleep-channel 3 --allow-control` to enable it. Repeated identical scenes are dropped so a steady DMX stream does not spam the USB/BLE transport.
+
+The sACN/E1.31 bridge listens for DMX data packets on UDP port `5568`, defaults
+to universe `1`, and uses the same `DmxMapping` channel map as Art-Net. Use
+`zlight sacn-serve --multicast --allow-control` to join the universe multicast
+group, or omit `--multicast` for unicast/local test traffic. Repeated identical
+scenes are dropped the same way as Art-Net.
 
 ## Updater Identity Frame
 

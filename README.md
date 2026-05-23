@@ -22,6 +22,7 @@ Implemented but still experimental:
 - Local JSON HTTP bridge for wider media-production automation.
 - Local OSC/UDP bridge for QLab, TouchDesigner, Max/MSP, Resolume, and similar tools.
 - Local Art-Net/DMX bridge for lighting desks and media servers.
+- Local sACN/E1.31 DMX bridge for lighting desks and media servers.
 - Scene application for media workflows that need to set several light properties together.
 
 Firmware flashing is intentionally not part of this package. Use Zhiyun's official updater for firmware writes.
@@ -99,6 +100,7 @@ same control surface:
 zlight serve --transport ble --address AA:BB:CC:DD:EE:FF --allow-control
 zlight osc-serve --transport ble --name-contains MOLUS --allow-control
 zlight artnet-serve --transport ble --name-contains MOLUS --allow-control
+zlight sacn-serve --transport ble --name-contains MOLUS --allow-control
 ```
 
 Bridge commands keep one light connection open by default for live control
@@ -145,6 +147,12 @@ Start the local Art-Net bridge:
 zlight artnet-serve --host 0.0.0.0 --port 6454 --universe 0 --allow-control
 ```
 
+Start the local sACN/E1.31 bridge:
+
+```sh
+zlight sacn-serve --host 0.0.0.0 --port 5568 --universe 1 --multicast --allow-control
+```
+
 Default DMX mapping:
 
 ```text
@@ -156,12 +164,14 @@ Power/sleep is intentionally disabled by default. To opt in:
 
 ```sh
 zlight artnet-serve --sleep-channel 3 --allow-control
+zlight sacn-serve --sleep-channel 3 --allow-control
 ```
 
 Use `none` to disable a mapped channel:
 
 ```sh
 zlight artnet-serve --cct-channel none --allow-control
+zlight sacn-serve --cct-channel none --allow-control
 ```
 
 ## Python API
@@ -181,10 +191,11 @@ with ZhiyunLight.usb() as light:
 Map a DMX frame to the same scene model:
 
 ```python
-from zhiyun_light_control import DmxMapping, LightConnectionConfig, make_light_factory, scene_from_dmx
+from zhiyun_light_control import DmxMapping, LightConnectionConfig, encode_sacn, make_light_factory, scene_from_dmx
 
 scene = scene_from_dmx(bytes([128, 255]), DmxMapping(obj=1))
 print(scene)
+print(encode_sacn(bytes([128, 255]), universe=1).hex())
 
 with make_light_factory(LightConnectionConfig(transport="usb", persistent=True))() as light:
     light.apply_scene(scene)

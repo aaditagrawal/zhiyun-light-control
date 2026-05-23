@@ -11,6 +11,7 @@ from .protocol import (
     build_updater_frame,
     iter_frames,
 )
+from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 
 __all__ = [
     "AsyncZhiyunLight",
@@ -23,12 +24,16 @@ __all__ = [
     "ParsedFrame",
     "ProbeResult",
     "Scene",
+    "SacnPacket",
     "ZhiyunLight",
     "build_runtime_frame",
     "build_updater_frame",
     "decode_artdmx",
+    "decode_sacn",
     "encode_artdmx",
+    "encode_sacn",
     "iter_frames",
+    "sacn_multicast_address",
     "make_light_factory",
     "scene_from_dmx",
 ]
