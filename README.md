@@ -778,6 +778,42 @@ print(controller.state_snapshot())
 print(controller.state_history(limit=5))
 ```
 
+For multi-light setups, use named fixtures and a rig controller. Each fixture can
+use its own USB or BLE `LightConnectionConfig`, and scene mappings without `obj`
+inherit the fixture object id:
+
+```python
+from zhiyun_light_control import LightConnectionConfig, LightFixture, LightRig
+
+rig = LightRig(
+    [
+        LightFixture(
+            "key",
+            LightConnectionConfig(transport="usb"),
+            obj=1,
+            tags=("set",),
+        ),
+        LightFixture(
+            "rim",
+            LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            obj=1,
+            tags=("set",),
+        ),
+    ],
+    require_acknowledged=True,
+)
+
+look = rig.apply_scene_map(
+    {
+        "key": {"brightness": 35, "kelvin": 5600},
+        "rim": {"brightness": 20, "kelvin": 3200},
+    },
+    stop_on_unconfirmed=True,
+)
+print(look["applied"], look["reason"])
+print(rig.blackout(tag="set")["applied"])
+```
+
 For event-loop based systems, use the async controller directly. This is the
 preferred SDK surface for native BLE integrations on Linux, Windows, or macOS
 when the host app already runs asyncio:

@@ -126,6 +126,12 @@ from .protocol import (
     build_updater_frame,
     iter_frames,
 )
+from .rig import (
+    AsyncLightRig,
+    LightFixture,
+    LightRig,
+    fixture_from_mapping,
+)
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 from .state import SceneState, SceneStateTracker
 from .status import LightStatusReport, read_async_status, read_sync_status
@@ -159,6 +165,7 @@ __all__ = [
     "AsyncZhiyunLight",
     "AsyncLightIntegration",
     "AsyncLightController",
+    "AsyncLightRig",
     "AsyncProbeResult",
     "ArtDmxPacket",
     "BLE_PROFILE_NAMES",
@@ -193,6 +200,8 @@ __all__ = [
     "LightBridgeNotReady",
     "LightBridgeUnconfirmed",
     "LightIntegration",
+    "LightFixture",
+    "LightRig",
     "LightStatusReport",
     "HardwareValidationReport",
     "MacosBleAppTransport",
@@ -260,6 +269,7 @@ __all__ = [
     "encode_artdmx",
     "encode_sacn",
     "flatten_command_batches",
+    "fixture_from_mapping",
     "iter_frames",
     "inspect_ble_device",
     "local_async_devices",
