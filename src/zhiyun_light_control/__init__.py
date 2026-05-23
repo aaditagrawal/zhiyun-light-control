@@ -4,10 +4,16 @@ from .client import ProbeResult, ZhiyunLight
 from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .artnet import ArtDmxPacket, DmxMapping, decode_artdmx, encode_artdmx, scene_from_dmx
 from .bridge import LightConnectionConfig, PersistentLightFactory, make_light_factory
+from .discovery import (
+    DiscoveryAttempt,
+    UsbDiscoveryReport,
+    discover_usb_primitives,
+)
 from .models import CommandResult, Scene
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .protocol import (
     ParsedFrame,
+    build_frame,
     build_runtime_frame,
     build_updater_frame,
     iter_frames,
@@ -28,6 +34,7 @@ __all__ = [
     "ArtDmxPacket",
     "CommandResult",
     "DmxMapping",
+    "DiscoveryAttempt",
     "LightConnectionConfig",
     "HardwareValidationReport",
     "PersistentLightFactory",
@@ -41,7 +48,9 @@ __all__ = [
     "SceneTransition",
     "ScenePresetLibrary",
     "SacnPacket",
+    "UsbDiscoveryReport",
     "ZhiyunLight",
+    "build_frame",
     "build_runtime_frame",
     "build_updater_frame",
     "decode_artdmx",
@@ -56,6 +65,7 @@ __all__ = [
     "scene_from_dmx",
     "scene_transition",
     "interpolate_scene",
+    "discover_usb_primitives",
     "validate_async_light",
     "validate_sync_light",
 ]

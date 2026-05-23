@@ -5,6 +5,8 @@ import unittest
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
     UpdaterCommand,
+    brightness_with_mode_payload,
+    build_frame,
     build_runtime_frame,
     build_updater_frame,
     first_frame,
@@ -22,6 +24,11 @@ class ProtocolTests(unittest.TestCase):
     def test_runtime_frame_matches_live_probe(self) -> None:
         frame = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
         self.assertEqual(frame.hex(), "243c0600000101000320d4ad")
+
+    def test_custom_frame_builder_sets_first_word(self) -> None:
+        frame = build_frame(0x0301, 1, RuntimeCommand.DEVICE_INFO)
+        parsed = first_frame(frame)
+        self.assertEqual(parsed.first_word, 0x0301)
 
     def test_updater_frame_matches_live_probe(self) -> None:
         frame = build_updater_frame(7, UpdaterCommand.CHIP_SYNC)
@@ -52,6 +59,10 @@ class ProtocolTests(unittest.TestCase):
         self.assertIsNone(
             first_response_frame(tx, tx=tx, cmd=RuntimeCommand.BRIGHTNESS)
         )
+
+    def test_brightness_with_mode_payload_shape(self) -> None:
+        payload = brightness_with_mode_payload(1, 35.0, 1)
+        self.assertEqual(payload.hex(), "01000100000c4201")
 
     def test_parse_device_info_after_upgrade(self) -> None:
         rx = bytes.fromhex(

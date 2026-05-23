@@ -9,10 +9,11 @@ from typing import Any
 
 from .models import CommandResult, Scene
 from .protocol import (
+    RUNTIME_TYPE,
     RuntimeCommand,
+    UPDATER_DEVICE,
     UpdaterCommand,
-    build_runtime_frame,
-    build_updater_frame,
+    build_frame,
     brightness_payload,
     cct_payload,
     first_response_frame,
@@ -79,7 +80,17 @@ class ZhiyunLight:
         *,
         timeout: float = 0.8,
     ) -> CommandResult:
-        tx = build_runtime_frame(next(self._seq), cmd, payload)
+        return self.exchange_frame(RUNTIME_TYPE, cmd, payload, timeout=timeout)
+
+    def exchange_frame(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        tx = build_frame(first_word, next(self._seq), cmd, payload)
         rx = self.transport.exchange(tx, timeout=timeout)
         frames = tuple(iter_frames(rx))
         return CommandResult(
@@ -100,16 +111,7 @@ class ZhiyunLight:
         *,
         timeout: float = 0.8,
     ) -> CommandResult:
-        tx = build_updater_frame(next(self._seq), cmd, payload)
-        rx = self.transport.exchange(tx, timeout=timeout)
-        frames = tuple(iter_frames(rx))
-        return CommandResult(
-            command=cmd & 0xFFFF,
-            tx=tx,
-            rx=rx,
-            frames=frames,
-            ack=first_response_frame(rx, tx=tx, cmd=cmd),
-        )
+        return self.exchange_frame(UPDATER_DEVICE, cmd, payload, timeout=timeout)
 
     def updater_command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
         return self.exchange_updater(cmd, payload, timeout=timeout).ack

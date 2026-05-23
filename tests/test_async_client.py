@@ -60,6 +60,15 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([frame.payload[2] for frame in frames[:3]], [0, 0, 0])
         self.assertEqual([frame.payload[:2] for frame in frames], [b"\x07\x00"] * 6)
 
+    async def test_async_exchange_frame_allows_custom_first_word(self) -> None:
+        transport = AsyncEchoAckTransport()
+        light = AsyncZhiyunLight(transport)
+
+        result = await light.exchange_frame(0x0301, RuntimeCommand.DEVICE_INFO)
+
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(first_frame(transport.sent[0]).first_word, 0x0301)
+
     async def test_async_apply_scene_orders_media_workflow_commands(self) -> None:
         transport = AsyncEchoAckTransport()
         light = AsyncZhiyunLight(transport)

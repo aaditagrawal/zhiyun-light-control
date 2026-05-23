@@ -21,7 +21,7 @@ Known global runtime commands:
 | `0x2003` | Device info | Verified USB |
 | `0x8001` | Firmware version | Verified USB |
 | `0x2001` | Voltage/status | Verified USB |
-| `0x2005` | Device id | Verified USB after firmware `1.6.4`; returned `0` before registration and `1` after registration in this session |
+| `0x2005` | Device id | Verified USB after firmware `1.6.4`; returned `0` in the current session |
 | `0x0006` | Register to default group | Verified USB ACK |
 
 Known object commands:
@@ -33,12 +33,13 @@ Known object commands:
 | `0x1003` | RGB | `u16 obj, u8 op, u16 r, u16 g, u16 b` |
 | `0x1008` | Sleep/power | `u16 obj, u8 op, u8 value` |
 | `0x100a` | HSI | `u16 obj, u8 op, float h, float s, u16 intensity` |
+| `0x100b` | Brightness plus mode | `u16 obj, u8 op, float brightness, i8 mode` |
 | `0x1101` | Identify | `u16 obj` |
 | `0x1201` | Voltage by object | `u16 obj` |
 | `0x1202` | Firmware by object | `u16 obj` |
 | `0x1203` | Device mode | `u16 obj` |
 
-Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0` and `1` did not respond.
+Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0`, `1`, `2`, `100`, `0x8001`, `0x8064`, and `0xffff` did not respond. The `zlight discover-usb` matrix also tested first-word values `0x0100`, `0x0101`, `0x0103`, and `0x0301`; only `0x0301` produced an exact echo for `read_brightness_obj0`, not a device ACK. Optional safe control candidates for sleep, brightness, CCT, and brightness-plus-mode also timed out over USB.
 
 The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, echo detection, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, `echoed_write`, or `response_without_matching_ack`.
 

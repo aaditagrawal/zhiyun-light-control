@@ -81,6 +81,17 @@ The validation report separates ACK-confirmed primitives from frames that were
 sent but not acknowledged by the device. Use `--strict` when you want a non-zero
 exit unless every attempted command was ACK-confirmed.
 
+Run the broader USB discovery matrix while working on unknown primitive shapes:
+
+```sh
+uv run zlight discover-usb --object-ids 0,1,2,100,0x8001,0x8064,0xffff
+uv run zlight discover-usb --allow-control --timeout 0.5
+```
+
+`discover-usb` is for bench work. It records global reads, object-read
+candidates, first-word probes, and optional safe control candidates with the
+same ACK/timeout/echo evidence model used by validation.
+
 Apply a simple scene:
 
 ```sh
@@ -389,6 +400,7 @@ Useful live checks:
 
 ```sh
 uv run zlight probe --transport usb
+uv run zlight discover-usb --object-ids 0,1
 uv run --extra ble zlight scan-ble --timeout 8
 ```
 

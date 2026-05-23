@@ -9,8 +9,9 @@ from typing import Any
 
 from .models import CommandResult, Scene
 from .protocol import (
+    RUNTIME_TYPE,
     RuntimeCommand,
-    build_runtime_frame,
+    build_frame,
     brightness_payload,
     cct_payload,
     first_response_frame,
@@ -80,7 +81,17 @@ class AsyncZhiyunLight:
         *,
         timeout: float = 1.5,
     ) -> CommandResult:
-        tx = build_runtime_frame(next(self._seq), cmd, payload)
+        return await self.exchange_frame(RUNTIME_TYPE, cmd, payload, timeout=timeout)
+
+    async def exchange_frame(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        tx = build_frame(first_word, next(self._seq), cmd, payload)
         rx = await self.transport.exchange(tx, timeout=timeout)
         frames = tuple(iter_frames(rx))
         return CommandResult(

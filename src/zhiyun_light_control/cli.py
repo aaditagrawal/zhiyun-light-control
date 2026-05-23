@@ -10,6 +10,11 @@ from .async_client import AsyncZhiyunLight
 from .artnet import DmxMapping, serve_artnet
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
+from .discovery import (
+    DEFAULT_DISCOVERY_FIRST_WORDS,
+    DEFAULT_DISCOVERY_OBJECT_IDS,
+    discover_usb_primitives,
+)
 from .models import CommandResult, Scene
 from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
@@ -79,6 +84,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate.add_argument("--json", action="store_true", help="Print compact JSON.")
     validate.set_defaults(func=cmd_validate)
+
+    discover = sub.add_parser(
+        "discover-usb",
+        help="Run a bounded USB protocol discovery matrix.",
+    )
+    discover.add_argument("--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*.")
+    discover.add_argument("--timeout", type=float, default=0.5)
+    discover.add_argument(
+        "--object-ids",
+        type=parse_int_list,
+        default=DEFAULT_DISCOVERY_OBJECT_IDS,
+        help="Comma-separated object ids to probe. Default: 0,1.",
+    )
+    discover.add_argument(
+        "--first-words",
+        type=parse_int_list,
+        default=DEFAULT_DISCOVERY_FIRST_WORDS,
+        help="Comma-separated frame first-word values to probe.",
+    )
+    discover.add_argument("--allow-control", action="store_true")
+    discover.add_argument("--brightness", type=float, default=35.0)
+    discover.add_argument("--kelvin", type=int, default=5600)
+    discover.add_argument("--sleep", type=int, default=0)
+    discover.add_argument("--json", action="store_true", help="Print compact JSON.")
+    discover.set_defaults(func=cmd_discover_usb)
 
     scan = sub.add_parser("scan-ble", help="Scan for likely Zhiyun BLE devices.")
     scan.add_argument("--timeout", type=float, default=5.0)
@@ -220,6 +250,13 @@ def parse_optional_int(text: str) -> int | None:
     return int(text, 0)
 
 
+def parse_int_list(text: str) -> tuple[int, ...]:
+    values = tuple(parse_int(part.strip()) for part in text.split(",") if part.strip())
+    if not values:
+        raise argparse.ArgumentTypeError("expected at least one integer")
+    return values
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     if args.transport == "ble":
         result = asyncio.run(_probe_ble(args)).to_dict()
@@ -271,6 +308,22 @@ def cmd_validate(args: argparse.Namespace) -> int:
     if args.strict and not report.all_attempted_confirmed:
         return 1
     return 0 if report.connection_confirmed else 1
+
+
+def cmd_discover_usb(args: argparse.Namespace) -> int:
+    with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+        report = discover_usb_primitives(
+            light,
+            object_ids=args.object_ids,
+            first_words=args.first_words,
+            timeout=args.timeout,
+            allow_control=args.allow_control,
+            brightness=args.brightness,
+            kelvin=args.kelvin,
+            sleep=args.sleep,
+        )
+    print_json(report.to_dict(), compact=args.json)
+    return 0 if report.confirmed else 1
 
 
 async def _validate_ble(args: argparse.Namespace):

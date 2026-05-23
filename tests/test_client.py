@@ -80,6 +80,15 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(result.transport_status, "acknowledged")
         self.assertEqual(result.ack.payload, b"\x00")
 
+    def test_exchange_frame_allows_custom_first_word_for_discovery(self) -> None:
+        transport = EchoAckTransport()
+        light = ZhiyunLight(transport)
+
+        result = light.exchange_frame(0x0301, RuntimeCommand.DEVICE_INFO)
+
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(first_frame(transport.sent[0]).first_word, 0x0301)
+
     def test_apply_scene_orders_media_workflow_commands(self) -> None:
         transport = EchoAckTransport()
         light = ZhiyunLight(transport)

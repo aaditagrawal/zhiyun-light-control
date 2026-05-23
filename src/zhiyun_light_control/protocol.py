@@ -118,13 +118,13 @@ def ascii_payload(data: bytes) -> str:
     return "".join(chr(byte) if 32 <= byte < 127 else "." for byte in data)
 
 
-def _build_frame(first_word: int, seq: int, cmd: int, payload: bytes) -> bytes:
+def build_frame(first_word: int, seq: int, cmd: int, payload: bytes = b"") -> bytes:
     body = struct.pack("<HHH", first_word & 0xFFFF, seq & 0xFFFF, cmd & 0xFFFF) + payload
     return SOF + struct.pack("<H", len(body)) + body + struct.pack("<H", crc16(body))
 
 
 def build_runtime_frame(seq: int, cmd: int, payload: bytes = b"") -> bytes:
-    return _build_frame(RUNTIME_TYPE, seq, cmd, payload)
+    return build_frame(RUNTIME_TYPE, seq, cmd, payload)
 
 
 def build_updater_frame(
@@ -134,7 +134,7 @@ def build_updater_frame(
     *,
     device: int = UPDATER_DEVICE,
 ) -> bytes:
-    return _build_frame(device, seq, cmd, payload)
+    return build_frame(device, seq, cmd, payload)
 
 
 def iter_frames(buf: bytes) -> Iterable[ParsedFrame]:
@@ -259,6 +259,17 @@ def hsi_payload(
         0 if read else 1,
         struct.pack("<ffH", float(hue), float(saturation), intensity & 0xFFFF),
     )
+
+
+def brightness_with_mode_payload(
+    obj: int,
+    value: float = 0.0,
+    mode: int = 0,
+    *,
+    read: bool = False,
+) -> bytes:
+    payload = b"" if read else struct.pack("<fb", float(value), mode & 0xFF)
+    return functional_payload(obj, 0 if read else 1, payload)
 
 
 def sleep_payload(obj: int, value: int = 0, *, read: bool = False) -> bytes:
