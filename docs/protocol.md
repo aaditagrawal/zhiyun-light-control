@@ -112,6 +112,8 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/status` | ACK-backed global status reads with raw command evidence |
 | `GET` | `/validate` | Read-only hardware validation report |
 | `GET` | `/commands` | List bridge commands |
+| `GET` | `/capabilities` | Discover primitives, fields, and evidence statuses |
+| `GET` | `/diagnostics` | Check bridge transport readiness and next steps |
 | `GET` | `/presets` | List loaded named scene presets |
 | `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |

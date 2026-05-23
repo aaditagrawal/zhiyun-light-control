@@ -19,6 +19,7 @@ from .discovery import (
     UsbDiscoveryReport,
     discover_usb_primitives,
 )
+from .http_client import LightBridgeClient, LightBridgeError
 from .models import CommandResult, Scene
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .protocol import (
@@ -74,6 +75,8 @@ __all__ = [
     "DmxMapping",
     "DiscoveryAttempt",
     "LightConnectionConfig",
+    "LightBridgeClient",
+    "LightBridgeError",
     "LightStatusReport",
     "HardwareValidationReport",
     "MacosBleAppTransport",

@@ -357,6 +357,28 @@ uv run zlight sacn-serve --cct-channel none --allow-control
 
 ## Python API
 
+Use the stdlib HTTP client when your production app talks to a running bridge
+process instead of opening the USB/BLE transport itself:
+
+```python
+from zhiyun_light_control import LightBridgeClient, Scene
+
+bridge = LightBridgeClient("http://127.0.0.1:8765")
+
+print(bridge.diagnostics()["connection_confirmed"])
+print(bridge.capabilities()["evidence_statuses"])
+
+result = bridge.set_brightness(35, obj=1)
+print(result["transport_status"])
+
+scene = bridge.apply_scene(Scene(obj=1, sleep=0, brightness=35, kelvin=5600))
+print(scene["results"])
+```
+
+This wrapper preserves the bridge's JSON evidence fields, so callers should
+still check `acknowledged`, `transport_status`, and `/state` rather than assuming
+that a transmitted command was applied.
+
 ```python
 from zhiyun_light_control import Scene, ZhiyunLight
 
