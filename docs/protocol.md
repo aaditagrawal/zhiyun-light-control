@@ -240,6 +240,9 @@ sequence numbers without opening USB/BLE or requiring `--allow-control`.
 SDK callers can reach the same surface through `LightController.plan_scene()`,
 `plan_preset()`, `plan_transition()`, `plan_sequence()`, or the matching
 `LightBridgeClient` helpers when the HTTP bridge is the process boundary.
+Embedded hosts that already use `LightIntegration` or `AsyncLightIntegration`
+can attach preset/cue libraries there and call the same `plan_*` helpers before
+opening USB or BLE.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

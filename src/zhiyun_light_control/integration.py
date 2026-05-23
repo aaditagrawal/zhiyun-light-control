@@ -33,8 +33,9 @@ from .discovery import (
     DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
     discover_usb_primitives,
 )
+from .models import Scene
 from .presets import ScenePresetLibrary
-from .protocol import DEFAULT_CONTROL_MODE
+from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .server import (
     capabilities_response,
     integration_manifest_response,
@@ -80,6 +81,9 @@ class LightIntegration:
     preset_names: tuple[str, ...] = ()
     cue_names: tuple[str, ...] = ()
     light_factory: LightFactory | None = None
+    preset_library: ScenePresetLibrary | None = None
+    cue_library: CueLibrary | None = None
+    obj: int = 1
 
     def status(self) -> StatusSnapshot:
         return local_status_snapshot(
@@ -195,15 +199,15 @@ class LightIntegration:
         return local_manifest(
             self.config,
             allow_control=self.allow_control,
-            presets=self.preset_names,
-            cues=self.cue_names,
+            presets=self._preset_names(),
+            cues=self._cue_names(),
         )
 
     def capabilities(self) -> dict[str, object]:
         return local_capabilities(
             allow_control=self.allow_control,
-            presets=self.preset_names,
-            cues=self.cue_names,
+            presets=self._preset_names(),
+            cues=self._cue_names(),
         )
 
     def devices(
@@ -307,11 +311,141 @@ class LightIntegration:
         return LightController(
             self.config,
             light_factory=self.light_factory,
-            preset_library=preset_library,
-            cue_library=cue_library,
+            preset_library=self._preset_library(preset_library),
+            cue_library=self._cue_library(cue_library),
             state_tracker=state_tracker,
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
+        )
+
+    def plan_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(control_mode=control_mode).plan_scene(
+            scene,
+            obj=self._obj(obj),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+        ).plan_preset(
+            name,
+            overrides=overrides,
+            obj=self._obj(obj),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_transition(
+        self,
+        to_scene: Scene | Mapping[str, object],
+        *,
+        from_scene: Scene | Mapping[str, object] | None = None,
+        obj: int | None = None,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(control_mode=control_mode).plan_transition(
+            to_scene,
+            from_scene=from_scene,
+            obj=self._obj(obj),
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool = False,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+        ).plan_sequence(
+            steps,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+        ).plan_cue(
+            cue,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_named_cue(
+        self,
+        name: str,
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            cue_library=cue_library,
+            control_mode=control_mode,
+        ).plan_named_cue(
+            name,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            first_word=first_word,
+            start_seq=start_seq,
         )
 
     def snapshot(
@@ -327,8 +461,8 @@ class LightIntegration:
             allow_control=self.allow_control,
             include_ble=include_ble,
             include_ble_status=include_ble_status,
-            presets=self.preset_names,
-            cues=self.cue_names,
+            presets=self._preset_names(),
+            cues=self._cue_names(),
             state_version=state_version,
             state=state,
             light_factory=self.light_factory,
@@ -376,6 +510,24 @@ class LightIntegration:
             light_factory=self.light_factory,
         )
 
+    def _preset_library(
+        self,
+        explicit: ScenePresetLibrary | None,
+    ) -> ScenePresetLibrary | None:
+        return self.preset_library if explicit is None else explicit
+
+    def _cue_library(self, explicit: CueLibrary | None) -> CueLibrary | None:
+        return self.cue_library if explicit is None else explicit
+
+    def _preset_names(self) -> tuple[str, ...]:
+        return _integration_preset_names(self.preset_names, self.preset_library)
+
+    def _cue_names(self) -> tuple[str, ...]:
+        return _integration_cue_names(self.cue_names, self.cue_library)
+
+    def _obj(self, explicit: int | None) -> int:
+        return self.obj if explicit is None else explicit
+
 
 @dataclass(frozen=True)
 class AsyncLightIntegration:
@@ -388,6 +540,9 @@ class AsyncLightIntegration:
     preset_names: tuple[str, ...] = ()
     cue_names: tuple[str, ...] = ()
     light_factory: AsyncLightFactory | None = None
+    preset_library: ScenePresetLibrary | None = None
+    cue_library: CueLibrary | None = None
+    obj: int = 1
 
     async def status(self) -> StatusSnapshot:
         return await local_async_status_snapshot(
@@ -505,15 +660,15 @@ class AsyncLightIntegration:
         return local_manifest(
             self.config,
             allow_control=self.allow_control,
-            presets=self.preset_names,
-            cues=self.cue_names,
+            presets=self._preset_names(),
+            cues=self._cue_names(),
         )
 
     def capabilities(self) -> dict[str, object]:
         return local_capabilities(
             allow_control=self.allow_control,
-            presets=self.preset_names,
-            cues=self.cue_names,
+            presets=self._preset_names(),
+            cues=self._cue_names(),
         )
 
     async def devices(
@@ -617,11 +772,141 @@ class AsyncLightIntegration:
         return AsyncLightController(
             self.config,
             light_factory=self.light_factory,
-            preset_library=preset_library,
-            cue_library=cue_library,
+            preset_library=self._preset_library(preset_library),
+            cue_library=self._cue_library(cue_library),
             state_tracker=state_tracker,
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
+        )
+
+    def plan_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(control_mode=control_mode).plan_scene(
+            scene,
+            obj=self._obj(obj),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+        ).plan_preset(
+            name,
+            overrides=overrides,
+            obj=self._obj(obj),
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_transition(
+        self,
+        to_scene: Scene | Mapping[str, object],
+        *,
+        from_scene: Scene | Mapping[str, object] | None = None,
+        obj: int | None = None,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(control_mode=control_mode).plan_transition(
+            to_scene,
+            from_scene=from_scene,
+            obj=self._obj(obj),
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool = False,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+        ).plan_sequence(
+            steps,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            control_mode=control_mode,
+        ).plan_cue(
+            cue,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+
+    def plan_named_cue(
+        self,
+        name: str,
+        *,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        return self.controller(
+            preset_library=preset_library,
+            cue_library=cue_library,
+            control_mode=control_mode,
+        ).plan_named_cue(
+            name,
+            obj=self._obj(obj),
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            first_word=first_word,
+            start_seq=start_seq,
         )
 
     async def snapshot(
@@ -637,8 +922,8 @@ class AsyncLightIntegration:
             allow_control=self.allow_control,
             include_ble=include_ble,
             include_ble_status=include_ble_status,
-            presets=self.preset_names,
-            cues=self.cue_names,
+            presets=self._preset_names(),
+            cues=self._cue_names(),
             state_version=state_version,
             state=state,
             light_factory=self.light_factory,
@@ -685,6 +970,40 @@ class AsyncLightIntegration:
             control_mode=control_mode,
             light_factory=self.light_factory,
         )
+
+    def _preset_library(
+        self,
+        explicit: ScenePresetLibrary | None,
+    ) -> ScenePresetLibrary | None:
+        return self.preset_library if explicit is None else explicit
+
+    def _cue_library(self, explicit: CueLibrary | None) -> CueLibrary | None:
+        return self.cue_library if explicit is None else explicit
+
+    def _preset_names(self) -> tuple[str, ...]:
+        return _integration_preset_names(self.preset_names, self.preset_library)
+
+    def _cue_names(self) -> tuple[str, ...]:
+        return _integration_cue_names(self.cue_names, self.cue_library)
+
+    def _obj(self, explicit: int | None) -> int:
+        return self.obj if explicit is None else explicit
+
+
+def _integration_preset_names(
+    names: Iterable[str],
+    library: ScenePresetLibrary | None,
+) -> tuple[str, ...]:
+    explicit = tuple(names)
+    return explicit if explicit else () if library is None else tuple(library.names())
+
+
+def _integration_cue_names(
+    names: Iterable[str],
+    library: CueLibrary | None,
+) -> tuple[str, ...]:
+    explicit = tuple(names)
+    return explicit if explicit else () if library is None else tuple(library.names())
 
 
 def local_status_snapshot(

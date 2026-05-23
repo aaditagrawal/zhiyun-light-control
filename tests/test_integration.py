@@ -5,10 +5,12 @@ from unittest.mock import patch
 
 from zhiyun_light_control import (
     AsyncLightIntegration,
+    CueLibrary,
     IntegrationNotReady,
     LightConnectionConfig,
     LightIntegration,
     Scene,
+    ScenePresetLibrary,
     integration_pending_action_ids,
     integration_ready,
     integration_ready_for,
@@ -633,6 +635,74 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(light.control_modes, [0x01])
         self.assertEqual(light.scenes[0].brightness, 45)
 
+    def test_light_integration_plans_sdk_primitives_without_opening_light(
+        self,
+    ) -> None:
+        presets = ScenePresetLibrary.from_mapping(
+            {"key": {"brightness": 25, "kelvin": 5600}}
+        )
+        cues = CueLibrary.from_mapping(
+            {"intro": {"steps": [{"preset": "key"}], "stop_on_unconfirmed": True}}
+        )
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            light_factory=FakeFactory(FailingLight()),
+            preset_library=presets,
+            cue_library=cues,
+        )
+
+        scene = integration.plan_scene(
+            {"brightness": 12},
+            obj=2,
+            control_mode=0x01,
+            first_word=0x0301,
+            start_seq=3,
+        )
+        preset = integration.plan_preset(
+            "key",
+            overrides={"brightness": 30},
+            start_seq=scene["next_seq"],
+        )
+        transition = integration.plan_transition(
+            {"brightness": 40},
+            from_scene={"brightness": 20},
+            steps=2,
+            start_seq=7,
+        )
+        sequence = integration.plan_sequence(
+            [{"preset": "key"}, {"to": {"brightness": 35}, "steps": 1}],
+            stop_on_unconfirmed=True,
+            start_seq=11,
+        )
+        cue = integration.plan_named_cue(
+            "intro",
+            stop_on_unconfirmed=False,
+            start_seq=20,
+        )
+
+        self.assertEqual(integration.manifest()["presets"], ["key"])
+        self.assertEqual(integration.capabilities()["cues"], ["intro"])
+        self.assertTrue(scene["dry_run"])
+        self.assertEqual(scene["scene"]["obj"], 2)
+        self.assertEqual(scene["control_mode"], 0x01)
+        self.assertEqual(scene["first_word_hex"], "0x0301")
+        self.assertEqual(preset["scene"]["brightness"], 30.0)
+        self.assertEqual(preset["command_plan"]["start_seq"], scene["next_seq"])
+        self.assertEqual(
+            [
+                batch["scene"]["brightness"]
+                for batch in transition["command_batches"]
+            ],
+            [30.0, 40.0],
+        )
+        self.assertTrue(sequence["stop_on_unconfirmed"])
+        self.assertEqual(
+            [step["action"] for step in sequence["steps"]],
+            ["preset", "transition"],
+        )
+        self.assertEqual(cue["cue"], "intro")
+        self.assertFalse(cue["stop_on_unconfirmed"])
+
     def test_local_validation_reports_open_errors_without_raising(self) -> None:
         payload = local_validation(light_factory=FakeFactory(FailingLight()))
 
@@ -908,6 +978,74 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["action"], "scene")
         self.assertEqual(light.control_modes, [0x01])
         self.assertEqual(light.scenes[0].brightness, 45)
+
+    async def test_async_light_integration_plans_sdk_primitives_without_opening_light(
+        self,
+    ) -> None:
+        presets = ScenePresetLibrary.from_mapping(
+            {"key": {"brightness": 25, "kelvin": 5600}}
+        )
+        cues = CueLibrary.from_mapping(
+            {"intro": {"steps": [{"preset": "key"}], "stop_on_unconfirmed": True}}
+        )
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            light_factory=AsyncFakeFactory(AsyncFailingLight()),
+            preset_library=presets,
+            cue_library=cues,
+        )
+
+        scene = integration.plan_scene(
+            {"brightness": 12},
+            obj=2,
+            control_mode=0x01,
+            first_word=0x0301,
+            start_seq=3,
+        )
+        preset = integration.plan_preset(
+            "key",
+            overrides={"brightness": 30},
+            start_seq=scene["next_seq"],
+        )
+        transition = integration.plan_transition(
+            {"brightness": 40},
+            from_scene={"brightness": 20},
+            steps=2,
+            start_seq=7,
+        )
+        sequence = integration.plan_sequence(
+            [{"preset": "key"}, {"to": {"brightness": 35}, "steps": 1}],
+            stop_on_unconfirmed=True,
+            start_seq=11,
+        )
+        cue = integration.plan_named_cue(
+            "intro",
+            stop_on_unconfirmed=False,
+            start_seq=20,
+        )
+
+        self.assertEqual(integration.manifest()["presets"], ["key"])
+        self.assertEqual(integration.capabilities()["cues"], ["intro"])
+        self.assertTrue(scene["dry_run"])
+        self.assertEqual(scene["scene"]["obj"], 2)
+        self.assertEqual(scene["control_mode"], 0x01)
+        self.assertEqual(scene["first_word_hex"], "0x0301")
+        self.assertEqual(preset["scene"]["brightness"], 30.0)
+        self.assertEqual(preset["command_plan"]["start_seq"], scene["next_seq"])
+        self.assertEqual(
+            [
+                batch["scene"]["brightness"]
+                for batch in transition["command_batches"]
+            ],
+            [30.0, 40.0],
+        )
+        self.assertTrue(sequence["stop_on_unconfirmed"])
+        self.assertEqual(
+            [step["action"] for step in sequence["steps"]],
+            ["preset", "transition"],
+        )
+        self.assertEqual(cue["cue"], "intro")
+        self.assertFalse(cue["stop_on_unconfirmed"])
 
     async def test_local_async_validation_reports_open_errors(self) -> None:
         payload = await local_async_validation(

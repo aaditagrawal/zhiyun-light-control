@@ -218,6 +218,27 @@ class LightRigTests(unittest.TestCase):
         response = rig.controller("key").apply_preset("key")
         self.assertEqual(response["scene"]["brightness"], 30.0)
 
+    def test_rig_integration_carries_libraries_for_planning(self) -> None:
+        key = FakeLight("key")
+        rig = rig_from_mapping(
+            {
+                "fixtures": [{"name": "key", "obj": 2}],
+                "presets": {"scenes": {"look": {"brightness": 30}}},
+                "cues": {"intro": {"steps": [{"preset": "look"}]}},
+            },
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        integration = rig.integration("key")
+        plan = integration.plan_named_cue("intro", start_seq=5)
+
+        self.assertEqual(integration.manifest()["presets"], ["look"])
+        self.assertEqual(integration.capabilities()["cues"], ["intro"])
+        self.assertEqual(plan["cue"], "intro")
+        self.assertEqual(plan["steps"][0]["scene"]["obj"], 2)
+        self.assertEqual(plan["steps"][0]["command_plan"]["start_seq"], 5)
+        self.assertEqual(key.scenes, [])
+
     def test_rig_from_mapping_requires_fixtures(self) -> None:
         with self.assertRaisesRegex(RigConfigError, "fixtures"):
             rig_from_mapping({"presets": {}})
@@ -602,12 +623,14 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
                     "key": {
                         "transport": "ble",
                         "name_contains": "KEY",
+                        "obj": 3,
                     }
                 },
                 "presets": {"scenes": {"look": {"brightness": 40}}},
             },
             light_factories={"key": FakeFactory(key)},
         )
+        plan = rig.integration("key").plan_preset("look", start_seq=4)
         await rig.apply_preset("key", "look")
 
         with patch(
@@ -628,6 +651,8 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(summary["ready_for"]["confirmed_control"])
         self.assertEqual(manifest["presets"], ["look"])
         self.assertEqual(rig.capabilities("key")["reason"], "available")
+        self.assertEqual(plan["scene"]["obj"], 3)
+        self.assertEqual(plan["command_plan"]["start_seq"], 4)
 
 
 def _result(

@@ -701,12 +701,22 @@ Host applications can get the same setup model without starting the HTTP bridge
 or shelling out to the CLI:
 
 ```python
-from zhiyun_light_control import LightConnectionConfig, LightIntegration
+from zhiyun_light_control import (
+    CueLibrary,
+    LightConnectionConfig,
+    LightIntegration,
+    ScenePresetLibrary,
+)
+
+presets = ScenePresetLibrary.from_mapping(
+    {"scenes": {"key": {"brightness": 35, "kelvin": 5600}}}
+)
+cues = CueLibrary.from_mapping({"cues": {"intro": {"steps": [{"preset": "key"}]}}})
 
 integration = LightIntegration(
     config=LightConnectionConfig(transport="usb", port="/dev/cu.usbmodem21301"),
-    preset_names=("key",),
-    cue_names=("intro",),
+    preset_library=presets,
+    cue_library=cues,
 )
 
 ready = integration.readiness()
@@ -714,6 +724,7 @@ devices = integration.devices(include_ble_status=True)
 snapshot = integration.snapshot(include_ble_status=True)
 validation = integration.validate(include_object_reads=True)
 usb_discovery = integration.discover_usb(object_ids=(0, 1), first_words=(0x0100,))
+plan = integration.plan_named_cue("intro", start_seq=1)
 integration.require_readiness("read_status")
 
 print(ready["ready_for"])
@@ -721,6 +732,7 @@ print(devices["usb"]["selected_port"])
 print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
 print(usb_discovery["summary"]["confirmed_names"])
+print(plan["steps"])
 
 with integration.controller(require_acknowledged=True) as controller:
     result = controller.apply_scene({"obj": 1, "brightness": 35, "kelvin": 5600})
@@ -733,7 +745,17 @@ integrations without starting the HTTP bridge:
 ```python
 import asyncio
 
-from zhiyun_light_control import AsyncLightIntegration, LightConnectionConfig
+from zhiyun_light_control import (
+    AsyncLightIntegration,
+    CueLibrary,
+    LightConnectionConfig,
+    ScenePresetLibrary,
+)
+
+presets = ScenePresetLibrary.from_mapping(
+    {"scenes": {"key": {"brightness": 35, "kelvin": 5600}}}
+)
+cues = CueLibrary.from_mapping({"cues": {"intro": {"steps": [{"preset": "key"}]}}})
 
 
 async def main() -> None:
@@ -743,6 +765,8 @@ async def main() -> None:
             name_contains="MOLUS",
             ble_in_process=True,
         ),
+        preset_library=presets,
+        cue_library=cues,
     )
 
     ready = await integration.readiness(include_ble=True)
@@ -750,12 +774,14 @@ async def main() -> None:
     ble = await integration.inspect_ble(backend="macos-app")
     endpoint_test = await integration.test_ble_endpoints(backend="macos-app")
     validation = await integration.validate(include_object_reads=True)
+    plan = integration.plan_named_cue("intro", start_seq=1)
 
     print(ready["ready_for"])
     print(devices["ble"]["included"])
     print(ble["endpoint_candidates"])
     print(endpoint_test["confirmed_candidates"])
     print(validation["summary"]["ready_for"])
+    print(plan["steps"])
 
     async with integration.controller(require_acknowledged=True) as controller:
         result = await controller.apply_scene({"obj": 1, "brightness": 35})

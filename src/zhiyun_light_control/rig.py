@@ -198,6 +198,9 @@ class LightRig:
             preset_names=_preset_names(self.preset_library),
             cue_names=_cue_names(self.cue_library),
             light_factory=self.controller(name).light_factory,
+            preset_library=self.preset_library,
+            cue_library=self.cue_library,
+            obj=fixture.obj,
         )
 
     def capabilities(self, name: str) -> dict[str, object]:
@@ -739,6 +742,9 @@ class AsyncLightRig:
             preset_names=_preset_names(self.preset_library),
             cue_names=_cue_names(self.cue_library),
             light_factory=self.controller(name).light_factory,
+            preset_library=self.preset_library,
+            cue_library=self.cue_library,
+            obj=fixture.obj,
         )
 
     def capabilities(self, name: str) -> dict[str, object]:
