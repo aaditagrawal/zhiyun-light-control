@@ -198,6 +198,23 @@ class AsyncZhiyunLight:
             ack=first_response_frame(rx, tx=tx, cmd=cmd),
         )
 
+    async def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        rx = await self.transport.exchange(frame, timeout=timeout)
+        frames = tuple(iter_frames(rx))
+        return CommandResult(
+            command=command & 0xFFFF,
+            tx=frame,
+            rx=rx,
+            frames=frames,
+            ack=first_response_frame(rx, tx=frame, cmd=command),
+        )
+
     async def exchange_frame_confirmed(
         self,
         first_word: int,

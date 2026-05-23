@@ -127,6 +127,18 @@ class ClientTests(unittest.TestCase):
         self.assertTrue(result.acknowledged)
         self.assertEqual(first_frame(transport.sent[0]).first_word, 0x0301)
 
+    def test_exchange_prebuilt_frame_preserves_supplied_bytes(self) -> None:
+        transport = EchoAckTransport()
+        light = ZhiyunLight(transport)
+        frame = build_runtime_frame(17, RuntimeCommand.DEVICE_INFO)
+
+        result = light.exchange_prebuilt_frame(frame, RuntimeCommand.DEVICE_INFO)
+
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(result.tx, frame)
+        self.assertEqual(transport.sent, [frame])
+        self.assertEqual(first_frame(result.tx).seq, 17)
+
     def test_apply_scene_orders_media_workflow_commands(self) -> None:
         transport = EchoAckTransport()
         light = ZhiyunLight(transport)

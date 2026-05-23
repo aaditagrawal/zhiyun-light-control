@@ -92,6 +92,23 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.acknowledged)
         self.assertEqual(first_frame(transport.sent[0]).first_word, 0x0301)
 
+    async def test_async_exchange_prebuilt_frame_preserves_supplied_bytes(
+        self,
+    ) -> None:
+        transport = AsyncEchoAckTransport()
+        light = AsyncZhiyunLight(transport)
+        frame = build_frame(0x0301, 17, RuntimeCommand.DEVICE_INFO)
+
+        result = await light.exchange_prebuilt_frame(
+            frame,
+            RuntimeCommand.DEVICE_INFO,
+        )
+
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(result.tx, frame)
+        self.assertEqual(transport.sent, [frame])
+        self.assertEqual(first_frame(result.tx).seq, 17)
+
     async def test_async_updater_helpers_match_sync_status_surface(self) -> None:
         transport = AsyncEchoAckTransport(
             {

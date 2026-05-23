@@ -32,6 +32,7 @@ class FakeAsyncLight:
         self.closed = False
         self.commands: list[tuple[int, bytes, float]] = []
         self.frames: list[tuple[int, int, bytes, float]] = []
+        self.prebuilt_frames: list[tuple[bytes, int, float]] = []
         self.updater_commands: list[tuple[int, bytes, float]] = []
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
@@ -72,6 +73,20 @@ class FakeAsyncLight:
         rx = build_frame(first_word, 1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
+
+    async def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        self.prebuilt_frames.append((frame, command, timeout))
+        parsed = first_frame(frame)
+        assert parsed is not None
+        rx = build_frame(parsed.first_word, parsed.seq, command, b"\x00")
+        ack = first_frame(rx, cmd=command)
+        return CommandResult(command, frame, rx, (ack,), ack)
 
     async def exchange_updater(
         self,
@@ -264,6 +279,12 @@ class BridgeFactoryTests(unittest.TestCase):
                     0x2001,
                     timeout=0.35,
                 )
+                prebuilt_frame = build_frame(0x0301, 7, 0x2001)
+                prebuilt_result = light.exchange_prebuilt_frame(
+                    prebuilt_frame,
+                    0x2001,
+                    timeout=0.3,
+                )
                 updater_result = light.exchange_updater(0x1300, timeout=0.45)
                 scene_results = light.apply_scene(scene, control_mode=0x01)
                 register_result = light.register_confirmed()
@@ -299,6 +320,7 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(probe.to_dict()["firmware"], "ble-test")
         self.assertEqual(result.command, 0x1001)
         self.assertEqual(frame_result.command, 0x2001)
+        self.assertEqual(prebuilt_result.tx, prebuilt_frame)
         self.assertEqual(updater_result.command, 0x1300)
         self.assertEqual(register_result.command, RuntimeCommand.REGISTER_DEFAULT_GROUP)
         self.assertEqual(brightness_result.command, RuntimeCommand.BRIGHTNESS)
@@ -312,6 +334,7 @@ class BridgeFactoryTests(unittest.TestCase):
         )
         self.assertEqual(fake.commands[0], (0x1001, b"\x01", 0.25))
         self.assertEqual(fake.frames, [(0x0100, 0x2001, b"", 0.35)])
+        self.assertEqual(fake.prebuilt_frames, [(prebuilt_frame, 0x2001, 0.3)])
         self.assertEqual(fake.updater_commands, [(0x1300, b"", 0.45)])
         self.assertEqual(fake.scenes, [scene, scene, scene, scene])
         self.assertEqual(fake.control_modes, [0x01, 0x01, 0x01, 0x01])

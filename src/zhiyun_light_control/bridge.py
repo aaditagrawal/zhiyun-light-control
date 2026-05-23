@@ -341,6 +341,20 @@ class SyncBleLight:
             timeout=timeout,
         )
 
+    def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 1.5,
+    ):
+        return self._run_light(
+            "exchange_prebuilt_frame",
+            frame,
+            command,
+            timeout=timeout,
+        )
+
     def exchange_frame_confirmed(
         self,
         first_word: int,

@@ -132,6 +132,23 @@ class ZhiyunLight:
             ack=first_response_frame(rx, tx=tx, cmd=cmd),
         )
 
+    def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        rx = self.transport.exchange(frame, timeout=timeout)
+        frames = tuple(iter_frames(rx))
+        return CommandResult(
+            command=command & 0xFFFF,
+            tx=frame,
+            rx=rx,
+            frames=frames,
+            ack=first_response_frame(rx, tx=frame, cmd=command),
+        )
+
     def exchange_frame_confirmed(
         self,
         first_word: int,

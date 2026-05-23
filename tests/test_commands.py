@@ -11,9 +11,13 @@ from zhiyun_light_control import (
     UnconfirmedCommandError,
     execute_async_command_plan,
     execute_async_command_plan_confirmed,
+    execute_async_frame_plan,
+    execute_async_transition_frame_plans,
     execute_async_transition_plans,
     execute_command_plan,
     execute_command_plan_confirmed,
+    execute_frame_plan,
+    execute_transition_frame_plans,
     execute_transition_plans,
     scene_command_plan,
     scene_command_specs,
@@ -22,6 +26,7 @@ from zhiyun_light_control import (
 )
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
+    build_frame,
     build_runtime_frame,
     first_frame,
 )
@@ -48,6 +53,22 @@ class FakeRuntimeLight:
         return CommandResult(command, tx, rx, (ack,), ack)
 
 
+class FakeFrameTransport:
+    def __init__(self) -> None:
+        self.sent: list[tuple[bytes, float | None]] = []
+
+    def exchange(self, tx: bytes, timeout: float | None = None) -> bytes:
+        self.sent.append((tx, timeout))
+        frame = first_frame(tx)
+        assert frame is not None
+        return build_frame(frame.first_word, frame.seq, frame.cmd, b"\x00")
+
+
+class FakeFrameLight:
+    def __init__(self) -> None:
+        self.transport = FakeFrameTransport()
+
+
 class AsyncFakeRuntimeLight:
     def __init__(self, *, acknowledged: bool = True) -> None:
         self.sync = FakeRuntimeLight(acknowledged=acknowledged)
@@ -64,6 +85,23 @@ class AsyncFakeRuntimeLight:
         timeout: float | None = None,
     ) -> CommandResult:
         return self.sync.exchange_runtime(command, payload, timeout=timeout)
+
+
+class AsyncFakeFrameTransport:
+    def __init__(self) -> None:
+        self.sync = FakeFrameTransport()
+
+    @property
+    def sent(self) -> list[tuple[bytes, float | None]]:
+        return self.sync.sent
+
+    async def exchange(self, tx: bytes, timeout: float | None = None) -> bytes:
+        return self.sync.exchange(tx, timeout=timeout)
+
+
+class AsyncFakeFrameLight:
+    def __init__(self) -> None:
+        self.transport = AsyncFakeFrameTransport()
 
 
 class CommandPlanningTests(unittest.TestCase):
@@ -216,6 +254,49 @@ class CommandPlanningTests(unittest.TestCase):
             [RuntimeCommand.BRIGHTNESS, RuntimeCommand.BRIGHTNESS, RuntimeCommand.CCT],
         )
 
+    def test_execute_frame_plan_preserves_planned_frame_bytes(self) -> None:
+        light = FakeFrameLight()
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25, kelvin=5600),
+            first_word=0x0301,
+            start_seq=41,
+        )
+
+        results = execute_frame_plan(light, plan, timeout=0.2)
+
+        self.assertEqual(
+            [tx for tx, _timeout in light.transport.sent],
+            [frame.frame for frame in plan.frames],
+        )
+        self.assertEqual(
+            [timeout for _tx, timeout in light.transport.sent],
+            [0.2, 0.2],
+        )
+        self.assertEqual([first_frame(result.tx).seq for result in results], [41, 42])
+        self.assertEqual(
+            [first_frame(result.tx).first_word for result in results],
+            [0x0301, 0x0301],
+        )
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    def test_execute_transition_frame_plans_preserves_batch_frames(self) -> None:
+        light = FakeFrameLight()
+        plans = transition_command_plans(
+            Scene(obj=1, brightness=10),
+            Scene(obj=1, brightness=30, kelvin=5600),
+            steps=2,
+            first_word=0x0301,
+            start_seq=21,
+        )
+
+        batches = execute_transition_frame_plans(light, plans)
+
+        self.assertEqual([len(batch) for batch in batches], [1, 2])
+        self.assertEqual(
+            [first_frame(tx).seq for tx, _timeout in light.transport.sent],
+            [21, 22, 23],
+        )
+
     def test_scene_command_specs_reject_partial_color_tuples(self) -> None:
         with self.assertRaisesRegex(ValueError, "RGB"):
             scene_command_specs(Scene(obj=1, red=255))
@@ -266,6 +347,45 @@ class AsyncCommandExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [command for command, _payload, _timeout in light.exchanges],
             [RuntimeCommand.BRIGHTNESS, RuntimeCommand.BRIGHTNESS, RuntimeCommand.CCT],
+        )
+
+    async def test_execute_async_frame_plan_preserves_planned_frame_bytes(
+        self,
+    ) -> None:
+        light = AsyncFakeFrameLight()
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25, kelvin=5600),
+            first_word=0x0301,
+            start_seq=41,
+        )
+
+        results = await execute_async_frame_plan(light, plan, timeout=0.2)
+
+        self.assertEqual(
+            [tx for tx, _timeout in light.transport.sent],
+            [frame.frame for frame in plan.frames],
+        )
+        self.assertEqual([first_frame(result.tx).seq for result in results], [41, 42])
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    async def test_execute_async_transition_frame_plans_preserves_batches(
+        self,
+    ) -> None:
+        light = AsyncFakeFrameLight()
+        plans = transition_command_plans(
+            Scene(obj=1, brightness=10),
+            Scene(obj=1, brightness=30, kelvin=5600),
+            steps=2,
+            first_word=0x0301,
+            start_seq=21,
+        )
+
+        batches = await execute_async_transition_frame_plans(light, plans)
+
+        self.assertEqual([len(batch) for batch in batches], [1, 2])
+        self.assertEqual(
+            [first_frame(tx).seq for tx, _timeout in light.transport.sent],
+            [21, 22, 23],
         )
 
 

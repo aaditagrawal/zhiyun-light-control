@@ -819,7 +819,10 @@ them useful in CLI tools, daemons, timeline renderers, and custom transports.
 `execute_command_plan()` / `execute_async_command_plan()` and the matching
 transition helpers send those plan objects through any light object exposing
 `exchange_runtime()`, including USB clients, sync BLE adapters, async BLE
-clients, and test doubles.
+clients, and test doubles. Use `execute_frame_plan()` /
+`execute_async_frame_plan()` when a custom transport or discovery tool needs to
+send the exact serialized frame bytes from the plan, including the planned first
+word and sequence numbers.
 
 For media-control code that wants presets and cues without running the HTTP
 bridge, use the in-process controller:

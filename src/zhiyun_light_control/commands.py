@@ -21,7 +21,9 @@ from .protocol import (
     brightness_payload,
     build_frame,
     cct_payload,
+    first_response_frame,
     hsi_payload,
+    iter_frames,
     rgb_payload,
     sleep_payload,
 )
@@ -345,6 +347,74 @@ def execute_transition_plans_confirmed(
     return batches
 
 
+def execute_frame_plan(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+) -> list[CommandResult]:
+    """Execute a planned scene using its exact serialized frames."""
+
+    return [
+        _exchange_prebuilt_frame(light, frame, timeout=timeout)
+        for frame in plan.frames
+    ]
+
+
+def execute_frame_plan_confirmed(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+    action: str = "scene frame plan",
+) -> list[CommandResult]:
+    """Execute exact serialized scene frames and require ACK evidence."""
+
+    return require_command_results(
+        execute_frame_plan(light, plan, timeout=timeout),
+        action=action,
+    )
+
+
+def execute_transition_frame_plans(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+) -> list[list[CommandResult]]:
+    """Execute transition plans using exact serialized frames."""
+
+    plan_items = tuple(plans)
+    delay = transition_interval(duration, len(plan_items))
+    batches: list[list[CommandResult]] = []
+    for index, plan in enumerate(plan_items):
+        batches.append(execute_frame_plan(light, plan, timeout=timeout))
+        if delay > 0 and index < len(plan_items) - 1:
+            time.sleep(delay)
+    return batches
+
+
+def execute_transition_frame_plans_confirmed(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+    action: str = "transition frame plan",
+) -> list[list[CommandResult]]:
+    """Execute exact serialized transition frames and require ACK evidence."""
+
+    batches = execute_transition_frame_plans(
+        light,
+        plans,
+        duration=duration,
+        timeout=timeout,
+    )
+    require_command_results(flatten_command_batches(batches), action=action)
+    return batches
+
+
 async def execute_async_command_plan(
     light: object,
     plan: SceneCommandPlan,
@@ -415,6 +485,76 @@ async def execute_async_transition_plans_confirmed(
     return batches
 
 
+async def execute_async_frame_plan(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+) -> list[CommandResult]:
+    """Execute a planned scene using exact serialized frames asynchronously."""
+
+    results: list[CommandResult] = []
+    for frame in plan.frames:
+        results.append(
+            await _exchange_prebuilt_frame_async(light, frame, timeout=timeout)
+        )
+    return results
+
+
+async def execute_async_frame_plan_confirmed(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+    action: str = "scene frame plan",
+) -> list[CommandResult]:
+    """Execute exact serialized async scene frames and require ACK evidence."""
+
+    return require_command_results(
+        await execute_async_frame_plan(light, plan, timeout=timeout),
+        action=action,
+    )
+
+
+async def execute_async_transition_frame_plans(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+) -> list[list[CommandResult]]:
+    """Execute async transition plans using exact serialized frames."""
+
+    plan_items = tuple(plans)
+    delay = transition_interval(duration, len(plan_items))
+    batches: list[list[CommandResult]] = []
+    for index, plan in enumerate(plan_items):
+        batches.append(await execute_async_frame_plan(light, plan, timeout=timeout))
+        if delay > 0 and index < len(plan_items) - 1:
+            await asyncio.sleep(delay)
+    return batches
+
+
+async def execute_async_transition_frame_plans_confirmed(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+    action: str = "transition frame plan",
+) -> list[list[CommandResult]]:
+    """Execute exact serialized async transition frames and require ACK evidence."""
+
+    batches = await execute_async_transition_frame_plans(
+        light,
+        plans,
+        duration=duration,
+        timeout=timeout,
+    )
+    require_command_results(flatten_command_batches(batches), action=action)
+    return batches
+
+
 def _exchange_runtime(
     light: object,
     command: RuntimeCommandSpec,
@@ -445,3 +585,75 @@ async def _exchange_runtime_async(
     if isawaitable(result):
         return await result
     return result
+
+
+def _exchange_prebuilt_frame(
+    light: object,
+    frame: RuntimeFrameSpec,
+    *,
+    timeout: float | None,
+) -> CommandResult:
+    exchange_frame = getattr(light, "exchange_prebuilt_frame", None)
+    if callable(exchange_frame):
+        if timeout is None:
+            return exchange_frame(frame.frame, frame.command.command)
+        return exchange_frame(frame.frame, frame.command.command, timeout=timeout)
+    exchange = _transport_exchange(light)
+    if timeout is None:
+        rx = exchange(frame.frame)
+    else:
+        rx = exchange(frame.frame, timeout=timeout)
+    return _command_result_from_frame(frame.frame, rx, frame.command.command)
+
+
+async def _exchange_prebuilt_frame_async(
+    light: object,
+    frame: RuntimeFrameSpec,
+    *,
+    timeout: float | None,
+) -> CommandResult:
+    exchange_frame = getattr(light, "exchange_prebuilt_frame", None)
+    if callable(exchange_frame):
+        if timeout is None:
+            result = exchange_frame(frame.frame, frame.command.command)
+        else:
+            result = exchange_frame(
+                frame.frame,
+                frame.command.command,
+                timeout=timeout,
+            )
+        if isawaitable(result):
+            return await result
+        return result
+    exchange = _transport_exchange(light)
+    if timeout is None:
+        result = exchange(frame.frame)
+    else:
+        result = exchange(frame.frame, timeout=timeout)
+    rx = await result if isawaitable(result) else result
+    return _command_result_from_frame(frame.frame, rx, frame.command.command)
+
+
+def _transport_exchange(light: object):
+    transport = getattr(light, "transport", None)
+    exchange = getattr(transport, "exchange", None)
+    if not callable(exchange):
+        raise TypeError(
+            "light must expose exchange_prebuilt_frame or transport.exchange"
+        )
+    return exchange
+
+
+def _command_result_from_frame(
+    tx: bytes,
+    rx: bytes,
+    command: int,
+) -> CommandResult:
+    frames = tuple(iter_frames(rx))
+    return CommandResult(
+        command=command & 0xFFFF,
+        tx=tx,
+        rx=rx,
+        frames=frames,
+        ack=first_response_frame(rx, tx=tx, cmd=command),
+    )

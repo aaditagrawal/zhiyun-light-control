@@ -99,7 +99,9 @@ does the same for each generated transition scene while carrying sequence
 numbers forward. None of these helpers opens USB or BLE. When a host is ready to
 send, `execute_command_plan()` / `execute_async_command_plan()` and the matching
 transition helpers execute those same plans against any USB, sync BLE, async BLE,
-or custom light object exposing `exchange_runtime()`.
+or custom light object exposing `exchange_runtime()`. For lower-level routing,
+`execute_frame_plan()` / `execute_async_frame_plan()` send the exact planned
+frame bytes and preserve first-word and sequence-number choices.
 
 `zlight validate` and `validate_sync_light()` build on `CommandResult` to produce
 a hardware evidence report. A primitive is `confirmed` only when the device
