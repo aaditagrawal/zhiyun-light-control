@@ -24,6 +24,11 @@ from .discovery import (
 from .http_client import (
     LightBridgeClient,
     LightBridgeError,
+    bridge_response_applied,
+    bridge_response_reason,
+    bridge_response_statuses,
+    command_result_acknowledged,
+    command_result_status,
     readiness_actions_by_id,
 )
 from .macos_ble_app import macos_ble_app_info, open_macos_bluetooth_settings
@@ -108,6 +113,11 @@ __all__ = [
     "build_frame",
     "build_runtime_frame",
     "build_updater_frame",
+    "bridge_response_applied",
+    "bridge_response_reason",
+    "bridge_response_statuses",
+    "command_result_acknowledged",
+    "command_result_status",
     "cue_from_mapping",
     "decode_artdmx",
     "decode_sacn",

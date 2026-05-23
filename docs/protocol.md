@@ -249,6 +249,10 @@ reason, and transport status strings from any command results. `applied` is
 `true` only when all command results for that scene were acknowledged by the
 light; unconfirmed writes keep the requested scene visible but report
 `applied: false` with a reason such as `sent_no_response` or `echoed_write`.
+The Python client exposes `bridge_response_applied()`,
+`bridge_response_statuses()`, and `bridge_response_reason()` so controller code
+can apply the same interpretation to single command results, scenes,
+transitions, sequences, state snapshots, and history events.
 This gives media tools a stable polling surface without hiding weak hardware
 evidence.
 

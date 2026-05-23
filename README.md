@@ -433,7 +433,13 @@ Use the stdlib HTTP client when your production app talks to a running bridge
 process instead of opening the USB/BLE transport itself:
 
 ```python
-from zhiyun_light_control import LightBridgeClient, Scene
+from zhiyun_light_control import (
+    LightBridgeClient,
+    Scene,
+    bridge_response_applied,
+    bridge_response_reason,
+    bridge_response_statuses,
+)
 
 bridge = LightBridgeClient("http://127.0.0.1:8765")
 
@@ -451,6 +457,7 @@ print(result["transport_status"])
 
 scene = bridge.apply_scene(Scene(obj=1, sleep=0, brightness=35, kelvin=5600))
 print(scene["results"])
+print(bridge_response_applied(scene), bridge_response_statuses(scene))
 
 cue = bridge.run_sequence(
     [
@@ -477,6 +484,9 @@ that a transmitted command was applied.
 It also includes `readiness_actions()`, `readiness_action(id)`, and
 `pending_readiness_actions()` helpers for setup dashboards that consume
 `GET /ready`.
+Use `bridge_response_applied()`, `bridge_response_statuses()`, and
+`bridge_response_reason()` to normalize ACK evidence across single commands,
+scenes, transitions, sequences, and state/history responses.
 
 ```python
 from zhiyun_light_control import Scene, ZhiyunLight

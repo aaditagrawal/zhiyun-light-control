@@ -386,6 +386,52 @@ def _scene_payload(scene: Scene | Mapping[str, object]) -> dict[str, object]:
     return dict(scene)
 
 
+def command_result_status(result: Mapping[str, object]) -> str:
+    status = result.get("transport_status")
+    if status is not None:
+        return str(status)
+    if result.get("acknowledged") is True:
+        return "acknowledged"
+    return "unknown"
+
+
+def command_result_acknowledged(result: Mapping[str, object]) -> bool:
+    acknowledged = result.get("acknowledged")
+    if isinstance(acknowledged, bool):
+        return acknowledged
+    return command_result_status(result) == "acknowledged"
+
+
+def bridge_response_statuses(payload: Mapping[str, object]) -> list[str]:
+    statuses: list[str] = []
+    _append_bridge_statuses(dict(payload), statuses)
+    return statuses
+
+
+def bridge_response_applied(payload: Mapping[str, object]) -> bool:
+    applied = payload.get("applied")
+    if isinstance(applied, bool):
+        return applied
+    if "acknowledged" in payload or "transport_status" in payload:
+        return command_result_acknowledged(payload)
+    statuses = bridge_response_statuses(payload)
+    return bool(statuses) and all(status == "acknowledged" for status in statuses)
+
+
+def bridge_response_reason(payload: Mapping[str, object]) -> str | None:
+    reason = payload.get("reason")
+    if isinstance(reason, str):
+        return reason
+    statuses = bridge_response_statuses(payload)
+    if any(status == "sent_no_response" for status in statuses):
+        return "sent_no_response"
+    if any(status == "echoed_write" for status in statuses):
+        return "echoed_write"
+    if statuses and any(status != "acknowledged" for status in statuses):
+        return "unconfirmed"
+    return None
+
+
 def readiness_actions_by_id(
     payload: Mapping[str, object],
     *,
@@ -410,6 +456,23 @@ def readiness_actions_by_id(
             continue
         actions[action_id] = action
     return actions
+
+
+def _append_bridge_statuses(value: object, statuses: list[str]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _append_bridge_statuses(item, statuses)
+        return
+    if not isinstance(value, dict):
+        return
+    status = value.get("transport_status")
+    if status is not None:
+        statuses.append(str(status))
+    result_statuses = value.get("result_statuses")
+    if isinstance(result_statuses, list):
+        statuses.extend(str(item) for item in result_statuses if item is not None)
+    for item in value.values():
+        _append_bridge_statuses(item, statuses)
 
 
 def _with_control_mode(

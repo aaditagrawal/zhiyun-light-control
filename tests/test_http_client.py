@@ -7,6 +7,11 @@ import unittest
 from zhiyun_light_control import (
     LightBridgeClient,
     LightBridgeError,
+    bridge_response_applied,
+    bridge_response_reason,
+    bridge_response_statuses,
+    command_result_acknowledged,
+    command_result_status,
     readiness_actions_by_id,
 )
 from zhiyun_light_control.models import CommandResult, Scene
@@ -172,15 +177,26 @@ class HttpClientTests(unittest.TestCase):
 
             brightness = client.set_brightness(35, obj=1, control_mode=0x01)
             self.assertTrue(brightness["acknowledged"])
+            self.assertTrue(command_result_acknowledged(brightness))
+            self.assertEqual(command_result_status(brightness), "acknowledged")
+            self.assertTrue(bridge_response_applied(brightness))
+            self.assertEqual(bridge_response_statuses(brightness), ["acknowledged"])
             self.assertEqual(light.commands[-1][1][2], 0x01)
             history = client.history(limit=1)
             self.assertEqual(history["version"], 1)
             self.assertEqual(history["events"][0]["state"]["action"], "brightness")
+            self.assertTrue(bridge_response_applied(history))
+            self.assertEqual(bridge_response_statuses(history), ["acknowledged"])
 
             scene = client.apply_scene(Scene(obj=1, brightness=42, kelvin=5600))
             self.assertEqual(
                 [item["command"] for item in scene["results"]],
                 [0x1001, 0x1002],
+            )
+            self.assertTrue(bridge_response_applied(scene))
+            self.assertEqual(
+                bridge_response_statuses(scene),
+                ["acknowledged", "acknowledged"],
             )
 
             transition = client.transition(
@@ -224,6 +240,27 @@ class HttpClientTests(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+    def test_bridge_response_helpers_normalize_unconfirmed_payloads(self) -> None:
+        command = {
+            "acknowledged": False,
+            "transport_status": "sent_no_response",
+        }
+        scene = {
+            "applied": False,
+            "reason": "sent_no_response",
+            "results": [command],
+        }
+
+        self.assertFalse(command_result_acknowledged(command))
+        self.assertEqual(command_result_status(command), "sent_no_response")
+        self.assertFalse(bridge_response_applied(scene))
+        self.assertEqual(bridge_response_reason(scene), "sent_no_response")
+        self.assertEqual(bridge_response_statuses(scene), ["sent_no_response"])
+
+        echoed = {"results": [{"transport_status": "echoed_write"}]}
+        self.assertFalse(bridge_response_applied(echoed))
+        self.assertEqual(bridge_response_reason(echoed), "echoed_write")
 
     def test_client_iterates_state_events(self) -> None:
         light = FakeLight()
