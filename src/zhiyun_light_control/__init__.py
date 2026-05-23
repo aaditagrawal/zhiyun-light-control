@@ -11,9 +11,13 @@ from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .bridge import (
     LightConnectionConfig,
     PersistentLightFactory,
+    light_connection_config_from_json,
     light_connection_config_from_mapping,
+    light_connection_config_to_json,
+    load_light_connection_config,
     make_light_factory,
     open_light,
+    save_light_connection_config,
 )
 from .client import ProbeResult, ZhiyunLight
 from .commands import (
@@ -435,7 +439,10 @@ __all__ = [
     "load_async_rig",
     "load_rig",
     "load_rig_mapping",
+    "load_light_connection_config",
+    "light_connection_config_from_json",
     "light_connection_config_from_mapping",
+    "light_connection_config_to_json",
     "test_ble_endpoint_candidates",
     "macos_ble_app_info",
     "macos_ble_app_status",
@@ -451,6 +458,7 @@ __all__ = [
     "require_command_results",
     "resolve_ble_profile",
     "scan_zhiyun_devices_macos_app",
+    "save_light_connection_config",
     "suggest_ble_endpoint_candidates",
     "suggest_ble_profile",
     "make_light_factory",

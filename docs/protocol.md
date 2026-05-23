@@ -260,6 +260,9 @@ For transport setup, embedded hosts can call `connection_candidates` and
 `with_best_connection` to derive ranked USB/BLE `LightConnectionConfig` objects
 from local discovery, or `ble_endpoint_connection_candidates` and
 `with_ble_endpoint_connection` to derive BLE configs from endpoint-test evidence.
+`save_light_connection_config` and `load_light_connection_config` serialize the
+same config shape to JSON so setup tools can persist a confirmed USB port or BLE
+endpoint profile for later SDK sessions.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

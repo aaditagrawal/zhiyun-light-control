@@ -119,6 +119,13 @@ uv run zlight discover-usb --allow-control --register-device-ids 0,1 --control-o
 uv run zlight discover-usb --allow-control --post-register-reads --register-device-ids 1 --control-object-ids 1 --control-kinds none
 ```
 
+The same setup/use split is available as a plain Python SDK script:
+
+```sh
+uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json
+uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --brightness 35
+```
+
 `discover-usb` is for bench work. It records global reads, object-read
 candidates, first-word probes, and optional safe control candidates with the
 same ACK/timeout/echo evidence model used by validation.
@@ -680,7 +687,26 @@ Use `connection_candidates_from_devices()`,
 `ble_config_from_candidate()`, and `ble_config_from_endpoint_report()` when a
 host application wants to turn discovery evidence directly into ranked reusable
 `LightConnectionConfig` objects for `open_light()`, `AsyncLightIntegration`, or
-a rig fixture.
+a rig fixture. Persist those configs with `save_light_connection_config()` and
+restore them with `load_light_connection_config()` when an app wants to discover
+USB/BLE routes during setup and reopen the same route later:
+
+```python
+from zhiyun_light_control import (
+    LightIntegration,
+    load_light_connection_config,
+    save_light_connection_config,
+)
+
+config_path = "zhiyun-light.json"
+integration = LightIntegration()
+config = integration.best_connection_config(include_ble=True, include_ble_status=True)
+save_light_connection_config(config, config_path)
+
+integration = integration.with_config(load_light_connection_config(config_path))
+print(integration.status()[1])
+```
+
 The client also exposes `devices_selected_usb_port()`,
 `devices_ble_authorization()`, and `devices_ble_blocker()` convenience methods
 that fetch the needed discovery payload before normalizing it.

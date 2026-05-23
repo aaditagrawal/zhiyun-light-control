@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from zhiyun_light_control import (
     LightConnectionConfig,
     PersistentLightFactory,
     Scene,
+    light_connection_config_from_json,
     light_connection_config_from_mapping,
+    light_connection_config_to_json,
+    load_light_connection_config,
     make_light_factory,
     open_light,
+    save_light_connection_config,
 )
 from zhiyun_light_control.client import ZhiyunLight
 from zhiyun_light_control.models import CommandResult
@@ -201,6 +207,36 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertTrue(parsed.persistent)
         self.assertEqual(parsed.to_dict()["transport"], "ble")
 
+    def test_connection_config_json_helpers_round_trip_usb_and_ble(self) -> None:
+        config = LightConnectionConfig.ble(
+            address="UUID-1",
+            name_contains="PL103",
+            timeout=2.0,
+            backend="worker",
+            profile="legacy",
+            service_uuid="service-test",
+            write_uuid="write-test",
+            notify_uuid="notify-test",
+            python="/usr/bin/python3",
+            persistent=True,
+        )
+        text = light_connection_config_to_json(config)
+        parsed = light_connection_config_from_json(text)
+
+        self.assertEqual(parsed, config)
+        self.assertIn('"transport": "ble"', text)
+
+        with TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "zhiyun-light.json"
+            save_light_connection_config(config, path)
+            loaded = load_light_connection_config(path)
+
+        self.assertEqual(loaded, config)
+
+    def test_connection_config_json_requires_object(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must contain an object"):
+            light_connection_config_from_json("[]")
+
     def test_connection_config_can_apply_ble_endpoint_candidate(self) -> None:
         config = LightConnectionConfig.usb(port="/dev/cu.test").with_ble_candidate(
             {
@@ -241,18 +277,48 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(light.transport.lock_timeout, 0.25)
 
     def test_open_light_returns_configured_context_manager(self) -> None:
-        context = open_light(
-            LightConnectionConfig(
-                transport="usb",
-                port="/dev/cu.test",
-                timeout=2.0,
-                usb_lock_timeout=0.25,
-            )
+        config = LightConnectionConfig(
+            transport="usb",
+            port="/dev/cu.test",
+            timeout=2.0,
+            usb_lock_timeout=0.25,
         )
+        fake = FakeSyncContext("light")
 
-        self.assertIsInstance(context, ZhiyunLight)
-        self.assertEqual(context.transport.port, "/dev/cu.test")
-        self.assertEqual(context.transport.timeout, 2.0)
+        with (
+            patch(
+                "zhiyun_light_control.bridge.make_light_factory",
+                return_value=lambda: fake,
+            ) as make_factory,
+            open_light(config) as light,
+        ):
+            self.assertIs(light, fake)
+
+        make_factory.assert_called_once_with(config)
+        self.assertEqual(fake.enter_count, 1)
+        self.assertEqual(fake.exit_count, 1)
+
+    def test_open_light_closes_owned_persistent_factory(self) -> None:
+        contexts: list[FakeSyncContext] = []
+
+        def factory() -> FakeSyncContext:
+            context = FakeSyncContext(f"light-{len(contexts)}")
+            contexts.append(context)
+            return context
+
+        persistent = PersistentLightFactory(factory)
+        with (
+            patch(
+                "zhiyun_light_control.bridge.make_light_factory",
+                return_value=persistent,
+            ),
+            open_light(LightConnectionConfig.usb(persistent=True)) as light,
+        ):
+            self.assertEqual(light.name, "light-0")
+
+        self.assertEqual(len(contexts), 1)
+        self.assertEqual(contexts[0].enter_count, 1)
+        self.assertEqual(contexts[0].exit_count, 1)
 
     def test_ble_factory_adapts_async_client_to_sync_bridge_interface(self) -> None:
         fake = FakeAsyncLight()

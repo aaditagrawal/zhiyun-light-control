@@ -9,6 +9,7 @@ from dataclasses import dataclass, field, replace
 from .bridge import (
     LightConnectionConfig,
     LightFactory,
+    close_light_factory,
     make_light_factory,
 )
 from .controller import (
@@ -2124,6 +2125,7 @@ def local_status_snapshot(
     status_reader: Callable[[object], object] | None = None,
 ) -> StatusSnapshot:
     resolved = config or LightConnectionConfig()
+    factory: LightFactory | None = None
     try:
         factory = light_factory or make_light_factory(resolved)
         with factory() as light:
@@ -2137,6 +2139,9 @@ def local_status_snapshot(
                 report = status_reader(light)
     except Exception as exc:
         return local_error_status(exc), False, str(exc)
+    finally:
+        if light_factory is None and factory is not None:
+            close_light_factory(factory)
     payload = _report_to_dict(report)
     return payload, payload.get("connection_confirmed") is True, None
 
@@ -2237,24 +2242,28 @@ def local_usb_discovery(
     if resolved.transport != "usb":
         raise ValueError("USB discovery requires transport='usb'")
     factory = light_factory or make_light_factory(resolved)
-    with factory() as light:
-        report = discover_usb_primitives(
-            light,
-            object_ids=object_ids,
-            first_words=first_words,
-            control_object_ids=control_object_ids,
-            control_first_words=control_first_words,
-            register_device_ids=register_device_ids,
-            register_group_ids=register_group_ids,
-            control_kinds=control_kinds,
-            control_modes=control_modes,
-            post_register_reads=post_register_reads,
-            timeout=resolved.timeout if timeout is None else timeout,
-            allow_control=allow_control,
-            brightness=brightness,
-            kelvin=kelvin,
-            sleep=sleep,
-        )
+    try:
+        with factory() as light:
+            report = discover_usb_primitives(
+                light,
+                object_ids=object_ids,
+                first_words=first_words,
+                control_object_ids=control_object_ids,
+                control_first_words=control_first_words,
+                register_device_ids=register_device_ids,
+                register_group_ids=register_group_ids,
+                control_kinds=control_kinds,
+                control_modes=control_modes,
+                post_register_reads=post_register_reads,
+                timeout=resolved.timeout if timeout is None else timeout,
+                allow_control=allow_control,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+            )
+    finally:
+        if light_factory is None:
+            close_light_factory(factory)
     return report.to_dict()
 
 
@@ -2750,6 +2759,7 @@ def local_validation(
     light_factory: LightFactory | None = None,
 ) -> dict[str, object]:
     resolved = config or LightConnectionConfig()
+    factory: LightFactory | None = None
     try:
         factory = light_factory or make_light_factory(resolved)
         with factory() as light:
@@ -2774,6 +2784,9 @@ def local_validation(
             )
     except Exception as exc:
         return _validation_error_payload(resolved, exc, allow_control=allow_control)
+    finally:
+        if light_factory is None and factory is not None:
+            close_light_factory(factory)
     return report.to_dict()
 
 

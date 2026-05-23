@@ -10,6 +10,7 @@ from zhiyun_light_control import (
     LightConnectionCandidate,
     LightConnectionConfig,
     LightIntegration,
+    PersistentLightFactory,
     Scene,
     ScenePresetLibrary,
     integration_pending_action_ids,
@@ -433,6 +434,19 @@ class FakeFactory:
         return self.light
 
 
+class FakeSyncContext:
+    def __init__(self) -> None:
+        self.enter_count = 0
+        self.exit_count = 0
+
+    def __enter__(self) -> FakeSyncContext:
+        self.enter_count += 1
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        self.exit_count += 1
+
+
 class FakePayload:
     def __init__(self, payload: dict[str, object]) -> None:
         self.payload = payload
@@ -462,6 +476,27 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(status["firmware"], "1.6.4")
         self.assertEqual(status["generation"], "pl103")
         self.assertEqual(status["read_sn"]["device_identifier"], "08a409e0c1100113")
+
+    def test_local_status_snapshot_closes_owned_persistent_factory(self) -> None:
+        context = FakeSyncContext()
+        factory = PersistentLightFactory(lambda: context)
+
+        with patch(
+            "zhiyun_light_control.integration.make_light_factory",
+            return_value=factory,
+        ):
+            status, confirmed, error = local_status_snapshot(
+                LightConnectionConfig(transport="usb", persistent=True),
+                status_reader=lambda _light: FakePayload(
+                    {"connection_confirmed": True}
+                ),
+            )
+
+        self.assertTrue(confirmed)
+        self.assertIsNone(error)
+        self.assertEqual(status["connection_confirmed"], True)
+        self.assertEqual(context.enter_count, 1)
+        self.assertEqual(context.exit_count, 1)
 
     def test_local_readiness_builds_programmatic_preflight_payload(self) -> None:
         calls: list[dict[str, object]] = []

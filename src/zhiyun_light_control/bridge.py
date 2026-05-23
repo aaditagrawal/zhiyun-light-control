@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import threading
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, fields
+from os import PathLike
+from pathlib import Path
 
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
@@ -138,6 +141,37 @@ def light_connection_config_from_mapping(
     return LightConnectionConfig.from_mapping(payload)
 
 
+def light_connection_config_to_json(
+    config: LightConnectionConfig,
+    *,
+    indent: int | None = 2,
+) -> str:
+    return json.dumps(config.to_dict(), indent=indent, sort_keys=True)
+
+
+def light_connection_config_from_json(text: str) -> LightConnectionConfig:
+    payload = json.loads(text)
+    if not isinstance(payload, Mapping):
+        raise ValueError("connection config JSON must contain an object")
+    return LightConnectionConfig.from_mapping(payload)
+
+
+def save_light_connection_config(
+    config: LightConnectionConfig,
+    path: str | PathLike[str],
+    *,
+    indent: int | None = 2,
+) -> None:
+    text = light_connection_config_to_json(config, indent=indent)
+    Path(path).write_text(f"{text}\n", encoding="utf-8")
+
+
+def load_light_connection_config(
+    path: str | PathLike[str],
+) -> LightConnectionConfig:
+    return light_connection_config_from_json(Path(path).read_text(encoding="utf-8"))
+
+
 def _config_value(name: str, value: object) -> object:
     if name == "timeout":
         return float(value)
@@ -185,7 +219,7 @@ def make_light_factory(config: LightConnectionConfig) -> LightFactory:
 
 
 def open_light(config: LightConnectionConfig | None = None):
-    return make_light_factory(config or LightConnectionConfig())()
+    return _OwnedLightContext(make_light_factory(config or LightConnectionConfig()))
 
 
 def make_one_shot_light_factory(config: LightConnectionConfig) -> LightFactory:
@@ -251,6 +285,26 @@ class _PersistentLightBorrow:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.owner._release(exc_type, exc, tb)
+
+
+class _OwnedLightContext:
+    def __init__(self, factory: LightFactory):
+        self.factory = factory
+        self._borrow: object | None = None
+
+    def __enter__(self):
+        self._borrow = self.factory()
+        return self._borrow.__enter__()
+
+    def __exit__(self, exc_type, exc, tb):
+        suppress = False
+        try:
+            if self._borrow is not None:
+                suppress = bool(self._borrow.__exit__(exc_type, exc, tb))
+        finally:
+            self._borrow = None
+            close_light_factory(self.factory)
+        return suppress
 
 
 def close_light_factory(factory: LightFactory) -> None:
