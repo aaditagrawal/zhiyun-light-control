@@ -803,6 +803,10 @@ rig = LightRig(
     require_acknowledged=True,
 )
 
+preflight = rig.readiness_all(allow_control=True)
+validation = rig.validate_all(include_object_reads=True)
+print(preflight["applied"], validation["reason"])
+
 look = rig.apply_scene_map(
     {
         "key": {"brightness": 35, "kelvin": 5600},

@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field, fields
 from .bridge import LightConnectionConfig, LightFactory
 from .controller import AsyncLightController, AsyncLightFactory, LightController
 from .cues import CueLibrary
+from .integration import AsyncLightIntegration, LightIntegration, StatusSnapshot
 from .models import Scene
 from .presets import ScenePresetLibrary, scene_from_mapping
 from .protocol import DEFAULT_CONTROL_MODE
@@ -91,6 +92,19 @@ class LightRig:
         self.fixture(name)
         return self.controllers[name]
 
+    def integration(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+    ) -> LightIntegration:
+        fixture = self.fixture(name)
+        return LightIntegration(
+            config=fixture.config,
+            allow_control=allow_control,
+            light_factory=self.controller(name).light_factory,
+        )
+
     def probe(self, name: str) -> dict[str, object]:
         result = self.controller(name).probe()
         return {"fixture": name, "probe": result.to_dict()}
@@ -113,6 +127,155 @@ class LightRig:
                     stopped = True
                     break
         return _rig_response("rig_probe", responses, stopped=stopped)
+
+    def status(self, name: str) -> dict[str, object]:
+        status, confirmed, error = self.integration(name).status()
+        return _status_response(name, (status, confirmed, error))
+
+    def status_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_error: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.status(name)
+            responses[name] = response
+            if stop_on_error and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_status", responses, stopped=stopped)
+
+    def readiness(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        state_snapshot = self.controller(name).state_snapshot()
+        payload = self.integration(name, allow_control=allow_control).readiness(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=_state_version(state_snapshot),
+            state=_state_payload(state_snapshot),
+        )
+        return _readiness_response(name, payload)
+
+    def readiness_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.readiness(
+                name,
+                allow_control=allow_control,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_readiness", responses, stopped=stopped)
+
+    def validate(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.integration(name, allow_control=allow_control).validate(
+            allow_control=allow_control,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            device_id=device_id,
+            obj=fixture.obj,
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+            red=red,
+            green=green,
+            blue=blue,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+            control_mode=control_mode,
+        )
+        return _validation_response(name, payload)
+
+    def validate_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.validate(
+                name,
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=device_id,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+                red=red,
+                green=green,
+                blue=blue,
+                hue=hue,
+                saturation=saturation,
+                intensity=intensity,
+                control_mode=control_mode,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_validation", responses, stopped=stopped)
 
     def apply_scene(
         self,
@@ -289,6 +452,19 @@ class AsyncLightRig:
         self.fixture(name)
         return self.controllers[name]
 
+    def integration(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+    ) -> AsyncLightIntegration:
+        fixture = self.fixture(name)
+        return AsyncLightIntegration(
+            config=fixture.config,
+            allow_control=allow_control,
+            light_factory=self.controller(name).light_factory,
+        )
+
     async def probe(self, name: str) -> dict[str, object]:
         result = await self.controller(name).probe()
         return {"fixture": name, "probe": result.to_dict()}
@@ -311,6 +487,155 @@ class AsyncLightRig:
                     stopped = True
                     break
         return _rig_response("rig_probe", responses, stopped=stopped)
+
+    async def status(self, name: str) -> dict[str, object]:
+        status = await self.integration(name).status()
+        return _status_response(name, status)
+
+    async def status_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_error: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.status(name)
+            responses[name] = response
+            if stop_on_error and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_status", responses, stopped=stopped)
+
+    async def readiness(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        state_snapshot = self.controller(name).state_snapshot()
+        payload = await self.integration(name, allow_control=allow_control).readiness(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=_state_version(state_snapshot),
+            state=_state_payload(state_snapshot),
+        )
+        return _readiness_response(name, payload)
+
+    async def readiness_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.readiness(
+                name,
+                allow_control=allow_control,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_readiness", responses, stopped=stopped)
+
+    async def validate(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = await self.integration(name, allow_control=allow_control).validate(
+            allow_control=allow_control,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            device_id=device_id,
+            obj=fixture.obj,
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+            red=red,
+            green=green,
+            blue=blue,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+            control_mode=control_mode,
+        )
+        return _validation_response(name, payload)
+
+    async def validate_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.validate(
+                name,
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=device_id,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+                red=red,
+                green=green,
+                blue=blue,
+                hue=hue,
+                saturation=saturation,
+                intensity=intensity,
+                control_mode=control_mode,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_validation", responses, stopped=stopped)
 
     async def apply_scene(
         self,
@@ -514,6 +839,83 @@ def _rig_response(
         "reason": _rig_reason(fixture_responses),
         "stopped": stopped,
     }
+
+
+def _status_response(name: str, status: StatusSnapshot) -> dict[str, object]:
+    payload, confirmed, error = status
+    return {
+        "fixture": name,
+        "status": payload,
+        "connection_confirmed": confirmed,
+        "ok": confirmed and error is None,
+        "error": error,
+        "reason": "acknowledged" if confirmed and error is None else error,
+    }
+
+
+def _readiness_response(
+    name: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    ready_for = payload.get("ready_for")
+    read_status = (
+        ready_for.get("read_status")
+        if isinstance(ready_for, Mapping)
+        else False
+    )
+    return {
+        "fixture": name,
+        "readiness": dict(payload),
+        "ok": read_status is True,
+        "reason": _readiness_reason(payload),
+    }
+
+
+def _validation_response(
+    name: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "fixture": name,
+        "validation": dict(payload),
+        "ok": payload.get("connection_confirmed") is True,
+        "reason": _validation_reason(payload),
+    }
+
+
+def _readiness_reason(payload: Mapping[str, object]) -> str:
+    error = payload.get("error")
+    if error:
+        return str(error)
+    warnings = payload.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        return "; ".join(str(item) for item in warnings)
+    ready_for = payload.get("ready_for")
+    if isinstance(ready_for, Mapping) and ready_for.get("read_status") is True:
+        return "ready"
+    return "not_ready"
+
+
+def _validation_reason(payload: Mapping[str, object]) -> str:
+    error = payload.get("error")
+    if error:
+        return str(error)
+    unconfirmed = payload.get("unconfirmed")
+    if isinstance(unconfirmed, list) and unconfirmed:
+        return ",".join(str(item) for item in unconfirmed)
+    if payload.get("connection_confirmed") is True:
+        return "acknowledged"
+    return "not_confirmed"
+
+
+def _state_version(snapshot: Mapping[str, object]) -> int:
+    raw_version = snapshot.get("version")
+    return raw_version if isinstance(raw_version, int) else 0
+
+
+def _state_payload(snapshot: Mapping[str, object]) -> Mapping[str, object] | None:
+    raw_state = snapshot.get("state")
+    return raw_state if isinstance(raw_state, Mapping) else None
 
 
 def _all_fixtures_applied(fixture_responses: Mapping[str, object]) -> bool:

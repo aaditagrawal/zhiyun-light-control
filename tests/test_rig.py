@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from zhiyun_light_control import (
     AsyncLightRig,
@@ -11,7 +12,12 @@ from zhiyun_light_control import (
     Scene,
     fixture_from_mapping,
 )
-from zhiyun_light_control.protocol import RuntimeCommand, build_frame, first_frame
+from zhiyun_light_control.protocol import (
+    RUNTIME_TYPE,
+    RuntimeCommand,
+    build_frame,
+    first_frame,
+)
 
 
 class FakeProbe:
@@ -27,6 +33,7 @@ class FakeLight:
         self.name = name
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
+        self.payloads: list[tuple[int, bytes]] = []
 
     def __enter__(self) -> FakeLight:
         return self
@@ -47,12 +54,34 @@ class FakeLight:
         self.scenes.append(scene)
         return [_result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)]
 
+    def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        del timeout
+        self.payloads.append((cmd, payload))
+        payload_by_cmd = {
+            RuntimeCommand.DEVICE_INFO: f"{self.name}\x00pl103\x00".encode(),
+            RuntimeCommand.FIRMWARE: b"1.6.4\x00",
+            RuntimeCommand.VOLTAGE: b"\x65",
+            RuntimeCommand.DEVICE_ID: b"\x01\x00",
+        }
+        return _result(
+            cmd,
+            payload=payload_by_cmd.get(cmd, b"\x00"),
+            acknowledged=self.acknowledged,
+        )
+
 
 class AsyncFakeLight:
     def __init__(self, name: str, *, acknowledged: bool = True) -> None:
         self.name = name
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
+        self.payloads: list[tuple[int, bytes]] = []
 
     async def __aenter__(self) -> AsyncFakeLight:
         return self
@@ -72,6 +101,27 @@ class AsyncFakeLight:
         del control_mode
         self.scenes.append(scene)
         return [_result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)]
+
+    async def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        del timeout
+        self.payloads.append((cmd, payload))
+        payload_by_cmd = {
+            RuntimeCommand.DEVICE_INFO: f"{self.name}\x00pl103\x00".encode(),
+            RuntimeCommand.FIRMWARE: b"1.6.4\x00",
+            RuntimeCommand.VOLTAGE: b"\x65",
+            RuntimeCommand.DEVICE_ID: b"\x01\x00",
+        }
+        return _result(
+            cmd,
+            payload=payload_by_cmd.get(cmd, b"\x00"),
+            acknowledged=self.acknowledged,
+        )
 
 
 class FakeFactory:
@@ -172,6 +222,67 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(tuple(response["fixtures"]), ("key",))
         self.assertEqual(response["fixtures"]["key"]["probe"]["firmware"], "1.6.4")
 
+    def test_status_all_returns_per_fixture_readiness_evidence(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill", acknowledged=False)
+        rig = LightRig(
+            [
+                LightFixture("key"),
+                LightFixture("fill"),
+            ],
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+
+        response = rig.status_all(stop_on_error=True)
+
+        self.assertFalse(response["applied"])
+        self.assertTrue(response["stopped"])
+        self.assertEqual(tuple(response["fixtures"]), ("key", "fill"))
+        self.assertTrue(response["fixtures"]["key"]["connection_confirmed"])
+        self.assertFalse(response["fixtures"]["fill"]["connection_confirmed"])
+        self.assertEqual(response["fixtures"]["key"]["status"]["firmware"], "1.6.4")
+
+    def test_validate_all_uses_fixture_object_ids(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [LightFixture("key", obj=7)],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        response = rig.validate_all(include_object_reads=True)
+
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["reason"], "acknowledged")
+        self.assertTrue(response["fixtures"]["key"]["ok"])
+        payloads = dict(key.payloads)
+        self.assertEqual(payloads[RuntimeCommand.BRIGHTNESS][:2], b"\x07\x00")
+
+    def test_readiness_all_includes_fixture_state(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [LightFixture("key")],
+            light_factories={"key": FakeFactory(key)},
+        )
+        rig.apply_all({"brightness": 35})
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": True, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            response = rig.readiness_all(allow_control=True)
+
+        readiness = response["fixtures"]["key"]["readiness"]
+        self.assertTrue(response["applied"])
+        self.assertTrue(readiness["ready_for"]["read_status"])
+        self.assertTrue(readiness["ready_for"]["control_requests"])
+        self.assertEqual(readiness["state"]["version"], 1)
+
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):
             LightRig([{"name": "key"}, {"name": "key"}])
@@ -227,12 +338,65 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(key.scenes[0].sleep, 1)
         self.assertEqual(fill.scenes, [])
 
+    async def test_async_status_all_reports_each_fixture(self) -> None:
+        key = AsyncFakeLight("key")
+        rig = AsyncLightRig(
+            [LightFixture("key")],
+            light_factories={"key": FakeFactory(key)},
+        )
 
-def _result(cmd: int, *, acknowledged: bool = True) -> CommandResult:
-    tx = build_frame(0x0001, 1, cmd)
+        response = await rig.status_all()
+
+        self.assertTrue(response["applied"])
+        self.assertTrue(response["fixtures"]["key"]["connection_confirmed"])
+        self.assertEqual(response["fixtures"]["key"]["status"]["firmware"], "1.6.4")
+
+    async def test_async_validate_all_uses_fixture_object_ids(self) -> None:
+        key = AsyncFakeLight("key")
+        rig = AsyncLightRig(
+            [LightFixture("key", obj=9)],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        response = await rig.validate_all(include_object_reads=True)
+
+        self.assertTrue(response["applied"])
+        payloads = dict(key.payloads)
+        self.assertEqual(payloads[RuntimeCommand.BRIGHTNESS][:2], b"\x09\x00")
+
+    async def test_async_readiness_all_uses_fixture_state(self) -> None:
+        key = AsyncFakeLight("key")
+        rig = AsyncLightRig(
+            [LightFixture("key")],
+            light_factories={"key": FakeFactory(key)},
+        )
+        await rig.apply_all({"brightness": 40})
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            response = await rig.readiness_all(allow_control=True)
+
+        readiness = response["fixtures"]["key"]["readiness"]
+        self.assertTrue(response["applied"])
+        self.assertTrue(readiness["ready_for"]["read_status"])
+        self.assertEqual(readiness["state"]["version"], 1)
+
+
+def _result(
+    cmd: int,
+    *,
+    payload: bytes = b"\x00",
+    acknowledged: bool = True,
+) -> CommandResult:
+    tx = build_frame(RUNTIME_TYPE, 1, cmd)
     if not acknowledged:
         return CommandResult(cmd, tx, b"", (), None)
-    rx = build_frame(0x0001, 1, cmd, b"\x00")
+    rx = build_frame(RUNTIME_TYPE, 1, cmd, payload)
     ack = first_frame(rx, cmd=cmd)
     return CommandResult(cmd, tx, rx, (ack,), ack)
 
