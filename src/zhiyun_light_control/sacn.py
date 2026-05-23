@@ -12,7 +12,7 @@ from .artnet import DEFAULT_DMX_MAPPING, DmxMapping, scene_from_dmx
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
-from .state import SceneStateTracker
+from .state import SceneStateTracker, results_confirmed, unconfirmed_results_reason
 
 ACN_PACKET_IDENTIFIER = b"ASC-E1.17\x00\x00\x00"
 VECTOR_ROOT_E131_DATA = 0x00000004
@@ -212,9 +212,16 @@ class SacnLightDispatcher:
             )
         with self.light_factory() as light:
             results = light.apply_scene(scene)
-        self._record_scene(scene, applied=True, results=results)
+        applied = results_confirmed(results)
+        reason = None if applied else unconfirmed_results_reason(results)
+        self._record_scene(scene, applied=applied, reason=reason, results=results)
         self._last_scene = scene
-        return SacnDispatchResult(packet=packet, scene=scene, applied=True)
+        return SacnDispatchResult(
+            packet=packet,
+            scene=scene,
+            applied=applied,
+            reason=reason,
+        )
 
     def _record_scene(
         self,

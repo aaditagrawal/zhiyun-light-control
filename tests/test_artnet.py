@@ -12,6 +12,16 @@ from zhiyun_light_control.artnet import (
 from zhiyun_light_control.state import SceneStateTracker
 
 
+class FakeResult:
+    acknowledged = True
+    transport_status = "acknowledged"
+
+
+class FakeUnconfirmedResult:
+    acknowledged = False
+    transport_status = "sent_no_response"
+
+
 class FakeLight:
     def __init__(self) -> None:
         self.scenes = []
@@ -24,7 +34,13 @@ class FakeLight:
 
     def apply_scene(self, scene):
         self.scenes.append(scene)
-        return []
+        return [FakeResult()]
+
+
+class FakeUnconfirmedLight(FakeLight):
+    def apply_scene(self, scene):
+        self.scenes.append(scene)
+        return [FakeUnconfirmedResult()]
 
 
 class ArtNetTests(unittest.TestCase):
@@ -94,6 +110,26 @@ class ArtNetTests(unittest.TestCase):
         self.assertEqual(state["source"], "artnet")
         self.assertTrue(state["applied"])
         self.assertEqual(state["scene"]["brightness"], 100.0)
+
+    def test_dispatch_marks_unacknowledged_scene_unapplied(self) -> None:
+        light = FakeUnconfirmedLight()
+        tracker = SceneStateTracker()
+        dispatcher = ArtNetLightDispatcher(
+            lambda: light,
+            universe=0,
+            allow_control=True,
+            state_tracker=tracker,
+        )
+        packet = decode_artdmx(encode_artdmx(bytes([255, 255]), universe=0))
+
+        result = dispatcher.dispatch(packet)
+
+        self.assertFalse(result.applied)
+        self.assertEqual(result.reason, "sent_no_response")
+        state = tracker.to_dict()
+        self.assertFalse(state["applied"])
+        self.assertEqual(state["reason"], "sent_no_response")
+        self.assertEqual(state["result_statuses"], ["sent_no_response"])
 
 
 if __name__ == "__main__":

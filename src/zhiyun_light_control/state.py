@@ -41,7 +41,12 @@ class SceneStateTracker:
         reason: str | None = None,
         results: list[object] | tuple[object, ...] = (),
     ) -> SceneState:
-        statuses = tuple(_result_status(result) for result in results)
+        result_items = tuple(results)
+        statuses = tuple(_result_status(result) for result in result_items)
+        if applied is None and result_items:
+            applied = results_confirmed(result_items)
+        if reason is None and applied is False and result_items:
+            reason = unconfirmed_results_reason(result_items)
         state = SceneState(
             scene=scene,
             source=source,
@@ -71,3 +76,29 @@ def _result_status(result: object) -> str:
     if isinstance(result, dict) and "transport_status" in result:
         return str(result["transport_status"])
     return "unknown"
+
+
+def results_confirmed(results: list[object] | tuple[object, ...]) -> bool:
+    return bool(results) and all(_result_acknowledged(result) for result in results)
+
+
+def unconfirmed_results_reason(results: list[object] | tuple[object, ...]) -> str:
+    if not results:
+        return "no_commands"
+    statuses = [_result_status(result) for result in results]
+    if any(status == "sent_no_response" for status in statuses):
+        return "sent_no_response"
+    if any(status == "echoed_write" for status in statuses):
+        return "echoed_write"
+    return "unconfirmed"
+
+
+def _result_acknowledged(result: object) -> bool:
+    acknowledged = getattr(result, "acknowledged", None)
+    if isinstance(acknowledged, bool):
+        return acknowledged
+    if isinstance(result, dict):
+        value = result.get("acknowledged")
+        if isinstance(value, bool):
+            return value
+    return _result_status(result) == "acknowledged"

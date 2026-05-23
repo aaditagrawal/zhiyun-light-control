@@ -13,6 +13,16 @@ from zhiyun_light_control.sacn import (
 from zhiyun_light_control.state import SceneStateTracker
 
 
+class FakeResult:
+    acknowledged = True
+    transport_status = "acknowledged"
+
+
+class FakeUnconfirmedResult:
+    acknowledged = False
+    transport_status = "sent_no_response"
+
+
 class FakeLight:
     def __init__(self) -> None:
         self.scenes = []
@@ -25,7 +35,13 @@ class FakeLight:
 
     def apply_scene(self, scene):
         self.scenes.append(scene)
-        return []
+        return [FakeResult()]
+
+
+class FakeUnconfirmedLight(FakeLight):
+    def apply_scene(self, scene):
+        self.scenes.append(scene)
+        return [FakeUnconfirmedResult()]
 
 
 class SacnTests(unittest.TestCase):
@@ -81,6 +97,26 @@ class SacnTests(unittest.TestCase):
         self.assertEqual(state["source"], "sacn")
         self.assertTrue(state["applied"])
         self.assertEqual(state["scene"]["kelvin"], 6500)
+
+    def test_dispatch_marks_unacknowledged_scene_unapplied(self) -> None:
+        light = FakeUnconfirmedLight()
+        tracker = SceneStateTracker()
+        dispatcher = SacnLightDispatcher(
+            lambda: light,
+            universe=1,
+            allow_control=True,
+            state_tracker=tracker,
+        )
+        packet = decode_sacn(encode_sacn(bytes([255, 255]), universe=1))
+
+        result = dispatcher.dispatch(packet)
+
+        self.assertFalse(result.applied)
+        self.assertEqual(result.reason, "sent_no_response")
+        state = tracker.to_dict()
+        self.assertFalse(state["applied"])
+        self.assertEqual(state["reason"], "sent_no_response")
+        self.assertEqual(state["result_statuses"], ["sent_no_response"])
 
     def test_dispatch_ignores_other_universe(self) -> None:
         light = FakeLight()

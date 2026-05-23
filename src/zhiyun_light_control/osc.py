@@ -24,7 +24,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
-from .state import SceneStateTracker
+from .state import SceneStateTracker, results_confirmed, unconfirmed_results_reason
 
 OscArg = int | float | str | bool | None
 
@@ -256,11 +256,13 @@ class OscLightDispatcher:
         )
 
     def _record_scene(self, scene: Scene, action: str, results: list[object]) -> None:
+        applied = results_confirmed(results)
         self.state_tracker.record(
             scene,
             source="osc",
             action=action,
-            applied=True,
+            applied=applied,
+            reason=None if applied else unconfirmed_results_reason(results),
             results=results,
         )
 

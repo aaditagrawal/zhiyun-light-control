@@ -22,7 +22,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
-from .state import SceneStateTracker
+from .state import SceneStateTracker, results_confirmed, unconfirmed_results_reason
 from .validation import validate_sync_light
 
 
@@ -332,11 +332,13 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         action: str,
         results,
     ) -> None:
+        applied = results_confirmed(results)
         self.server.state_tracker.record(
             scene,
             source="http",
             action=action,
-            applied=True,
+            applied=applied,
+            reason=None if applied else unconfirmed_results_reason(results),
             results=results,
         )
 

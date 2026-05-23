@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
-from .state import SceneStateTracker
+from .state import SceneStateTracker, results_confirmed, unconfirmed_results_reason
 
 ARTNET_ID = b"Art-Net\x00"
 OP_DMX = 0x5000
@@ -164,9 +164,16 @@ class ArtNetLightDispatcher:
             )
         with self.light_factory() as light:
             results = light.apply_scene(scene)
-        self._record_scene(scene, applied=True, results=results)
+        applied = results_confirmed(results)
+        reason = None if applied else unconfirmed_results_reason(results)
+        self._record_scene(scene, applied=applied, reason=reason, results=results)
         self._last_scene = scene
-        return ArtNetDispatchResult(packet=packet, scene=scene, applied=True)
+        return ArtNetDispatchResult(
+            packet=packet,
+            scene=scene,
+            applied=applied,
+            reason=reason,
+        )
 
     def _record_scene(
         self,

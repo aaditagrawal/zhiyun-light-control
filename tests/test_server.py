@@ -71,6 +71,14 @@ class FakeLight:
         return batches
 
 
+class FakeUnconfirmedLight(FakeLight):
+    def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
+        del payload, timeout
+        self.commands.append(cmd)
+        tx = build_runtime_frame(1, cmd)
+        return CommandResult(cmd, tx, b"", (), None)
+
+
 class ServerTests(unittest.TestCase):
     def test_http_probe_and_scene(self) -> None:
         light = FakeLight()
@@ -104,6 +112,36 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(state["action"], "scene")
             self.assertTrue(state["applied"])
             self.assertEqual(state["scene"]["brightness"], 30.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_state_marks_unacknowledged_control_unapplied(self) -> None:
+        light = FakeUnconfirmedLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            request = Request(
+                f"{base}/brightness",
+                data=json.dumps({"obj": 1, "value": 30}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            result = json.loads(urlopen(request, timeout=3).read())
+            self.assertFalse(result["acknowledged"])
+
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["source"], "http")
+            self.assertEqual(state["action"], "brightness")
+            self.assertFalse(state["applied"])
+            self.assertEqual(state["reason"], "sent_no_response")
+            self.assertEqual(state["result_statuses"], ["sent_no_response"])
         finally:
             server.shutdown()
             server.server_close()

@@ -152,9 +152,13 @@ resolve a preset and override set without opening a USB/BLE connection.
 
 Bridge state is in-memory and intentionally reports requested state, not a
 device-confirmed physical measurement. It includes the last scene payload,
-source protocol, action name, timestamp, applied flag, optional reason, and
-transport status strings from any command results. This gives media tools a
-stable polling surface even while some device commands remain fire-and-forget.
+source protocol, action name, timestamp, ACK-based applied flag, optional
+reason, and transport status strings from any command results. `applied` is
+`true` only when all command results for that scene were acknowledged by the
+light; unconfirmed writes keep the requested scene visible but report
+`applied: false` with a reason such as `sent_no_response` or `echoed_write`.
+This gives media tools a stable polling surface without hiding weak hardware
+evidence.
 
 HTTP `/transition` accepts either explicit `from` and `to` scene objects or
 top-level target scene fields. If `from` is omitted, the bridge uses the last

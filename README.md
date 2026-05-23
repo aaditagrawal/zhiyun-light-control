@@ -229,6 +229,12 @@ curl -X POST http://127.0.0.1:8765/preset \
 For `/transition`, omit `from` to use the bridge's last requested state for the
 same object id.
 
+`GET /state` reports the last requested bridge scene and the command transport
+statuses behind it. Its `applied` field is ACK-based: it is `true` only when all
+command results for that request were acknowledged by the light. If a command
+was sent but not confirmed, `applied` is `false` and `reason` carries values
+such as `sent_no_response` or `echoed_write`.
+
 `GET /validate` returns the same hardware-evidence report as `zlight validate`
 without transmitting control writes. `POST /validate` accepts
 `allow_control`, `include_object_reads`, `include_color`, `obj`, and the same

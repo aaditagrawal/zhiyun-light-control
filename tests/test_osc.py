@@ -50,6 +50,14 @@ class FakeLight:
         return results
 
 
+class FakeUnconfirmedLight(FakeLight):
+    def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
+        del payload, timeout
+        self.commands.append(cmd)
+        tx = build_runtime_frame(1, cmd)
+        return CommandResult(cmd, tx, b"", (), None)
+
+
 class OscTests(unittest.TestCase):
     def test_encode_decode_round_trip(self) -> None:
         packet = encode_message("/zhiyun/scene", 35.5, 5600, 0, True, None, "key")
@@ -98,6 +106,23 @@ class OscTests(unittest.TestCase):
         state = tracker.to_dict()
         self.assertEqual(state["source"], "osc")
         self.assertEqual(state["scene"]["kelvin"], 5600)
+        self.assertTrue(state["applied"])
+
+    def test_dispatch_scene_marks_unacknowledged_state_unapplied(self) -> None:
+        light = FakeUnconfirmedLight()
+        tracker = SceneStateTracker()
+        dispatcher = OscLightDispatcher(lambda: light, allow_control=True)
+        dispatcher.state_tracker = tracker
+
+        result = dispatcher.dispatch(
+            decode_message(encode_message("/zhiyun/brightness", 25.0))
+        )
+
+        self.assertEqual(result.action, "brightness")
+        state = tracker.to_dict()
+        self.assertFalse(state["applied"])
+        self.assertEqual(state["reason"], "sent_no_response")
+        self.assertEqual(state["result_statuses"], ["sent_no_response"])
 
     def test_dispatch_preset_maps_named_scene(self) -> None:
         light = FakeLight()
