@@ -7,6 +7,7 @@ from zhiyun_light_control import (
     AsyncLightIntegration,
     CueLibrary,
     IntegrationNotReady,
+    LightConnectionCandidate,
     LightConnectionConfig,
     LightIntegration,
     Scene,
@@ -22,7 +23,9 @@ from zhiyun_light_control import (
     local_async_status_snapshot,
     local_async_usb_discovery,
     local_async_validation,
+    local_ble_endpoint_connection_candidates,
     local_capabilities,
+    local_connection_candidates,
     local_devices,
     local_error_status,
     local_integration_snapshot,
@@ -579,6 +582,178 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(test_kwargs["name_contains"], "PL103")
         self.assertEqual(test_kwargs["max_candidates"], 2)
 
+    def test_light_integration_exposes_ranked_connection_routes(self) -> None:
+        integration = LightIntegration(
+            config=LightConnectionConfig(
+                transport="ble",
+                port="/dev/cu.configured",
+                ble_backend="macos-app",
+                name_contains="PL103",
+                timeout=2.0,
+            ),
+            allow_control=True,
+            preset_names=("key",),
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.usbmodem21301",
+                    "ports": [
+                        {
+                            "path": "/dev/cu.usbmodem21301",
+                            "selected": True,
+                            "metadata": {
+                                "vendor_id": 0xFFF8,
+                                "product_id": 0x0180,
+                                "product_name": "Zhiyun Virtual ComPort",
+                            },
+                        }
+                    ],
+                },
+                "ble": {
+                    "backend": "macos-app",
+                    "timeout": 2.0,
+                    "scan": {
+                        "ok": True,
+                        "devices": [
+                            {
+                                "address": "UUID-1",
+                                "name": "PL103_EDFE",
+                                "suggested_profile": "legacy",
+                            }
+                        ],
+                    },
+                    "macos_status": {"authorization": "allowed"},
+                },
+            },
+        ) as devices:
+            candidates = integration.connection_candidates(
+                include_ble=True,
+                persistent=True,
+            )
+            best_config = integration.best_connection_config(
+                include_ble=True,
+                persistent=True,
+            )
+            configured = integration.with_best_connection(
+                include_ble=True,
+                persistent=True,
+            )
+
+        self.assertEqual(
+            [candidate.transport for candidate in candidates],
+            ["usb", "ble"],
+        )
+        self.assertEqual(candidates[0].confidence, "known-usb-descriptor")
+        self.assertEqual(candidates[1].confidence, "advertised-profile")
+        self.assertEqual(best_config.transport, "usb")
+        self.assertEqual(best_config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(best_config.persistent)
+        self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(configured.allow_control)
+        self.assertEqual(configured.preset_names, ("key",))
+        self.assertIs(configured.state_tracker, integration.state_tracker)
+        self.assertTrue(devices.call_args.kwargs["include_ble"])
+        self.assertTrue(devices.call_args.kwargs["include_ble_status"])
+
+    def test_light_integration_exposes_ble_endpoint_connection_routes(self) -> None:
+        integration = LightIntegration(
+            config=LightConnectionConfig(
+                transport="ble",
+                ble_backend="macos-app",
+                name_contains="PL103",
+                timeout=2.0,
+            ),
+            cue_names=("intro",),
+        )
+        endpoint_report = {
+            "ok": True,
+            "backend": "macos-app",
+            "timeout": 2.0,
+            "address": "UUID-1",
+            "name_contains": "PL103",
+            "confirmed_candidates": [
+                {
+                    "profile": "direct",
+                    "service_uuid": "service-uuid",
+                    "write_uuid": "write-uuid",
+                    "notify_uuid": "notify-uuid",
+                }
+            ],
+            "tests": [],
+        }
+
+        with patch(
+            "zhiyun_light_control.integration.test_ble_endpoint_candidates",
+            return_value=FakePayload(endpoint_report),
+        ) as test_ble:
+            candidates = integration.ble_endpoint_connection_candidates(
+                persistent=True,
+            )
+            best_config = integration.best_ble_endpoint_config()
+            configured = integration.with_ble_endpoint_connection()
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0].confidence, "confirmed-endpoint")
+        self.assertEqual(candidates[0].transport, "ble")
+        self.assertEqual(candidates[0].config.address, "UUID-1")
+        self.assertEqual(candidates[0].config.ble_backend, "macos-app")
+        self.assertEqual(candidates[0].config.ble_service_uuid, "service-uuid")
+        self.assertEqual(candidates[0].config.ble_write_uuid, "write-uuid")
+        self.assertEqual(candidates[0].config.ble_notify_uuid, "notify-uuid")
+        self.assertTrue(candidates[0].config.persistent)
+        self.assertEqual(best_config.transport, "ble")
+        self.assertEqual(configured.config.ble_notify_uuid, "notify-uuid")
+        self.assertEqual(configured.cue_names, ("intro",))
+        self.assertIs(configured.state_tracker, integration.state_tracker)
+        self.assertEqual(test_ble.call_args.kwargs["backend"], "macos-app")
+        self.assertEqual(test_ble.call_args.kwargs["timeout"], 2.0)
+        self.assertEqual(test_ble.call_args.kwargs["name_contains"], "PL103")
+
+    def test_local_connection_candidate_helpers_use_integration_defaults(self) -> None:
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.usbmodem21301",
+                    "ports": [{"path": "/dev/cu.usbmodem21301", "selected": True}],
+                },
+                "ble": {"scan": None},
+            },
+        ):
+            candidates = local_connection_candidates(
+                LightConnectionConfig(transport="usb"),
+            )
+
+        self.assertEqual(candidates[0].config.transport, "usb")
+
+        with patch(
+            "zhiyun_light_control.integration.test_ble_endpoint_candidates",
+            return_value=FakePayload(
+                {
+                    "backend": "worker",
+                    "address": "UUID-1",
+                    "confirmed_candidates": [
+                        {
+                            "profile": "direct",
+                            "service_uuid": "service-uuid",
+                            "write_uuid": "write-uuid",
+                            "notify_uuid": "notify-uuid",
+                        }
+                    ],
+                }
+            ),
+        ):
+            ble_candidates = local_ble_endpoint_connection_candidates(
+                LightConnectionConfig(transport="ble", address="UUID-1"),
+            )
+
+        self.assertEqual(ble_candidates[0].config.ble_write_uuid, "write-uuid")
+
     def test_local_devices_can_override_ble_status_probe(self) -> None:
         with patch(
             "zhiyun_light_control.integration.discover_transport_devices",
@@ -1026,6 +1201,92 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(payload["ok"])
         self.assertEqual(test_ble.call_args.kwargs["max_candidates"], 1)
+
+    async def test_async_integration_exposes_connection_routes(self) -> None:
+        usb_candidate = LightConnectionCandidate(
+            config=LightConnectionConfig.usb(
+                port="/dev/cu.usbmodem21301",
+                persistent=True,
+            ),
+            source="devices.usb",
+            confidence="known-usb-descriptor",
+            confidence_score=95,
+            reason="USB descriptor matches Zhiyun Virtual ComPort",
+        )
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="PL103"),
+            allow_control=True,
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.local_connection_candidates",
+            return_value=(usb_candidate,),
+        ) as candidates:
+            routes = await integration.connection_candidates(
+                include_ble=True,
+                persistent=True,
+            )
+            best_config = await integration.best_connection_config(
+                include_ble=True,
+                persistent=True,
+            )
+            configured = await integration.with_best_connection(
+                include_ble=True,
+                persistent=True,
+            )
+
+        self.assertEqual(routes, (usb_candidate,))
+        self.assertEqual(best_config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(configured.allow_control)
+        self.assertIs(configured.state_tracker, integration.state_tracker)
+        self.assertEqual(candidates.call_args.kwargs["include_ble"], True)
+        self.assertEqual(candidates.call_args.kwargs["persistent"], True)
+
+    async def test_async_integration_exposes_ble_endpoint_routes(self) -> None:
+        ble_candidate = LightConnectionCandidate(
+            config=LightConnectionConfig.ble(
+                address="UUID-1",
+                backend="macos-app",
+                service_uuid="service-uuid",
+                write_uuid="write-uuid",
+                notify_uuid="notify-uuid",
+                persistent=True,
+            ),
+            source="ble.endpoint_report",
+            confidence="confirmed-endpoint",
+            confidence_score=100,
+            reason="endpoint candidate returned ACK-backed DEVICE_INFO",
+        )
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="PL103"),
+            cue_names=("intro",),
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.local_ble_endpoint_connection_candidates",
+            return_value=(ble_candidate,),
+        ) as candidates:
+            routes = await integration.ble_endpoint_connection_candidates(
+                backend="macos-app",
+                persistent=True,
+            )
+            best_config = await integration.best_ble_endpoint_config(
+                backend="macos-app",
+                persistent=True,
+            )
+            configured = await integration.with_ble_endpoint_connection(
+                backend="macos-app",
+                persistent=True,
+            )
+
+        self.assertEqual(routes, (ble_candidate,))
+        self.assertEqual(best_config.ble_write_uuid, "write-uuid")
+        self.assertEqual(configured.config.ble_notify_uuid, "notify-uuid")
+        self.assertEqual(configured.cue_names, ("intro",))
+        self.assertIs(configured.state_tracker, integration.state_tracker)
+        self.assertEqual(candidates.call_args.kwargs["backend"], "macos-app")
+        self.assertEqual(candidates.call_args.kwargs["persistent"], True)
 
     async def test_local_async_snapshot_includes_manifest_and_summary(self) -> None:
         with patch(

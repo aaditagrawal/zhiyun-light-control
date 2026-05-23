@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .bridge import (
     LightConnectionConfig,
@@ -19,9 +19,18 @@ from .controller import (
 )
 from .cues import CueLibrary
 from .devices import (
+    LightConnectionCandidate,
+    connection_candidates_from_devices,
+    connection_candidates_from_endpoint_report,
     discover_transport_devices,
     inspect_ble_device,
     test_ble_endpoint_candidates,
+)
+from .devices import (
+    best_connection_candidate as _best_connection_candidate,
+)
+from .devices import (
+    best_connection_config as _best_connection_config,
 )
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
@@ -328,6 +337,150 @@ class LightIntegration:
             name_contains=name_contains,
             python=python,
             max_candidates=max_candidates,
+        )
+
+    def connection_candidates(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return local_connection_candidates(
+            self.config,
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+        )
+
+    def best_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionCandidate:
+        return _best_connection_candidate(
+            self.connection_candidates(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    def best_connection_config(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionConfig:
+        return _best_connection_config(
+            self.connection_candidates(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    def with_config(self, config: LightConnectionConfig) -> LightIntegration:
+        return replace(self, config=config)
+
+    def with_best_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightIntegration:
+        return self.with_config(
+            self.best_connection_config(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    def ble_endpoint_connection_candidates(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+        persistent: bool = False,
+        require_confirmed: bool = True,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return local_ble_endpoint_connection_candidates(
+            self.config,
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+            max_candidates=max_candidates,
+            persistent=persistent,
+            require_confirmed=require_confirmed,
+        )
+
+    def best_ble_endpoint_config(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+        persistent: bool = False,
+        require_confirmed: bool = True,
+    ) -> LightConnectionConfig:
+        return _best_connection_config(
+            self.ble_endpoint_connection_candidates(
+                backend=backend,
+                timeout=timeout,
+                address=address,
+                name_contains=name_contains,
+                python=python,
+                max_candidates=max_candidates,
+                persistent=persistent,
+                require_confirmed=require_confirmed,
+            )
+        )
+
+    def with_ble_endpoint_connection(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+        persistent: bool = False,
+        require_confirmed: bool = True,
+    ) -> LightIntegration:
+        return self.with_config(
+            self.best_ble_endpoint_config(
+                backend=backend,
+                timeout=timeout,
+                address=address,
+                name_contains=name_contains,
+                python=python,
+                max_candidates=max_candidates,
+                persistent=persistent,
+                require_confirmed=require_confirmed,
+            )
         )
 
     def controller(
@@ -997,6 +1150,150 @@ class AsyncLightIntegration:
             max_candidates=max_candidates,
         )
 
+    async def connection_candidates(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return await local_async_connection_candidates(
+            self.config,
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+        )
+
+    async def best_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionCandidate:
+        return _best_connection_candidate(
+            await self.connection_candidates(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    async def best_connection_config(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> LightConnectionConfig:
+        return _best_connection_config(
+            await self.connection_candidates(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    def with_config(self, config: LightConnectionConfig) -> AsyncLightIntegration:
+        return replace(self, config=config)
+
+    async def with_best_connection(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+    ) -> AsyncLightIntegration:
+        return self.with_config(
+            await self.best_connection_config(
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+            )
+        )
+
+    async def ble_endpoint_connection_candidates(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+        persistent: bool = False,
+        require_confirmed: bool = True,
+    ) -> tuple[LightConnectionCandidate, ...]:
+        return await local_async_ble_endpoint_connection_candidates(
+            self.config,
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+            max_candidates=max_candidates,
+            persistent=persistent,
+            require_confirmed=require_confirmed,
+        )
+
+    async def best_ble_endpoint_config(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+        persistent: bool = False,
+        require_confirmed: bool = True,
+    ) -> LightConnectionConfig:
+        return _best_connection_config(
+            await self.ble_endpoint_connection_candidates(
+                backend=backend,
+                timeout=timeout,
+                address=address,
+                name_contains=name_contains,
+                python=python,
+                max_candidates=max_candidates,
+                persistent=persistent,
+                require_confirmed=require_confirmed,
+            )
+        )
+
+    async def with_ble_endpoint_connection(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+        persistent: bool = False,
+        require_confirmed: bool = True,
+    ) -> AsyncLightIntegration:
+        return self.with_config(
+            await self.best_ble_endpoint_config(
+                backend=backend,
+                timeout=timeout,
+                address=address,
+                name_contains=name_contains,
+                python=python,
+                max_candidates=max_candidates,
+                persistent=persistent,
+                require_confirmed=require_confirmed,
+            )
+        )
+
     def controller(
         self,
         *,
@@ -1526,6 +1823,45 @@ async def local_async_devices(
     )
 
 
+def local_connection_candidates(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+) -> tuple[LightConnectionCandidate, ...]:
+    resolved = config or LightConnectionConfig()
+    return connection_candidates_from_devices(
+        local_devices(
+            resolved,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+        ),
+        include_usb=include_usb,
+        include_ble=include_ble,
+        persistent=persistent,
+    )
+
+
+async def local_async_connection_candidates(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+) -> tuple[LightConnectionCandidate, ...]:
+    return await asyncio.to_thread(
+        local_connection_candidates,
+        config,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+        persistent=persistent,
+    )
+
+
 def local_usb_discovery(
     config: LightConnectionConfig | None = None,
     *,
@@ -1759,6 +2095,66 @@ async def local_async_ble_endpoint_test(
         name_contains=name_contains,
         python=python,
         max_candidates=max_candidates,
+    )
+
+
+def local_ble_endpoint_connection_candidates(
+    config: LightConnectionConfig | None = None,
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    address: str | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+    max_candidates: int = 4,
+    persistent: bool = False,
+    require_confirmed: bool = True,
+) -> tuple[LightConnectionCandidate, ...]:
+    resolved = config or LightConnectionConfig(transport="ble")
+    selected_backend = backend or _ble_backend(resolved)
+    selected_timeout = resolved.timeout if timeout is None else timeout
+    report = local_ble_endpoint_test(
+        resolved,
+        backend=selected_backend,
+        timeout=selected_timeout,
+        address=address,
+        name_contains=name_contains,
+        python=python,
+        max_candidates=max_candidates,
+    )
+    return connection_candidates_from_endpoint_report(
+        report,
+        backend=selected_backend,
+        timeout=selected_timeout,
+        python=python or resolved.ble_python,
+        persistent=persistent,
+        require_confirmed=require_confirmed,
+    )
+
+
+async def local_async_ble_endpoint_connection_candidates(
+    config: LightConnectionConfig | None = None,
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    address: str | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+    max_candidates: int = 4,
+    persistent: bool = False,
+    require_confirmed: bool = True,
+) -> tuple[LightConnectionCandidate, ...]:
+    return await asyncio.to_thread(
+        local_ble_endpoint_connection_candidates,
+        config,
+        backend=backend,
+        timeout=timeout,
+        address=address,
+        name_contains=name_contains,
+        python=python,
+        max_candidates=max_candidates,
+        persistent=persistent,
+        require_confirmed=require_confirmed,
     )
 
 

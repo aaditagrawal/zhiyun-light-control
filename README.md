@@ -696,6 +696,11 @@ Embedded SDK integrations expose the same guard semantics with
 `integration.require_readiness()`, and `integration.require_control_ready()`;
 the rig API also has `require_readiness()` and `require_readiness_all()` for
 fixture-scoped preflights.
+They also expose `connection_candidates()`, `best_connection_config()`,
+`with_best_connection()`, `ble_endpoint_connection_candidates()`,
+`best_ble_endpoint_config()`, and `with_ble_endpoint_connection()` so embedded
+hosts can turn USB/BLE discovery and BLE endpoint ACK evidence into reusable
+SDK configs without starting the HTTP bridge.
 The integration facade also exposes direct control helpers:
 `apply_scene()`, `apply_preset()`, `run_sequence()`, `run_cue()`, and
 `run_named_cue()`. Pass `require_ready=True` to check `control_requests` before
@@ -732,6 +737,11 @@ devices = integration.devices(include_ble_status=True)
 snapshot = integration.snapshot(include_ble_status=True)
 validation = integration.validate(include_object_reads=True)
 usb_discovery = integration.discover_usb(object_ids=(0, 1), first_words=(0x0100,))
+route_candidates = integration.connection_candidates(include_ble=True)
+selected_integration = integration.with_best_connection(
+    include_ble=True,
+    persistent=True,
+)
 plan = integration.plan_named_cue("intro", start_seq=1)
 integration.require_readiness("read_status")
 
@@ -740,6 +750,8 @@ print(devices["usb"]["selected_port"])
 print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
 print(usb_discovery["summary"]["confirmed_names"])
+print([candidate.to_dict() for candidate in route_candidates])
+print(selected_integration.config.to_dict())
 print(plan["steps"])
 
 result = integration.apply_scene(
@@ -785,6 +797,15 @@ async def main() -> None:
     devices = await integration.devices(include_ble=True)
     ble = await integration.inspect_ble(backend="macos-app")
     endpoint_test = await integration.test_ble_endpoints(backend="macos-app")
+    routes = await integration.connection_candidates(include_ble=True)
+    ble_routes = await integration.ble_endpoint_connection_candidates(
+        backend="macos-app",
+        require_confirmed=False,
+    )
+    selected = await integration.with_ble_endpoint_connection(
+        backend="macos-app",
+        require_confirmed=False,
+    )
     validation = await integration.validate(include_object_reads=True)
     plan = integration.plan_named_cue("intro", start_seq=1)
 
@@ -792,6 +813,9 @@ async def main() -> None:
     print(devices["ble"]["included"])
     print(ble["endpoint_candidates"])
     print(endpoint_test["confirmed_candidates"])
+    print([candidate.to_dict() for candidate in routes])
+    print([candidate.to_dict() for candidate in ble_routes])
+    print(selected.config.to_dict())
     print(validation["summary"]["ready_for"])
     print(plan["steps"])
 
