@@ -39,7 +39,11 @@ from .http_client import (
     command_result_status,
     readiness_actions_by_id,
 )
-from .macos_ble_app import macos_ble_app_info, open_macos_bluetooth_settings
+from .macos_ble_app import (
+    macos_ble_app_info,
+    macos_ble_app_status,
+    open_macos_bluetooth_settings,
+)
 from .models import CommandResult, Scene
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .protocol import (
@@ -146,6 +150,7 @@ __all__ = [
     "inspect_ble_device",
     "test_ble_endpoint_candidates",
     "macos_ble_app_info",
+    "macos_ble_app_status",
     "sacn_multicast_address",
     "read_async_status",
     "read_sync_status",

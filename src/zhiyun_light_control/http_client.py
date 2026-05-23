@@ -62,6 +62,7 @@ class LightBridgeClient:
         self,
         *,
         include_ble: bool = False,
+        include_ble_status: bool = False,
         ble_backend: str | None = None,
         timeout: float | None = None,
         name_contains: str | None = None,
@@ -69,6 +70,8 @@ class LightBridgeClient:
         query: dict[str, object] = {}
         if include_ble:
             query["include_ble"] = "true"
+        if include_ble_status:
+            query["include_ble_status"] = "true"
         if ble_backend is not None:
             query["ble_backend"] = ble_backend
         if timeout is not None:

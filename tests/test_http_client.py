@@ -173,9 +173,19 @@ class HttpClientTests(unittest.TestCase):
             )
             self.assertIn("/brightness", client.commands()["post"])
             self.assertIn("brightness", client.capabilities()["scene_fields"])
-            devices = client.devices()
+            with patch(
+                "zhiyun_light_control.devices.macos_ble_app_status",
+                return_value={
+                    "ok": False,
+                    "state": "unauthorized",
+                    "authorization": "denied",
+                },
+            ) as ble_status:
+                devices = client.devices(include_ble_status=True, timeout=0.1)
             self.assertIn("usb", devices)
             self.assertFalse(devices["ble"]["included"])
+            self.assertEqual(devices["ble"]["macos_status"]["state"], "unauthorized")
+            ble_status.assert_called_once_with(timeout=0.1)
             self.assertEqual(sorted(client.cues()["cues"]), ["intro"])
             inspect_result = BleInspectResult(
                 ok=True,
