@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from zhiyun_light_control import (
-    LightConnectionCandidate,
     LightConnectionConfig,
     LightIntegration,
-    best_connection_config,
     load_light_connection_config,
     save_light_connection_config,
 )
@@ -61,38 +60,35 @@ def main() -> None:
 
     integration = LightIntegration()
     has_saved_config = config_path.exists() and config_path.stat().st_size > 0
-    routes: list[dict[str, object]] = []
     if has_saved_config and not args.rediscover:
         config = load_light_connection_config(config_path)
+        integration = integration.with_config(config)
+        setup = integration.setup_report(
+            include_usb=False,
+            include_ble=False,
+            include_ble_status=True,
+            require_confirmed_route=False,
+            allow_control=args.allow_control,
+            include_object_reads=args.include_object_reads,
+        )
         setup_source = "saved"
     else:
-        config, routes = discover_confirmed_config(
-            integration,
+        setup = integration.setup_report(
             include_ble=args.include_ble,
             include_ble_status=True,
             persistent=args.persistent,
+            allow_control=args.allow_control,
+            include_object_reads=args.include_object_reads,
         )
+        if setup["ok"] is not True:
+            raise SystemExit(json.dumps(setup, indent=2, sort_keys=True))
+        config = config_from_setup(setup)
         save_light_connection_config(config, config_path)
+        integration = integration.with_config(config)
         setup_source = "discovered"
 
-    integration = integration.with_config(config)
-    status, ok, error = integration.status()
-    readiness = integration.readiness(include_ble_status=True)
-    validation = integration.validate(
-        allow_control=args.allow_control,
-        include_object_reads=args.include_object_reads,
-    )
-    payload: dict[str, object] = {
-        "config": config.to_dict(),
-        "setup_source": setup_source,
-        "routes": routes,
-        "status_ok": ok,
-        "status_error": error,
-        "status": status,
-        "ready_for": readiness["ready_for"],
-        "validation_ready_for": validation["summary"]["ready_for"],
-        "validation_unconfirmed": validation["unconfirmed"],
-    }
+    payload = dict(setup)
+    payload["setup_source"] = setup_source
 
     if args.brightness is not None:
         register = integration.register(device_id=0, group_id=0)
@@ -109,28 +105,11 @@ def main() -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
-def discover_confirmed_config(
-    integration: LightIntegration,
-    *,
-    include_ble: bool,
-    include_ble_status: bool,
-    persistent: bool,
-) -> tuple[LightConnectionConfig, list[dict[str, object]]]:
-    routes = integration.probe_connection_candidates(
-        include_ble=include_ble,
-        include_ble_status=include_ble_status,
-        persistent=persistent,
-    )
-    confirmed = tuple(route for route in routes if status_probe_confirmed(route))
-    return best_connection_config(confirmed), [route.to_dict() for route in routes]
-
-
-def status_probe_confirmed(candidate: LightConnectionCandidate) -> bool:
-    evidence = candidate.evidence or {}
-    status_probe = evidence.get("status_probe")
-    if not isinstance(status_probe, dict):
-        return False
-    return status_probe.get("connection_confirmed") is True
+def config_from_setup(payload: Mapping[str, object]) -> LightConnectionConfig:
+    config = payload.get("config")
+    if not isinstance(config, Mapping):
+        raise ValueError("setup report is missing a config object")
+    return LightConnectionConfig.from_mapping(config)
 
 
 if __name__ == "__main__":

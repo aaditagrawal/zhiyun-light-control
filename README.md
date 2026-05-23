@@ -130,7 +130,9 @@ uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --allow-co
 The quickstart persists only a route whose read-only status probe succeeded and
 prints `ready_for`, `validation_ready_for`, and unconfirmed primitive names so a
 host can decide whether status, object reads, or control writes are actually
-usable on the selected transport.
+usable on the selected transport. The same shape is available directly from
+`LightIntegration.setup_report()` for host applications that do not want to run
+the example script.
 
 `discover-usb` is for bench work. It records global reads, object-read
 candidates, first-word probes, and optional safe control candidates with the
@@ -742,6 +744,10 @@ or `with_confirmed_connection()` to select the best USB/BLE config whose status
 probe succeeded. This confirms identity/status access only; keep using
 `validate(..., allow_control=True)` before treating object reads or writes as
 confirmed for show control.
+Call `setup_report()` when a host wants all setup evidence in one SDK payload:
+status-confirmed routes, selected config, readiness, validation readiness, and
+unconfirmed primitive names. This is the same evidence model used by
+`examples/sdk_quickstart.py`.
 The integration facade also exposes direct control helpers:
 `register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
 `set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,
@@ -788,6 +794,7 @@ integration = LightIntegration(
 )
 
 ready = integration.readiness()
+setup = integration.setup_report(include_ble_status=True, include_object_reads=True)
 devices = integration.devices(include_ble_status=True)
 snapshot = integration.snapshot(include_ble_status=True)
 validation = integration.validate(include_object_reads=True)
@@ -803,6 +810,7 @@ plan = integration.plan_named_cue("intro", start_seq=1)
 integration.require_readiness("read_status")
 
 print(ready["ready_for"])
+print(setup["summary"])
 print(devices["usb"]["selected_port"])
 print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
@@ -858,6 +866,10 @@ async def main() -> None:
     )
 
     ready = await integration.readiness(include_ble=True)
+    setup = await integration.setup_report(
+        include_ble=True,
+        include_object_reads=True,
+    )
     devices = await integration.devices(include_ble=True)
     ble = await integration.inspect_ble(backend="macos-app")
     endpoint_test = await integration.test_ble_endpoints(backend="macos-app")
@@ -874,6 +886,7 @@ async def main() -> None:
     plan = integration.plan_named_cue("intro", start_seq=1)
 
     print(ready["ready_for"])
+    print(setup["summary"])
     print(devices["ble"]["included"])
     print(ble["endpoint_candidates"])
     print(endpoint_test["confirmed_candidates"])

@@ -493,6 +493,56 @@ class LightIntegration:
             )
         )
 
+    def setup_report(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool | None = None,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        obj: int | None = None,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> dict[str, object]:
+        return local_setup_report(
+            self.config,
+            allow_control=(
+                self.allow_control if allow_control is None else allow_control
+            ),
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            require_confirmed_route=require_confirmed_route,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            device_id=device_id,
+            obj=self._obj(obj),
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+            red=red,
+            green=green,
+            blue=blue,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+            control_mode=control_mode,
+        )
+
     def ble_endpoint_connection_candidates(
         self,
         *,
@@ -1596,6 +1646,56 @@ class AsyncLightIntegration:
             )
         )
 
+    async def setup_report(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool | None = None,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        obj: int | None = None,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> dict[str, object]:
+        return await local_async_setup_report(
+            self.config,
+            allow_control=(
+                self.allow_control if allow_control is None else allow_control
+            ),
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            require_confirmed_route=require_confirmed_route,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            device_id=device_id,
+            obj=self._obj(obj),
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+            red=red,
+            green=green,
+            blue=blue,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+            control_mode=control_mode,
+        )
+
     async def ble_endpoint_connection_candidates(
         self,
         *,
@@ -2491,6 +2591,141 @@ async def local_async_probe_connection_candidates(
     )
 
 
+def local_setup_report(
+    config: LightConnectionConfig | None = None,
+    *,
+    allow_control: bool = False,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+    require_confirmed_route: bool = True,
+    include_object_reads: bool = False,
+    include_color: bool = False,
+    device_id: int = 0,
+    obj: int = 1,
+    brightness: float = 35.0,
+    kelvin: int = 5600,
+    sleep: int = 0,
+    red: int = 255,
+    green: int = 255,
+    blue: int = 255,
+    hue: float = 0.0,
+    saturation: float = 0.0,
+    intensity: int = 35,
+    control_mode: int = DEFAULT_CONTROL_MODE,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig()
+    route_error: str | None = None
+    routes = local_probe_connection_candidates(
+        resolved,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+        persistent=persistent,
+    )
+    confirmed_routes = tuple(
+        route for route in routes if _candidate_status_confirmed(route)
+    )
+    selected_route = _setup_selected_route(
+        routes,
+        confirmed_routes,
+        require_confirmed_route=require_confirmed_route,
+    )
+    if require_confirmed_route and selected_route is None:
+        route_error = "no status-confirmed connection candidates available"
+    selected_config = selected_route.config if selected_route is not None else resolved
+    status, status_ok, status_error = local_status_snapshot(selected_config)
+    readiness = local_readiness(
+        selected_config,
+        allow_control=allow_control,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+    )
+    validation = local_validation(
+        selected_config,
+        allow_control=allow_control,
+        include_object_reads=include_object_reads,
+        include_color=include_color,
+        device_id=device_id,
+        obj=obj,
+        brightness=brightness,
+        kelvin=kelvin,
+        sleep=sleep,
+        red=red,
+        green=green,
+        blue=blue,
+        hue=hue,
+        saturation=saturation,
+        intensity=intensity,
+        control_mode=control_mode,
+    )
+    return _setup_report_payload(
+        config=selected_config,
+        routes=routes,
+        selected_route=selected_route,
+        route_error=route_error,
+        require_confirmed_route=require_confirmed_route,
+        allow_control=allow_control,
+        include_object_reads=include_object_reads,
+        status=status,
+        status_ok=status_ok,
+        status_error=status_error,
+        readiness=readiness,
+        validation=validation,
+    )
+
+
+async def local_async_setup_report(
+    config: LightConnectionConfig | None = None,
+    *,
+    allow_control: bool = False,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+    require_confirmed_route: bool = True,
+    include_object_reads: bool = False,
+    include_color: bool = False,
+    device_id: int = 0,
+    obj: int = 1,
+    brightness: float = 35.0,
+    kelvin: int = 5600,
+    sleep: int = 0,
+    red: int = 255,
+    green: int = 255,
+    blue: int = 255,
+    hue: float = 0.0,
+    saturation: float = 0.0,
+    intensity: int = 35,
+    control_mode: int = DEFAULT_CONTROL_MODE,
+) -> dict[str, object]:
+    return await asyncio.to_thread(
+        local_setup_report,
+        config,
+        allow_control=allow_control,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+        persistent=persistent,
+        require_confirmed_route=require_confirmed_route,
+        include_object_reads=include_object_reads,
+        include_color=include_color,
+        device_id=device_id,
+        obj=obj,
+        brightness=brightness,
+        kelvin=kelvin,
+        sleep=sleep,
+        red=red,
+        green=green,
+        blue=blue,
+        hue=hue,
+        saturation=saturation,
+        intensity=intensity,
+        control_mode=control_mode,
+    )
+
+
 def local_usb_discovery(
     config: LightConnectionConfig | None = None,
     *,
@@ -3203,6 +3438,93 @@ def _candidate_status_confirmed(candidate: LightConnectionCandidate) -> bool:
     if not isinstance(status_probe, Mapping):
         return False
     return status_probe.get("connection_confirmed") is True
+
+
+def _setup_selected_route(
+    routes: tuple[LightConnectionCandidate, ...],
+    confirmed_routes: tuple[LightConnectionCandidate, ...],
+    *,
+    require_confirmed_route: bool,
+) -> LightConnectionCandidate | None:
+    if confirmed_routes:
+        return _best_connection_candidate(confirmed_routes)
+    if require_confirmed_route:
+        return None
+    if routes:
+        return _best_connection_candidate(routes)
+    return None
+
+
+def _setup_report_payload(
+    *,
+    config: LightConnectionConfig,
+    routes: tuple[LightConnectionCandidate, ...],
+    selected_route: LightConnectionCandidate | None,
+    route_error: str | None,
+    require_confirmed_route: bool,
+    allow_control: bool,
+    include_object_reads: bool,
+    status: Mapping[str, object],
+    status_ok: bool,
+    status_error: str | None,
+    readiness: Mapping[str, object],
+    validation: Mapping[str, object],
+) -> dict[str, object]:
+    ready_for = integration_ready_for(readiness)
+    validation_ready = _validation_ready_for(validation)
+    route_confirmed = (
+        selected_route is not None and _candidate_status_confirmed(selected_route)
+    )
+    ok = status_ok and (route_confirmed or not require_confirmed_route)
+    errors = [error for error in (route_error, status_error) if error is not None]
+    return {
+        "api": "zhiyun-light-control",
+        "ok": ok,
+        "config": config.to_dict(),
+        "selected_route": None
+        if selected_route is None
+        else selected_route.to_dict(),
+        "routes": [route.to_dict() for route in routes],
+        "route_confirmed": route_confirmed,
+        "require_confirmed_route": require_confirmed_route,
+        "control_enabled": allow_control,
+        "include_object_reads": include_object_reads,
+        "status_ok": status_ok,
+        "status_error": status_error,
+        "status": dict(status),
+        "ready_for": ready_for,
+        "validation_ready_for": validation_ready,
+        "validation_unconfirmed": _validation_unconfirmed(validation),
+        "validation": dict(validation),
+        "summary": {
+            "ok": ok,
+            "connection_confirmed": status_ok,
+            "route_confirmed": route_confirmed,
+            "ready_for": ready_for,
+            "validation_ready_for": validation_ready,
+            "validation_unconfirmed": _validation_unconfirmed(validation),
+            "pending_action_ids": integration_pending_action_ids(readiness),
+            "warnings": integration_warnings(readiness),
+            "errors": errors,
+        },
+    }
+
+
+def _validation_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:
+    summary = payload.get("summary")
+    if not isinstance(summary, Mapping):
+        return {}
+    ready_for = summary.get("ready_for")
+    if not isinstance(ready_for, Mapping):
+        return {}
+    return {str(key): value is True for key, value in ready_for.items()}
+
+
+def _validation_unconfirmed(payload: Mapping[str, object]) -> list[str]:
+    unconfirmed = payload.get("unconfirmed")
+    if not isinstance(unconfirmed, list):
+        return []
+    return [str(name) for name in unconfirmed]
 
 
 def _rank_connection_candidates(

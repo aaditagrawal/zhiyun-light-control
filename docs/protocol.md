@@ -268,6 +268,11 @@ Hosts that need a route proven by a read-only status ACK can call
 `with_confirmed_connection` to select the best route whose identity/status probe
 succeeds. That status confirmation is separate from control-write confirmation;
 use validation with `allow_control` before enabling production writes.
+`setup_report` combines the common host setup flow into one SDK payload:
+status-probed routes, the selected config, readiness, validation readiness, and
+unconfirmed primitive names. It is intended for setup dashboards and media hosts
+that need to decide whether status, object reads, and control writes are
+independently usable on the selected transport.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.

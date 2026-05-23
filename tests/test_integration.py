@@ -1644,6 +1644,95 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(candidates.call_args.kwargs["include_ble"], True)
         self.assertEqual(candidates.call_args.kwargs["persistent"], True)
 
+    def test_light_integration_setup_report_selects_confirmed_route(self) -> None:
+        usb_candidate = LightConnectionCandidate(
+            config=LightConnectionConfig.usb(port="/dev/cu.usbmodem21301"),
+            source="devices.usb.status",
+            confidence="status-confirmed",
+            confidence_score=115,
+            reason="USB status probe confirmed",
+            evidence={
+                "status_probe": {
+                    "connection_confirmed": True,
+                    "firmware": "1.6.4",
+                }
+            },
+        )
+        readiness = {
+            "ready_for": {
+                "read_status": True,
+                "control_requests": True,
+                "confirmed_control": False,
+            },
+            "warnings": ["No ACK-confirmed control request is recorded yet."],
+            "summary": {"pending_action_ids": ["confirm-control"]},
+        }
+        validation = {
+            "summary": {
+                "ready_for": {
+                    "read_status": True,
+                    "object_reads": False,
+                    "control_setup": True,
+                    "control_writes": False,
+                }
+            },
+            "unconfirmed": ["read_brightness", "set_brightness"],
+        }
+        integration = LightIntegration(allow_control=True, obj=2)
+
+        with (
+            patch(
+                "zhiyun_light_control.integration.local_probe_connection_candidates",
+                return_value=(usb_candidate,),
+            ) as routes,
+            patch(
+                "zhiyun_light_control.integration.local_status_snapshot",
+                return_value=(
+                    {
+                        "transport": "usb",
+                        "connection_confirmed": True,
+                        "firmware": "1.6.4",
+                    },
+                    True,
+                    None,
+                ),
+            ) as status,
+            patch(
+                "zhiyun_light_control.integration.local_readiness",
+                return_value=readiness,
+            ) as ready,
+            patch(
+                "zhiyun_light_control.integration.local_validation",
+                return_value=validation,
+            ) as validate,
+        ):
+            report = integration.setup_report(
+                include_ble=True,
+                persistent=True,
+                include_object_reads=True,
+            )
+
+        self.assertTrue(report["ok"])
+        self.assertTrue(report["route_confirmed"])
+        self.assertEqual(report["config"]["port"], "/dev/cu.usbmodem21301")
+        self.assertEqual(
+            report["selected_route"]["evidence"]["status_probe"]["firmware"],
+            "1.6.4",
+        )
+        self.assertEqual(report["summary"]["pending_action_ids"], ["confirm-control"])
+        self.assertEqual(
+            report["summary"]["validation_unconfirmed"],
+            ["read_brightness", "set_brightness"],
+        )
+        self.assertFalse(report["validation_ready_for"]["object_reads"])
+        self.assertEqual(routes.call_args.kwargs["include_ble"], True)
+        self.assertEqual(routes.call_args.kwargs["persistent"], True)
+        self.assertEqual(status.call_args.args[0].port, "/dev/cu.usbmodem21301")
+        self.assertEqual(ready.call_args.args[0].port, "/dev/cu.usbmodem21301")
+        self.assertTrue(validate.call_args.kwargs["allow_control"])
+        self.assertTrue(validate.call_args.kwargs["include_object_reads"])
+        self.assertEqual(validate.call_args.kwargs["obj"], 2)
+
     async def test_async_integration_exposes_status_probed_routes(self) -> None:
         usb_candidate = LightConnectionCandidate(
             config=LightConnectionConfig.usb(port="/dev/cu.usbmodem21301"),
