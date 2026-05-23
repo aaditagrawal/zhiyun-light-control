@@ -91,6 +91,9 @@ That is protocol evidence for the G60 feature set, but the current USB route has
 not produced ACK-confirmed object control on the attached light.
 
 The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, echo detection, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, `echoed_write`, or `response_without_matching_ack`.
+For dry-run routing, `scene_command_specs()` exposes the ordered runtime
+commands for a `Scene`, and `scene_frame_specs()` serializes those commands into
+frames for a chosen first word and sequence range without opening USB or BLE.
 
 `zlight validate` and `validate_sync_light()` build on `CommandResult` to produce
 a hardware evidence report. A primitive is `confirmed` only when the device

@@ -16,6 +16,12 @@ from .bridge import (
     open_light,
 )
 from .client import ProbeResult, ZhiyunLight
+from .commands import (
+    RuntimeCommandSpec,
+    RuntimeFrameSpec,
+    scene_command_specs,
+    scene_frame_specs,
+)
 from .controller import (
     AsyncLightController,
     LightController,
@@ -244,6 +250,8 @@ __all__ = [
     "ProbeResult",
     "RigConfigError",
     "RigNotReady",
+    "RuntimeCommandSpec",
+    "RuntimeFrameSpec",
     "Scene",
     "SceneState",
     "SceneStateTracker",
@@ -346,6 +354,8 @@ __all__ = [
     "macos_ble_app_info",
     "macos_ble_app_status",
     "sacn_multicast_address",
+    "scene_command_specs",
+    "scene_frame_specs",
     "read_async_status",
     "read_sync_status",
     "readiness_actions_by_id",

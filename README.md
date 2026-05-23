@@ -765,18 +765,26 @@ asyncio.run(main())
 ```
 
 ```python
-from zhiyun_light_control import LightConnectionConfig, Scene, open_light
+from zhiyun_light_control import (
+    LightConnectionConfig,
+    Scene,
+    open_light,
+    scene_command_specs,
+    scene_frame_specs,
+)
 
 config = LightConnectionConfig(transport="usb", port="/dev/cu.usbmodem21301")
+scene = Scene(obj=1, sleep=0, brightness=35, kelvin=5600)
+
+print([command.to_dict() for command in scene_command_specs(scene)])
+print([frame.to_dict() for frame in scene_frame_specs(scene, start_seq=1)])
 
 with open_light(config) as light:
     print(light.probe())
     light.register_confirmed(device_id=0)
     light.set_brightness_confirmed(obj=1, value=35)
     light.set_cct(obj=1, kelvin=5600)
-    results = light.apply_scene_confirmed(
-        Scene(obj=1, sleep=0, brightness=35, kelvin=5600)
-    )
+    results = light.apply_scene_confirmed(scene)
     print([result.to_dict() for result in results])
 ```
 
@@ -788,6 +796,10 @@ BLE, isolated BLE, and custom transports, and they raise
 `CommandResult` objects. `open_light(LightConnectionConfig(...))` returns a
 context manager with the same sync SDK methods for USB and for BLE via the sync
 adapter, so host scripts can switch transports from configuration.
+`scene_command_specs()` and `scene_frame_specs()` expose the exact ordered
+runtime commands and serialized frame bytes before any transport is opened, so
+host applications can preview, audit, log, or route commands through their own
+media-control systems.
 
 For media-control code that wants presets and cues without running the HTTP
 bridge, use the in-process controller:

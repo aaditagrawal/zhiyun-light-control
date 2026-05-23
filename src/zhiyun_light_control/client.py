@@ -6,6 +6,7 @@ import itertools
 import time
 from dataclasses import asdict, dataclass
 
+from .commands import scene_command_specs
 from .models import (
     CommandResult,
     Scene,
@@ -352,78 +353,10 @@ class ZhiyunLight:
         *,
         control_mode: int = DEFAULT_CONTROL_MODE,
     ) -> list[CommandResult]:
-        results: list[CommandResult] = []
-        if scene.sleep is not None:
-            results.append(
-                self.exchange_runtime(
-                    RuntimeCommand.SLEEP,
-                    sleep_payload(
-                        scene.obj,
-                        scene.sleep,
-                        read=False,
-                        control_mode=control_mode,
-                    ),
-                )
-            )
-        if scene.brightness is not None:
-            results.append(
-                self.exchange_runtime(
-                    RuntimeCommand.BRIGHTNESS,
-                    brightness_payload(
-                        scene.obj,
-                        scene.brightness,
-                        read=False,
-                        control_mode=control_mode,
-                    ),
-                )
-            )
-        if scene.kelvin is not None:
-            results.append(
-                self.exchange_runtime(
-                    RuntimeCommand.CCT,
-                    cct_payload(
-                        scene.obj,
-                        scene.kelvin,
-                        read=False,
-                        control_mode=control_mode,
-                    ),
-                )
-            )
-        if scene.red is not None or scene.green is not None or scene.blue is not None:
-            if scene.red is None or scene.green is None or scene.blue is None:
-                raise ValueError("scene RGB requires red, green, and blue")
-            results.append(
-                self.exchange_runtime(
-                    RuntimeCommand.RGB,
-                    rgb_payload(
-                        scene.obj,
-                        scene.red,
-                        scene.green,
-                        scene.blue,
-                        control_mode=control_mode,
-                    ),
-                )
-            )
-        if (
-            scene.hue is not None
-            or scene.saturation is not None
-            or scene.intensity is not None
-        ):
-            if scene.hue is None or scene.saturation is None or scene.intensity is None:
-                raise ValueError("scene HSI requires hue, saturation, and intensity")
-            results.append(
-                self.exchange_runtime(
-                    RuntimeCommand.HSI,
-                    hsi_payload(
-                        scene.obj,
-                        scene.hue,
-                        scene.saturation,
-                        scene.intensity,
-                        control_mode=control_mode,
-                    ),
-                )
-            )
-        return results
+        return [
+            self.exchange_runtime(command.command, command.payload)
+            for command in scene_command_specs(scene, control_mode=control_mode)
+        ]
 
     def apply_scene_confirmed(
         self,
