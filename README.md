@@ -715,6 +715,50 @@ result = controller.run_named_cue("intro", require_acknowledged=True)
 print(result["applied"], result["reason"])
 ```
 
+For event-loop based systems, use the async controller directly. This is the
+preferred SDK surface for native BLE integrations on Linux, Windows, or macOS
+when the host app already runs asyncio:
+
+```python
+import asyncio
+
+from zhiyun_light_control import (
+    AsyncLightController,
+    CueLibrary,
+    LightConnectionConfig,
+    ScenePresetLibrary,
+)
+
+
+async def main() -> None:
+    presets = ScenePresetLibrary.from_mapping(
+        {"scenes": {"key": {"brightness": 35, "kelvin": 5600}}}
+    )
+    cues = CueLibrary.from_mapping(
+        {
+            "cues": {
+                "intro": {
+                    "steps": [{"preset": "key"}],
+                    "stop_on_unconfirmed": True,
+                }
+            }
+        }
+    )
+    config = LightConnectionConfig(transport="ble", name_contains="MOLUS")
+
+    async with AsyncLightController(
+        config,
+        preset_library=presets,
+        cue_library=cues,
+        require_acknowledged=True,
+    ) as controller:
+        result = await controller.run_named_cue("intro")
+        print(result["applied"], result["reason"])
+
+
+asyncio.run(main())
+```
+
 Smooth transitions use the same scene model and work with both USB and BLE
 clients:
 

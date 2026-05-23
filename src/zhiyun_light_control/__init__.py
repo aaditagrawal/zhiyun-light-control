@@ -15,7 +15,12 @@ from .bridge import (
     open_light,
 )
 from .client import ProbeResult, ZhiyunLight
-from .controller import LightController
+from .controller import (
+    AsyncLightController,
+    LightController,
+    close_async_light_factory,
+    open_async_light,
+)
 from .cues import CueError, CueLibrary, cue_from_mapping
 from .devices import (
     BLE_BACKENDS,
@@ -135,6 +140,7 @@ from .validation import (
 
 __all__ = [
     "AsyncZhiyunLight",
+    "AsyncLightController",
     "AsyncProbeResult",
     "ArtDmxPacket",
     "BLE_PROFILE_NAMES",
@@ -195,6 +201,7 @@ __all__ = [
     "command_result_acknowledged",
     "command_result_status",
     "command_results_acknowledged",
+    "close_async_light_factory",
     "control_guard",
     "devices_ble",
     "devices_ble_authorization",
@@ -253,6 +260,7 @@ __all__ = [
     "merge_scene",
     "open_macos_bluetooth_settings",
     "open_light",
+    "open_async_light",
     "scene_from_mapping",
     "scene_from_dmx",
     "scene_transition",

@@ -154,6 +154,12 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(error.exception.action, "scene")
         self.assertEqual(error.exception.statuses, ["sent_no_response"])
 
+    def test_controller_rejects_malformed_cue_steps(self) -> None:
+        controller = LightController(light_factory=FakeFactory(FakeLight()))
+
+        with self.assertRaisesRegex(ValueError, "cue steps must be objects"):
+            controller.run_cue({"steps": ["not-a-step"]})
+
     def test_controller_closes_persistent_factory(self) -> None:
         factory = FakeFactory(FakeLight())
         controller = LightController(light_factory=factory)

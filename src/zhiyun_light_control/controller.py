@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
+from inspect import isawaitable
 
+from .async_client import AsyncZhiyunLight
 from .bridge import (
     LightConnectionConfig,
     LightFactory,
@@ -26,6 +28,8 @@ from .presets import (
 )
 from .protocol import DEFAULT_CONTROL_MODE
 from .state import results_confirmed, unconfirmed_results_reason
+
+AsyncLightFactory = Callable[[], object]
 
 
 class LightController:
@@ -140,12 +144,9 @@ class LightController:
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
     ) -> dict[str, object]:
-        steps = cue.get("steps")
-        if not isinstance(steps, list):
-            raise ValueError("cue steps must be a list")
         stop_on_unconfirmed = bool(cue.get("stop_on_unconfirmed"))
         return self.run_sequence(
-            [dict(step) for step in steps if isinstance(step, Mapping)],
+            _cue_steps(cue.get("steps")),
             obj=obj,
             stop_on_unconfirmed=stop_on_unconfirmed,
             control_mode=control_mode,
@@ -179,25 +180,12 @@ class LightController:
         obj: int = 1,
         stop_on_unconfirmed: bool = False,
     ) -> dict[str, object]:
-        step_items = [dict(step) for step in steps]
-        if not step_items:
-            raise ValueError("sequence steps must be a non-empty iterable")
-        current_scene: Scene | None = None
-        planned_steps: list[dict[str, object]] = []
-        for index, step in enumerate(step_items):
-            response, current_scene = self._plan_step(
-                step,
-                index=index,
-                obj=obj,
-                current_scene=current_scene,
-            )
-            planned_steps.append(response)
-        return {
-            "action": "sequence",
-            "steps": planned_steps,
-            "scene": None if current_scene is None else current_scene.to_dict(),
-            "stop_on_unconfirmed": stop_on_unconfirmed,
-        }
+        return _plan_sequence(
+            steps,
+            obj=obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            preset_library=self.preset_library,
+        )
 
     def _run_sequence_on_light(
         self,
@@ -331,47 +319,6 @@ class LightController:
         }
         return response, end, results
 
-    def _plan_step(
-        self,
-        step: dict[str, object],
-        *,
-        index: int,
-        obj: int,
-        current_scene: Scene | None,
-    ) -> tuple[dict[str, object], Scene]:
-        if "to" in step:
-            target = step.get("to")
-            if not isinstance(target, Mapping):
-                raise ValueError("transition step requires a 'to' object")
-            scene = scene_from_optional_mapping(target, obj=obj)
-            start = _transition_start(step, current_scene, obj=scene.obj)
-            response = {
-                "action": "transition",
-                "from": start.to_dict(),
-                "scene": scene.to_dict(),
-                "steps": int(step.get("steps", 10)),
-                "duration": float(step.get("duration", 1.0)),
-                "easing": str(step.get("easing", "linear")),
-            }
-        elif "preset" in step:
-            name = str(step["preset"])
-            scene = _preset_scene(
-                self._preset_library(),
-                name,
-                overrides=_step_preset_overrides(step),
-                obj=obj,
-            )
-            response = {
-                "action": "preset",
-                "preset": name,
-                "scene": scene.to_dict(),
-            }
-        else:
-            scene = _step_scene(step, obj=obj)
-            response = {"action": "scene", "scene": scene.to_dict()}
-        response["index"] = index
-        return response, scene
-
     def _control_mode(self, value: int | None) -> int:
         return self.control_mode if value is None else value
 
@@ -382,7 +329,8 @@ class LightController:
         *,
         action: str,
     ) -> None:
-        if self.require_acknowledged if explicit is None else explicit:
+        should_require = self.require_acknowledged if explicit is None else explicit
+        if should_require:
             require_command_results(results, action=action)
 
     def _preset_library(self) -> ScenePresetLibrary:
@@ -394,6 +342,456 @@ class LightController:
         if self.cue_library is None:
             raise ValueError("no cue library configured")
         return self.cue_library
+
+
+class AsyncLightController:
+    """Async SDK facade for BLE-native media-control workflows."""
+
+    def __init__(
+        self,
+        config: LightConnectionConfig | None = None,
+        *,
+        light_factory: AsyncLightFactory | None = None,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+    ) -> None:
+        if light_factory is None:
+            config = config or LightConnectionConfig(transport="ble")
+
+            def default_light_factory() -> AsyncZhiyunLight:
+                return open_async_light(config)
+
+            light_factory = default_light_factory
+        self.light_factory = light_factory
+        self.preset_library = preset_library
+        self.cue_library = cue_library
+        self.control_mode = control_mode
+        self.require_acknowledged = require_acknowledged
+
+    async def __aenter__(self) -> AsyncLightController:
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        await close_async_light_factory(self.light_factory)
+
+    async def probe(self):
+        async with self.light_factory() as light:
+            return await light.probe()
+
+    async def apply_scene(
+        self,
+        scene: Scene | Mapping[str, object],
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        resolved = _scene_payload(scene)
+        async with self.light_factory() as light:
+            results = await light.apply_scene(
+                resolved,
+                control_mode=self._control_mode(control_mode),
+            )
+        self._require_acknowledged(results, require_acknowledged, action="scene")
+        return _scene_response("scene", resolved, results)
+
+    def scene_from_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int = 1,
+    ) -> Scene:
+        return _preset_scene(
+            self._preset_library(),
+            name,
+            overrides=overrides,
+            obj=obj,
+        )
+
+    async def apply_preset(
+        self,
+        name: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = self.scene_from_preset(name, overrides=overrides, obj=obj)
+        async with self.light_factory() as light:
+            results = await light.apply_scene(
+                scene,
+                control_mode=self._control_mode(control_mode),
+            )
+        self._require_acknowledged(results, require_acknowledged, action="preset")
+        return {"preset": name, **_scene_response("preset", scene, results)}
+
+    async def run_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        obj: int = 1,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        step_items = [dict(step) for step in steps]
+        if not step_items:
+            raise ValueError("sequence steps must be a non-empty iterable")
+        async with self.light_factory() as light:
+            response, results = await self._run_sequence_on_light(
+                light,
+                step_items,
+                obj=obj,
+                stop_on_unconfirmed=stop_on_unconfirmed,
+                control_mode=self._control_mode(control_mode),
+            )
+        self._require_acknowledged(results, require_acknowledged, action="sequence")
+        return response
+
+    async def run_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        return await self.run_sequence(
+            _cue_steps(cue.get("steps")),
+            obj=obj,
+            stop_on_unconfirmed=bool(cue.get("stop_on_unconfirmed")),
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def run_named_cue(
+        self,
+        name: str,
+        *,
+        obj: int = 1,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        cue = self._cue_library().get(name)
+        if stop_on_unconfirmed is not None:
+            cue["stop_on_unconfirmed"] = stop_on_unconfirmed
+        response = await self.run_cue(
+            cue,
+            obj=obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"cue": name, **response}
+
+    def plan_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        obj: int = 1,
+        stop_on_unconfirmed: bool = False,
+    ) -> dict[str, object]:
+        return _plan_sequence(
+            steps,
+            obj=obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            preset_library=self._preset_library_or_none(),
+        )
+
+    async def _run_sequence_on_light(
+        self,
+        light: object,
+        steps: list[dict[str, object]],
+        *,
+        obj: int,
+        stop_on_unconfirmed: bool,
+        control_mode: int,
+    ) -> tuple[dict[str, object], list[CommandResult]]:
+        current_scene: Scene | None = None
+        all_results: list[CommandResult] = []
+        step_responses: list[dict[str, object]] = []
+        stopped = False
+        for index, step in enumerate(steps):
+            response, current_scene, results = await self._run_step(
+                light,
+                step,
+                index=index,
+                obj=obj,
+                current_scene=current_scene,
+                control_mode=control_mode,
+            )
+            step_responses.append(response)
+            all_results.extend(results)
+            if stop_on_unconfirmed and not response["applied"]:
+                stopped = True
+                break
+        return (
+            {
+                "action": "sequence",
+                "steps": step_responses,
+                "scene": None if current_scene is None else current_scene.to_dict(),
+                "stopped": stopped,
+                "applied": results_confirmed(tuple(all_results)),
+                "reason": _results_reason(all_results),
+            },
+            all_results,
+        )
+
+    async def _run_step(
+        self,
+        light: object,
+        step: dict[str, object],
+        *,
+        index: int,
+        obj: int,
+        current_scene: Scene | None,
+        control_mode: int,
+    ) -> tuple[dict[str, object], Scene, list[CommandResult]]:
+        if "to" in step:
+            response, scene, results = await self._run_transition_step(
+                light,
+                step,
+                obj=obj,
+                current_scene=current_scene,
+                control_mode=control_mode,
+            )
+        elif "preset" in step:
+            response, scene, results = await self._run_preset_step(
+                light,
+                step,
+                obj=obj,
+                control_mode=control_mode,
+            )
+        else:
+            scene = _step_scene(step, obj=obj)
+            results = await light.apply_scene(scene, control_mode=control_mode)
+            response = _scene_response("scene", scene, results)
+        response["index"] = index
+        return response, scene, results
+
+    async def _run_preset_step(
+        self,
+        light: object,
+        step: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+    ) -> tuple[dict[str, object], Scene, list[CommandResult]]:
+        name = str(step["preset"])
+        scene = _preset_scene(
+            self._preset_library(),
+            name,
+            overrides=_step_preset_overrides(step),
+            obj=obj,
+        )
+        results = await light.apply_scene(scene, control_mode=control_mode)
+        return (
+            {"preset": name, **_scene_response("preset", scene, results)},
+            scene,
+            results,
+        )
+
+    async def _run_transition_step(
+        self,
+        light: object,
+        step: dict[str, object],
+        *,
+        obj: int,
+        current_scene: Scene | None,
+        control_mode: int,
+    ) -> tuple[dict[str, object], Scene, list[CommandResult]]:
+        target = step.get("to")
+        if not isinstance(target, Mapping):
+            raise ValueError("transition step requires a 'to' object")
+        end = scene_from_optional_mapping(target, obj=obj)
+        start = _transition_start(step, current_scene, obj=end.obj)
+        steps = int(step.get("steps", 10))
+        duration = float(step.get("duration", 1.0))
+        easing = str(step.get("easing", "linear"))
+        batches = await light.transition_scene(
+            start,
+            end,
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            control_mode=control_mode,
+        )
+        results = flatten_command_batches(batches)
+        response = {
+            "action": "transition",
+            "from": start.to_dict(),
+            "scene": end.to_dict(),
+            "steps": steps,
+            "duration": duration,
+            "easing": easing,
+            "batches": [[result.to_dict() for result in batch] for batch in batches],
+            "applied": results_confirmed(tuple(results)),
+            "reason": _results_reason(results),
+        }
+        return response, end, results
+
+    def _control_mode(self, value: int | None) -> int:
+        return self.control_mode if value is None else value
+
+    def _require_acknowledged(
+        self,
+        results: Iterable[CommandResult],
+        explicit: bool | None,
+        *,
+        action: str,
+    ) -> None:
+        should_require = self.require_acknowledged if explicit is None else explicit
+        if should_require:
+            require_command_results(results, action=action)
+
+    def _preset_library(self) -> ScenePresetLibrary:
+        if self.preset_library is None:
+            raise ValueError("no preset library configured")
+        return self.preset_library
+
+    def _preset_library_or_none(self) -> ScenePresetLibrary | None:
+        return self.preset_library
+
+    def _cue_library(self) -> CueLibrary:
+        if self.cue_library is None:
+            raise ValueError("no cue library configured")
+        return self.cue_library
+
+
+def open_async_light(config: LightConnectionConfig | None = None) -> AsyncZhiyunLight:
+    config = config or LightConnectionConfig(transport="ble")
+    if config.transport != "ble":
+        raise ValueError("async light control currently supports BLE transport")
+    backend = "direct" if config.ble_in_process else config.ble_backend
+    if backend == "direct":
+        return AsyncZhiyunLight.ble(
+            address=config.address,
+            name_contains=config.name_contains,
+            profile=config.ble_profile,
+            service_uuid=config.ble_service_uuid,
+            write_uuid=config.ble_write_uuid,
+            notify_uuid=config.ble_notify_uuid,
+            timeout=config.timeout,
+        )
+    if backend == "macos-app":
+        return AsyncZhiyunLight.macos_ble_app(
+            address=config.address,
+            name_contains=config.name_contains,
+            profile=config.ble_profile,
+            service_uuid=config.ble_service_uuid,
+            write_uuid=config.ble_write_uuid,
+            notify_uuid=config.ble_notify_uuid,
+            timeout=config.timeout,
+        )
+    return AsyncZhiyunLight.isolated_ble(
+        address=config.address,
+        name_contains=config.name_contains,
+        profile=config.ble_profile,
+        service_uuid=config.ble_service_uuid,
+        write_uuid=config.ble_write_uuid,
+        notify_uuid=config.ble_notify_uuid,
+        timeout=config.timeout,
+        python=config.ble_python,
+    )
+
+
+async def close_async_light_factory(factory: AsyncLightFactory) -> None:
+    close = getattr(factory, "close", None)
+    if close is None:
+        return
+    result = close()
+    if isawaitable(result):
+        await result
+
+
+def _cue_steps(raw_steps: object) -> list[dict[str, object]]:
+    if not isinstance(raw_steps, list) or not raw_steps:
+        raise ValueError("cue steps must be a non-empty list")
+    steps: list[dict[str, object]] = []
+    for step in raw_steps:
+        if not isinstance(step, Mapping):
+            raise ValueError("cue steps must be objects")
+        steps.append(dict(step))
+    return steps
+
+
+def _plan_sequence(
+    steps: Iterable[Mapping[str, object]],
+    *,
+    obj: int,
+    stop_on_unconfirmed: bool,
+    preset_library: ScenePresetLibrary | None,
+) -> dict[str, object]:
+    step_items = [dict(step) for step in steps]
+    if not step_items:
+        raise ValueError("sequence steps must be a non-empty iterable")
+    current_scene: Scene | None = None
+    planned_steps: list[dict[str, object]] = []
+    for index, step in enumerate(step_items):
+        response, current_scene = _plan_step(
+            step,
+            index=index,
+            obj=obj,
+            current_scene=current_scene,
+            preset_library=preset_library,
+        )
+        planned_steps.append(response)
+    return {
+        "action": "sequence",
+        "steps": planned_steps,
+        "scene": None if current_scene is None else current_scene.to_dict(),
+        "stop_on_unconfirmed": stop_on_unconfirmed,
+    }
+
+
+def _plan_step(
+    step: Mapping[str, object],
+    *,
+    index: int,
+    obj: int,
+    current_scene: Scene | None,
+    preset_library: ScenePresetLibrary | None,
+) -> tuple[dict[str, object], Scene]:
+    if "to" in step:
+        target = step.get("to")
+        if not isinstance(target, Mapping):
+            raise ValueError("transition step requires a 'to' object")
+        scene = scene_from_optional_mapping(target, obj=obj)
+        start = _transition_start(step, current_scene, obj=scene.obj)
+        response = {
+            "action": "transition",
+            "from": start.to_dict(),
+            "scene": scene.to_dict(),
+            "steps": int(step.get("steps", 10)),
+            "duration": float(step.get("duration", 1.0)),
+            "easing": str(step.get("easing", "linear")),
+        }
+    elif "preset" in step:
+        if preset_library is None:
+            raise ValueError("no preset library configured")
+        name = str(step["preset"])
+        scene = _preset_scene(
+            preset_library,
+            name,
+            overrides=_step_preset_overrides(step),
+            obj=obj,
+        )
+        response = {
+            "action": "preset",
+            "preset": name,
+            "scene": scene.to_dict(),
+        }
+    else:
+        scene = _step_scene(step, obj=obj)
+        response = {"action": "scene", "scene": scene.to_dict()}
+    response["index"] = index
+    return response, scene
 
 
 def _scene_payload(scene: Scene | Mapping[str, object]) -> Scene:
