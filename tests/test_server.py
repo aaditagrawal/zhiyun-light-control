@@ -4,6 +4,7 @@ import json
 import threading
 import unittest
 from dataclasses import dataclass
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -18,6 +19,7 @@ from zhiyun_light_control.protocol import (
     first_frame,
 )
 from zhiyun_light_control.server import LightHttpServer
+from zhiyun_light_control.transports.ble import BleDevice, BleScanResult
 
 
 @dataclass(frozen=True)
@@ -394,6 +396,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/validate", commands["get"])
             self.assertIn("/validate", commands["post"])
             self.assertIn("/capabilities", commands["get"])
+            self.assertIn("/devices", commands["get"])
             self.assertIn("/sequence", commands["post"])
 
             capabilities = json.loads(
@@ -410,6 +413,7 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
             self.assertEqual(primitives["sequence"]["path"], "/sequence")
+            self.assertEqual(primitives["devices"]["path"], "/devices")
             self.assertFalse(primitives["events"]["requires_control"])
 
             diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
@@ -511,6 +515,58 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_devices_lists_usb_and_optional_ble_scan(self) -> None:
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            port="/dev/cu.usbmodem31301",
+            transport="ble",
+            ble_backend="macos-app",
+            ble_name_contains="BRIDGE",
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        scan = BleScanResult(
+            ok=True,
+            devices=(BleDevice(address="UUID-1", name="PL103_EDFE", rssi=-47),),
+            returncode=0,
+            worker_python="macos-app",
+        )
+        try:
+            with (
+                patch(
+                    "zhiyun_light_control.devices.list_usb_ports",
+                    return_value=(
+                        "/dev/cu.usbmodem21301",
+                        "/dev/cu.usbmodem31301",
+                    ),
+                ),
+                patch(
+                    "zhiyun_light_control.devices.scan_zhiyun_devices_macos_app",
+                    return_value=scan,
+                ) as scan_macos,
+            ):
+                devices = json.loads(
+                    urlopen(
+                        (
+                            f"{base}/devices?include_ble=true"
+                            "&ble_backend=macos-app&timeout=1.25"
+                            "&name_contains=PL103"
+                        ),
+                        timeout=3,
+                    ).read()
+                )
+
+            self.assertEqual(devices["configured_transport"], "ble")
+            self.assertEqual(devices["usb"]["selected_port"], "/dev/cu.usbmodem31301")
+            self.assertTrue(devices["usb"]["ports"][1]["selected"])
+            self.assertEqual(devices["ble"]["backend"], "macos-app")
+            self.assertEqual(devices["ble"]["scan"]["devices"][0]["name"], "PL103_EDFE")
+            scan_macos.assert_called_once_with(timeout=1.25, name_contains="PL103")
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_frame_exchange_uses_raw_frame_api(self) -> None:
         light = FakeLight()
         server = LightHttpServer(
@@ -594,6 +650,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", schema["paths"])
             self.assertIn("/capabilities", schema["paths"])
             self.assertIn("/diagnostics", schema["paths"])
+            self.assertIn("/devices", schema["paths"])
             self.assertIn("/events", schema["paths"])
             self.assertIn("/sequence", schema["paths"])
             self.assertIn("/frame", schema["paths"])
@@ -602,11 +659,13 @@ class ServerTests(unittest.TestCase):
             self.assertIn("Status", schema["components"]["schemas"])
             self.assertIn("Capabilities", schema["components"]["schemas"])
             self.assertIn("Diagnostics", schema["components"]["schemas"])
+            self.assertIn("Devices", schema["components"]["schemas"])
             self.assertIn("SequenceRequest", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])
             self.assertIn("/status", commands["get"])
+            self.assertIn("/devices", commands["get"])
             self.assertIn("/events", commands["get"])
             self.assertIn("/frame", commands["post"])
 

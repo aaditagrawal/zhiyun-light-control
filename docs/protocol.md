@@ -114,6 +114,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/commands` | List bridge commands |
 | `GET` | `/capabilities` | Discover primitives, fields, and evidence statuses |
 | `GET` | `/diagnostics` | Check bridge transport readiness and next steps |
+| `GET` | `/devices` | Discover local USB ports and optional BLE scan results |
 | `GET` | `/events` | Server-Sent Events stream of requested bridge state |
 | `GET` | `/presets` | List loaded named scene presets |
 | `GET` | `/state` | Last accepted scene/control request |
@@ -165,6 +166,13 @@ long-running media-control process. The bridge CLI keeps one light context open
 by default. USB and direct BLE use that to avoid reconnecting for every request;
 worker-isolated BLE still performs each raw BLE exchange in a child process. Use
 `--no-persistent-light` to restore per-request contexts.
+
+HTTP `/devices` exposes transport discovery for dashboards and controller
+setup flows. It always returns USB `/dev/cu.usbmodem*` ports and the configured
+USB port, without opening the light. Add `include_ble=true` to run a bounded
+BLE scan with `ble_backend=worker`, `macos-app`, or `direct`; BLE scan errors
+are returned in the `ble.scan` object with the same `ok`, `error`,
+`returncode`, and `signal` fields as `zlight scan-ble`.
 
 The OSC bridge is UDP-based and dependency-free:
 

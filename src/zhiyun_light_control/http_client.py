@@ -42,6 +42,26 @@ class LightBridgeClient:
     def diagnostics(self) -> dict[str, object]:
         return self._get("/diagnostics")
 
+    def devices(
+        self,
+        *,
+        include_ble: bool = False,
+        ble_backend: str | None = None,
+        timeout: float | None = None,
+        name_contains: str | None = None,
+    ) -> dict[str, object]:
+        query: dict[str, object] = {}
+        if include_ble:
+            query["include_ble"] = "true"
+        if ble_backend is not None:
+            query["ble_backend"] = ble_backend
+        if timeout is not None:
+            query["timeout"] = timeout
+        if name_contains is not None:
+            query["name_contains"] = name_contains
+        suffix = f"?{urlencode(query)}" if query else ""
+        return self._get(f"/devices{suffix}")
+
     def openapi(self) -> dict[str, object]:
         return self._get("/openapi.json")
 

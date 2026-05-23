@@ -249,6 +249,8 @@ curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/capabilities
 curl http://127.0.0.1:8765/diagnostics
+curl http://127.0.0.1:8765/devices
+curl 'http://127.0.0.1:8765/devices?include_ble=true&ble_backend=macos-app&timeout=6&name_contains=PL103'
 curl http://127.0.0.1:8765/events?limit=1
 curl http://127.0.0.1:8765/state
 curl http://127.0.0.1:8765/presets
@@ -306,6 +308,11 @@ loaded preset names, and the transport evidence statuses a client should expect.
 opens the bridge's configured transport, returns ACK-backed status evidence when
 available, echoes the active BLE backend/profile/address filters, and includes
 next-step hints for cases such as macOS Bluetooth authorization failures.
+
+`GET /devices` lists local USB serial ports and the bridge's selected USB port.
+Add `include_ble=true` to run a bounded BLE scan through the selected
+`ble_backend` (`worker`, `macos-app`, or `direct`); scan failures such as macOS
+Bluetooth authorization errors are returned as JSON diagnostics.
 
 `GET /status` returns read-only identity/status fields plus the raw
 `CommandResult` evidence for global device info, firmware, voltage/status,
@@ -394,6 +401,7 @@ bridge = LightBridgeClient("http://127.0.0.1:8765")
 
 print(bridge.diagnostics()["connection_confirmed"])
 print(bridge.capabilities()["evidence_statuses"])
+print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
 print(next(bridge.state_events(limit=1))["state"])
 
 result = bridge.set_brightness(35, obj=1)

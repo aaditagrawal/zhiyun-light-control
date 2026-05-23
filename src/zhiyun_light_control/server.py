@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
+from .devices import BLE_BACKENDS, discover_transport_devices
 from .models import Scene
 from .presets import ScenePresetLibrary, merge_scene, scene_from_optional_mapping
 from .protocol import (
@@ -45,6 +46,7 @@ class LightHttpServer(ThreadingHTTPServer):
         ble_profile: str | None = None,
         ble_address: str | None = None,
         ble_name_contains: str | None = None,
+        ble_python: str | None = None,
     ):
         super().__init__(server_address, LightRequestHandler)
         self.light_port = port
@@ -58,6 +60,7 @@ class LightHttpServer(ThreadingHTTPServer):
         self.ble_profile = ble_profile
         self.ble_address = ble_address
         self.ble_name_contains = ble_name_contains
+        self.ble_python = ble_python
 
 
 class LightRequestHandler(BaseHTTPRequestHandler):
@@ -81,6 +84,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/commands",
                         "/capabilities",
                         "/diagnostics",
+                        "/devices",
                         "/events",
                         "/presets",
                         "/state",
@@ -118,6 +122,12 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/diagnostics":
             self._json(self._handle_diagnostics())
+            return
+        if path == "/devices":
+            try:
+                self._json(self._handle_devices(parsed.query))
+            except ValueError as exc:
+                self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         if path == "/events":
             self._handle_events(parsed.query)
@@ -587,6 +597,27 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             error=error,
         )
 
+    def _handle_devices(self, query: str) -> dict[str, object]:
+        params = parse_qs(query)
+        backend = _query_text(
+            params,
+            "ble_backend",
+            default=self.server.ble_backend or "worker",
+        )
+        return discover_transport_devices(
+            configured_transport=self.server.transport,
+            configured_usb_port=self.server.light_port,
+            include_ble=_query_bool(params, "include_ble", default=False),
+            ble_backend=backend,
+            ble_timeout=_query_float(params, "timeout", default=5.0),
+            ble_name_contains=_query_text(
+                params,
+                "name_contains",
+                default=self.server.ble_name_contains,
+            ),
+            ble_python=self.server.ble_python,
+        )
+
     def _handle_events(self, query: str) -> None:
         params = parse_qs(query)
         limit = _query_int(params, "limit", default=0)
@@ -720,6 +751,12 @@ def openapi_schema() -> dict[str, object]:
                 "get": _operation(
                     "Check bridge transport readiness",
                     "Diagnostics",
+                )
+            },
+            "/devices": {
+                "get": _operation(
+                    "Discover local USB ports and optional BLE devices",
+                    "Devices",
                 )
             },
             "/events": {
@@ -890,6 +927,15 @@ def _openapi_schemas() -> dict[str, object]:
         },
         "Capabilities": {"type": "object", "additionalProperties": True},
         "Diagnostics": {"type": "object", "additionalProperties": True},
+        "Devices": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "configured_transport": {"type": "string"},
+                "usb": {"type": "object", "additionalProperties": True},
+                "ble": {"type": "object", "additionalProperties": True},
+            },
+        },
         "Probe": {
             "type": "object",
             "additionalProperties": True,
@@ -1103,6 +1149,20 @@ def capabilities_response(
                 "path": "/validate",
                 "requires_control": "allow_control request field",
                 "confirmation": "per-check validation report",
+            },
+            {
+                "name": "devices",
+                "method": "GET",
+                "path": "/devices",
+                "requires_control": False,
+                "fields": [
+                    "include_ble",
+                    "ble_backend",
+                    "timeout",
+                    "name_contains",
+                ],
+                "confirmation": "USB port list plus optional BLE scan diagnostics",
+                "ble_backends": list(BLE_BACKENDS),
             },
             {
                 "name": "events",
@@ -1320,6 +1380,7 @@ def serve(
     ble_profile: str | None = None,
     ble_address: str | None = None,
     ble_name_contains: str | None = None,
+    ble_python: str | None = None,
 ) -> None:
     httpd = LightHttpServer(
         (host, port),
@@ -1334,6 +1395,7 @@ def serve(
         ble_profile=ble_profile,
         ble_address=ble_address,
         ble_name_contains=ble_name_contains,
+        ble_python=ble_python,
     )
     try:
         httpd.serve_forever()
@@ -1388,6 +1450,19 @@ def _query_float(
 ) -> float:
     values = params.get(key)
     return float(values[-1]) if values else default
+
+
+def _query_text(
+    params: dict[str, list[str]],
+    key: str,
+    *,
+    default: str | None = None,
+) -> str | None:
+    values = params.get(key)
+    if not values:
+        return default
+    value = values[-1].strip()
+    return value if value else default
 
 
 def _body_int(

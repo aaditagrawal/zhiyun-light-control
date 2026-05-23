@@ -11,6 +11,7 @@ from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .bridge import LightConnectionConfig, PersistentLightFactory, make_light_factory
 from .client import ProbeResult, ZhiyunLight
 from .cues import CueError, CueLibrary, cue_from_mapping
+from .devices import BLE_BACKENDS, UsbPortInfo, discover_transport_devices
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_MODES,
@@ -61,6 +62,7 @@ __all__ = [
     "ArtDmxPacket",
     "BLE_PROFILE_NAMES",
     "BLE_PROFILES",
+    "BLE_BACKENDS",
     "BleExchangeResult",
     "BleProfile",
     "BleWorkerError",
@@ -95,6 +97,7 @@ __all__ = [
     "ScenePresetLibrary",
     "SacnPacket",
     "UsbDiscoveryReport",
+    "UsbPortInfo",
     "ZhiyunLight",
     "build_frame",
     "build_runtime_frame",
@@ -117,6 +120,7 @@ __all__ = [
     "scene_transition",
     "interpolate_scene",
     "discover_usb_primitives",
+    "discover_transport_devices",
     "validate_async_light",
     "validate_sync_light",
 ]

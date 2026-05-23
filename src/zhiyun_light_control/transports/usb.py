@@ -114,10 +114,14 @@ class UsbTransport:
 def find_usb_port(port: str | None = None) -> str:
     if port:
         return port
-    ports = sorted(glob.glob("/dev/cu.usbmodem*"))
+    ports = list_usb_ports()
     if not ports:
         raise RuntimeError("no /dev/cu.usbmodem* ports found")
     return ports[0]
+
+
+def list_usb_ports() -> tuple[str, ...]:
+    return tuple(sorted(glob.glob("/dev/cu.usbmodem*")))
 
 
 def _acquire_usb_lock(

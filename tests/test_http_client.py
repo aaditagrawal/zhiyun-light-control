@@ -117,6 +117,9 @@ class HttpClientTests(unittest.TestCase):
             self.assertTrue(client.diagnostics()["connection_confirmed"])
             self.assertIn("/brightness", client.commands()["post"])
             self.assertIn("brightness", client.capabilities()["scene_fields"])
+            devices = client.devices()
+            self.assertIn("usb", devices)
+            self.assertFalse(devices["ble"]["included"])
             self.assertEqual(client.status()["firmware"], "1.6.4")
 
             brightness = client.set_brightness(35, obj=1, control_mode=0x01)

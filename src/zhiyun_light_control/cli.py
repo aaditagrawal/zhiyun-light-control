@@ -1052,6 +1052,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         ble_profile=args.ble_profile,
         ble_address=args.address,
         ble_name_contains=args.name_contains,
+        ble_python=args.ble_python,
     )
     return 0
 
