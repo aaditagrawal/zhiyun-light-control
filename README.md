@@ -662,9 +662,11 @@ Validation reports also have `validation_summary()`, `validation_ready_for()`,
 per-category evidence without hand-parsing the nested JSON.
 
 ```python
-from zhiyun_light_control import Scene, ZhiyunLight
+from zhiyun_light_control import LightConnectionConfig, Scene, open_light
 
-with ZhiyunLight.usb() as light:
+config = LightConnectionConfig(transport="usb", port="/dev/cu.usbmodem21301")
+
+with open_light(config) as light:
     print(light.probe())
     light.register_confirmed(device_id=0)
     light.set_brightness_confirmed(obj=1, value=35)
@@ -680,7 +682,9 @@ BLE, isolated BLE, and custom transports, and they raise
 `UnconfirmedCommandError` when a command is sent but not ACK-confirmed. Use
 `command_results_acknowledged()`, `require_command_result()`, and
 `require_command_results()` when you want to apply the same policy to raw
-`CommandResult` objects.
+`CommandResult` objects. `open_light(LightConnectionConfig(...))` returns a
+context manager with the same sync SDK methods for USB and for BLE via the sync
+adapter, so host scripts can switch transports from configuration.
 
 Smooth transitions use the same scene model and work with both USB and BLE
 clients:
@@ -701,11 +705,11 @@ with ZhiyunLight.usb() as light:
 Map a DMX frame to the same scene model:
 
 ```python
-from zhiyun_light_control import DmxMapping, LightConnectionConfig, make_light_factory, scene_from_dmx
+from zhiyun_light_control import DmxMapping, LightConnectionConfig, open_light, scene_from_dmx
 
 scene = scene_from_dmx(bytes([128, 255]), DmxMapping(obj=1))
 
-with make_light_factory(LightConnectionConfig(transport="usb", persistent=True))() as light:
+with open_light(LightConnectionConfig(transport="usb", persistent=True)) as light:
     light.apply_scene(scene)
 ```
 

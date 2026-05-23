@@ -8,10 +8,16 @@ from zhiyun_light_control import (
     PersistentLightFactory,
     Scene,
     make_light_factory,
+    open_light,
 )
 from zhiyun_light_control.client import ZhiyunLight
 from zhiyun_light_control.models import CommandResult
-from zhiyun_light_control.protocol import build_frame, build_runtime_frame, first_frame
+from zhiyun_light_control.protocol import (
+    RuntimeCommand,
+    build_frame,
+    build_runtime_frame,
+    first_frame,
+)
 
 
 class FakeProbe:
@@ -79,10 +85,46 @@ class FakeAsyncLight:
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
 
+    async def register_confirmed(self, device_id: int = 0, group_id: int = 0):
+        payload = bytes((device_id, group_id, 0, 0))
+        return await self.exchange_runtime(
+            RuntimeCommand.REGISTER_DEFAULT_GROUP,
+            payload,
+        )
+
+    async def set_brightness_confirmed(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = 0x33,
+    ):
+        payload = bytes((obj, 0, control_mode)) + float(value).hex().encode()
+        return await self.exchange_runtime(RuntimeCommand.BRIGHTNESS, payload)
+
     async def apply_scene(self, scene: Scene, *, control_mode: int = 0x33):
         self.scenes.append(scene)
         self.control_modes.append(control_mode)
         return []
+
+    async def apply_scene_confirmed(self, scene: Scene, *, control_mode: int = 0x33):
+        return await self.apply_scene(scene, control_mode=control_mode)
+
+    async def transition_scene_confirmed(
+        self,
+        start: Scene,
+        end: Scene,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+        control_mode: int = 0x33,
+    ):
+        del start, duration, easing
+        return [
+            await self.apply_scene(end, control_mode=control_mode)
+            for _index in range(steps)
+        ]
 
 
 class FakeSyncContext:
@@ -117,6 +159,20 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(light.transport.timeout, 2.0)
         self.assertEqual(light.transport.lock_timeout, 0.25)
 
+    def test_open_light_returns_configured_context_manager(self) -> None:
+        context = open_light(
+            LightConnectionConfig(
+                transport="usb",
+                port="/dev/cu.test",
+                timeout=2.0,
+                usb_lock_timeout=0.25,
+            )
+        )
+
+        self.assertIsInstance(context, ZhiyunLight)
+        self.assertEqual(context.transport.port, "/dev/cu.test")
+        self.assertEqual(context.transport.timeout, 2.0)
+
     def test_ble_factory_adapts_async_client_to_sync_bridge_interface(self) -> None:
         fake = FakeAsyncLight()
         scene = Scene(obj=1, brightness=20)
@@ -144,6 +200,23 @@ class BridgeFactoryTests(unittest.TestCase):
                 )
                 updater_result = light.exchange_updater(0x1300, timeout=0.45)
                 scene_results = light.apply_scene(scene, control_mode=0x01)
+                register_result = light.register_confirmed()
+                brightness_result = light.set_brightness_confirmed(
+                    1,
+                    35,
+                    control_mode=0x01,
+                )
+                confirmed_scene = light.apply_scene_confirmed(
+                    scene,
+                    control_mode=0x01,
+                )
+                transition_batches = light.transition_scene_confirmed(
+                    Scene(obj=1, brightness=10),
+                    Scene(obj=1, brightness=20),
+                    steps=2,
+                    duration=0,
+                    control_mode=0x01,
+                )
 
         make_ble.assert_called_once_with(
             address="AA:BB",
@@ -161,12 +234,24 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(result.command, 0x1001)
         self.assertEqual(frame_result.command, 0x2001)
         self.assertEqual(updater_result.command, 0x1300)
-        self.assertEqual(fake.commands, [(0x1001, b"\x01", 0.25)])
+        self.assertEqual(register_result.command, RuntimeCommand.REGISTER_DEFAULT_GROUP)
+        self.assertEqual(brightness_result.command, RuntimeCommand.BRIGHTNESS)
+        self.assertEqual(
+            [cmd for cmd, _payload, _timeout in fake.commands],
+            [
+                0x1001,
+                RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                RuntimeCommand.BRIGHTNESS,
+            ],
+        )
+        self.assertEqual(fake.commands[0], (0x1001, b"\x01", 0.25))
         self.assertEqual(fake.frames, [(0x0100, 0x2001, b"", 0.35)])
         self.assertEqual(fake.updater_commands, [(0x1300, b"", 0.45)])
-        self.assertEqual(fake.scenes, [scene])
-        self.assertEqual(fake.control_modes, [0x01])
+        self.assertEqual(fake.scenes, [scene, scene, scene, scene])
+        self.assertEqual(fake.control_modes, [0x01, 0x01, 0x01, 0x01])
         self.assertEqual(scene_results, [])
+        self.assertEqual(confirmed_scene, [])
+        self.assertEqual(transition_batches, [[], []])
 
     def test_ble_factory_can_opt_into_direct_client(self) -> None:
         fake = FakeAsyncLight()

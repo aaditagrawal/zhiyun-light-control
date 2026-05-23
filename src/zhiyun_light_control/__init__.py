@@ -8,7 +8,12 @@ from .artnet import (
     scene_from_dmx,
 )
 from .async_client import AsyncProbeResult, AsyncZhiyunLight
-from .bridge import LightConnectionConfig, PersistentLightFactory, make_light_factory
+from .bridge import (
+    LightConnectionConfig,
+    PersistentLightFactory,
+    make_light_factory,
+    open_light,
+)
 from .client import ProbeResult, ZhiyunLight
 from .cues import CueError, CueLibrary, cue_from_mapping
 from .devices import (
@@ -245,6 +250,7 @@ __all__ = [
     "make_light_factory",
     "merge_scene",
     "open_macos_bluetooth_settings",
+    "open_light",
     "scene_from_mapping",
     "scene_from_dmx",
     "scene_transition",

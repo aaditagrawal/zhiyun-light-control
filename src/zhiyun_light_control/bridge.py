@@ -43,6 +43,10 @@ def make_light_factory(config: LightConnectionConfig) -> LightFactory:
     return factory
 
 
+def open_light(config: LightConnectionConfig | None = None):
+    return make_light_factory(config or LightConnectionConfig())()
+
+
 def make_one_shot_light_factory(config: LightConnectionConfig) -> LightFactory:
     if config.transport == "usb":
         return lambda: ZhiyunLight.usb(
@@ -152,6 +156,9 @@ class SyncBleLight:
     def probe(self):
         return self._run_light("probe")
 
+    def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 1.5):
+        return self._run_light("command", cmd, payload, timeout=timeout)
+
     def exchange_runtime(
         self,
         cmd: int,
@@ -160,6 +167,22 @@ class SyncBleLight:
         timeout: float = 1.5,
     ):
         return self._run_light("exchange_runtime", cmd, payload, timeout=timeout)
+
+    def exchange_runtime_confirmed(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+        action: str = "runtime command",
+    ):
+        return self._run_light(
+            "exchange_runtime_confirmed",
+            cmd,
+            payload,
+            timeout=timeout,
+            action=action,
+        )
 
     def exchange_frame(
         self,
@@ -177,6 +200,24 @@ class SyncBleLight:
             timeout=timeout,
         )
 
+    def exchange_frame_confirmed(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+        action: str = "frame command",
+    ):
+        return self._run_light(
+            "exchange_frame_confirmed",
+            first_word,
+            cmd,
+            payload,
+            timeout=timeout,
+            action=action,
+        )
+
     def exchange_updater(
         self,
         cmd: int,
@@ -186,6 +227,188 @@ class SyncBleLight:
     ):
         return self._run_light("exchange_updater", cmd, payload, timeout=timeout)
 
+    def updater_command(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ):
+        return self._run_light("updater_command", cmd, payload, timeout=timeout)
+
+    def get_device_info(self):
+        return self._run_light("get_device_info")
+
+    def get_firmware_version(self):
+        return self._run_light("get_firmware_version")
+
+    def get_voltage_status(self):
+        return self._run_light("get_voltage_status")
+
+    def get_device_id(self):
+        return self._run_light("get_device_id")
+
+    def register(self, device_id: int = 0, group_id: int = 0):
+        return self._run_light("register", device_id, group_id)
+
+    def register_confirmed(self, device_id: int = 0, group_id: int = 0):
+        return self._run_light("register_confirmed", device_id, group_id)
+
+    def read_brightness(self, obj: int = 0):
+        return self._run_light("read_brightness", obj)
+
+    def set_brightness(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_brightness",
+            obj,
+            value,
+            control_mode=control_mode,
+        )
+
+    def set_brightness_confirmed(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_brightness_confirmed",
+            obj,
+            value,
+            control_mode=control_mode,
+        )
+
+    def read_cct(self, obj: int = 0):
+        return self._run_light("read_cct", obj)
+
+    def set_cct(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light("set_cct", obj, kelvin, control_mode=control_mode)
+
+    def set_cct_confirmed(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_cct_confirmed",
+            obj,
+            kelvin,
+            control_mode=control_mode,
+        )
+
+    def set_rgb(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_rgb",
+            obj,
+            red,
+            green,
+            blue,
+            control_mode=control_mode,
+        )
+
+    def set_rgb_confirmed(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_rgb_confirmed",
+            obj,
+            red,
+            green,
+            blue,
+            control_mode=control_mode,
+        )
+
+    def set_hsi(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_hsi",
+            obj,
+            hue,
+            saturation,
+            intensity,
+            control_mode=control_mode,
+        )
+
+    def set_hsi_confirmed(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_hsi_confirmed",
+            obj,
+            hue,
+            saturation,
+            intensity,
+            control_mode=control_mode,
+        )
+
+    def read_sleep(self, obj: int = 0):
+        return self._run_light("read_sleep", obj)
+
+    def set_sleep(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light("set_sleep", obj, value, control_mode=control_mode)
+
+    def set_sleep_confirmed(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "set_sleep_confirmed",
+            obj,
+            value,
+            control_mode=control_mode,
+        )
+
     def apply_scene(
         self,
         scene: Scene,
@@ -193,6 +416,18 @@ class SyncBleLight:
         control_mode: int = DEFAULT_CONTROL_MODE,
     ):
         return self._run_light("apply_scene", scene, control_mode=control_mode)
+
+    def apply_scene_confirmed(
+        self,
+        scene: Scene,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "apply_scene_confirmed",
+            scene,
+            control_mode=control_mode,
+        )
 
     def transition_scene(
         self,
@@ -213,6 +448,44 @@ class SyncBleLight:
             easing=easing,
             control_mode=control_mode,
         )
+
+    def transition_scene_confirmed(
+        self,
+        start: Scene,
+        end: Scene,
+        *,
+        steps: int = 10,
+        duration: float = 1.0,
+        easing: str = "linear",
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self._run_light(
+            "transition_scene_confirmed",
+            start,
+            end,
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            control_mode=control_mode,
+        )
+
+    def get_object_firmware(self, obj: int = 0):
+        return self._run_light("get_object_firmware", obj)
+
+    def get_object_voltage(self, obj: int = 0):
+        return self._run_light("get_object_voltage", obj)
+
+    def get_object_mode(self, obj: int = 0):
+        return self._run_light("get_object_mode", obj)
+
+    def identify(self, obj: int = 0):
+        return self._run_light("identify", obj)
+
+    def chip_sync(self):
+        return self._run_light("chip_sync")
+
+    def read_sn(self):
+        return self._run_light("read_sn")
 
     def _run_light(self, method: str, *args: object, **kwargs: object):
         if self._light is None:
