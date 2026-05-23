@@ -700,7 +700,10 @@ The integration facade also exposes direct control helpers:
 `apply_scene()`, `apply_preset()`, `run_sequence()`, `run_cue()`, and
 `run_named_cue()`. Pass `require_ready=True` to check `control_requests` before
 opening the transport, or combine it with `require_acknowledged=True` to require
-the stricter `confirmed_control` readiness preflight.
+the stricter `confirmed_control` readiness preflight. Direct integration control
+updates the integration's own state tracker, so `state()`, `state_snapshot()`,
+`state_history()`, and `wait_for_state_update()` work without manually creating a
+controller.
 
 Host applications can get the same setup model without starting the HTTP bridge
 or shelling out to the CLI:
@@ -745,6 +748,7 @@ result = integration.apply_scene(
     require_acknowledged=True,
 )
 print(result["applied"], result["reason"])
+print(integration.state_snapshot())
 ```
 
 Async host applications can use the same setup/preflight model for native BLE
@@ -797,6 +801,7 @@ async def main() -> None:
         require_acknowledged=True,
     )
     print(result["applied"], result["reason"])
+    print(integration.state_snapshot())
 
 
 asyncio.run(main())

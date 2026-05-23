@@ -42,7 +42,7 @@ from .server import (
     integration_snapshot_response,
     readiness_response,
 )
-from .state import SceneStateTracker
+from .state import SceneState, SceneStateTracker
 from .status import read_async_status, read_sync_status
 from .transports.ble import BleWorkerError
 from .validation import validate_async_light, validate_sync_light
@@ -84,6 +84,7 @@ class LightIntegration:
     preset_library: ScenePresetLibrary | None = None
     cue_library: CueLibrary | None = None
     obj: int = 1
+    state_tracker: SceneStateTracker = field(default_factory=SceneStateTracker)
 
     def status(self) -> StatusSnapshot:
         return local_status_snapshot(
@@ -99,13 +100,17 @@ class LightIntegration:
         state_version: int = 0,
         state: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
+        resolved_state_version, resolved_state = self._state_inputs(
+            state_version=state_version,
+            state=state,
+        )
         return local_readiness(
             self.config,
             allow_control=self.allow_control,
             include_ble=include_ble,
             include_ble_status=include_ble_status,
-            state_version=state_version,
-            state=state,
+            state_version=resolved_state_version,
+            state=resolved_state,
             light_factory=self.light_factory,
         )
 
@@ -208,6 +213,32 @@ class LightIntegration:
             allow_control=self.allow_control,
             presets=self._preset_names(),
             cues=self._cue_names(),
+        )
+
+    def state(self) -> dict[str, object]:
+        return self.state_tracker.to_dict()
+
+    def state_snapshot(self) -> dict[str, object]:
+        return _state_payload(*self.state_tracker.versioned_snapshot())
+
+    def state_history(
+        self,
+        *,
+        after_version: int = 0,
+        limit: int | None = None,
+    ) -> dict[str, object]:
+        return _history_payload(
+            self.state_tracker.history(after_version=after_version, limit=limit)
+        )
+
+    def wait_for_state_update(
+        self,
+        after_version: int,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, object]:
+        return _state_payload(
+            *self.state_tracker.wait_for_update(after_version, timeout=timeout)
         )
 
     def devices(
@@ -313,7 +344,7 @@ class LightIntegration:
             light_factory=self.light_factory,
             preset_library=self._preset_library(preset_library),
             cue_library=self._cue_library(cue_library),
-            state_tracker=state_tracker,
+            state_tracker=self._state_tracker(state_tracker),
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
         )
@@ -591,6 +622,10 @@ class LightIntegration:
         state_version: int = 0,
         state: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
+        resolved_state_version, resolved_state = self._state_inputs(
+            state_version=state_version,
+            state=state,
+        )
         return local_integration_snapshot(
             self.config,
             allow_control=self.allow_control,
@@ -598,8 +633,8 @@ class LightIntegration:
             include_ble_status=include_ble_status,
             presets=self._preset_names(),
             cues=self._cue_names(),
-            state_version=state_version,
-            state=state,
+            state_version=resolved_state_version,
+            state=resolved_state,
             light_factory=self.light_factory,
         )
 
@@ -654,6 +689,12 @@ class LightIntegration:
     def _cue_library(self, explicit: CueLibrary | None) -> CueLibrary | None:
         return self.cue_library if explicit is None else explicit
 
+    def _state_tracker(
+        self,
+        explicit: SceneStateTracker | None,
+    ) -> SceneStateTracker:
+        return self.state_tracker if explicit is None else explicit
+
     def _preset_names(self) -> tuple[str, ...]:
         return _integration_preset_names(self.preset_names, self.preset_library)
 
@@ -662,6 +703,17 @@ class LightIntegration:
 
     def _obj(self, explicit: int | None) -> int:
         return self.obj if explicit is None else explicit
+
+    def _state_inputs(
+        self,
+        *,
+        state_version: int,
+        state: Mapping[str, object] | None,
+    ) -> tuple[int, Mapping[str, object] | None]:
+        if state is not None or state_version != 0:
+            return state_version, state
+        snapshot = self.state_snapshot()
+        return _state_version(snapshot), _state_from_snapshot(snapshot)
 
     def _require_control_readiness(
         self,
@@ -694,6 +746,7 @@ class AsyncLightIntegration:
     preset_library: ScenePresetLibrary | None = None
     cue_library: CueLibrary | None = None
     obj: int = 1
+    state_tracker: SceneStateTracker = field(default_factory=SceneStateTracker)
 
     async def status(self) -> StatusSnapshot:
         return await local_async_status_snapshot(
@@ -709,13 +762,17 @@ class AsyncLightIntegration:
         state_version: int = 0,
         state: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
+        resolved_state_version, resolved_state = self._state_inputs(
+            state_version=state_version,
+            state=state,
+        )
         return await local_async_readiness(
             self.config,
             allow_control=self.allow_control,
             include_ble=include_ble,
             include_ble_status=include_ble_status,
-            state_version=state_version,
-            state=state,
+            state_version=resolved_state_version,
+            state=resolved_state,
             light_factory=self.light_factory,
         )
 
@@ -822,6 +879,35 @@ class AsyncLightIntegration:
             cues=self._cue_names(),
         )
 
+    def state(self) -> dict[str, object]:
+        return self.state_tracker.to_dict()
+
+    def state_snapshot(self) -> dict[str, object]:
+        return _state_payload(*self.state_tracker.versioned_snapshot())
+
+    def state_history(
+        self,
+        *,
+        after_version: int = 0,
+        limit: int | None = None,
+    ) -> dict[str, object]:
+        return _history_payload(
+            self.state_tracker.history(after_version=after_version, limit=limit)
+        )
+
+    async def wait_for_state_update(
+        self,
+        after_version: int,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, object]:
+        version, state = await asyncio.to_thread(
+            self.state_tracker.wait_for_update,
+            after_version,
+            timeout=timeout,
+        )
+        return _state_payload(version, state)
+
     async def devices(
         self,
         *,
@@ -925,7 +1011,7 @@ class AsyncLightIntegration:
             light_factory=self.light_factory,
             preset_library=self._preset_library(preset_library),
             cue_library=self._cue_library(cue_library),
-            state_tracker=state_tracker,
+            state_tracker=self._state_tracker(state_tracker),
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
         )
@@ -1203,6 +1289,10 @@ class AsyncLightIntegration:
         state_version: int = 0,
         state: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
+        resolved_state_version, resolved_state = self._state_inputs(
+            state_version=state_version,
+            state=state,
+        )
         return await local_async_integration_snapshot(
             self.config,
             allow_control=self.allow_control,
@@ -1210,8 +1300,8 @@ class AsyncLightIntegration:
             include_ble_status=include_ble_status,
             presets=self._preset_names(),
             cues=self._cue_names(),
-            state_version=state_version,
-            state=state,
+            state_version=resolved_state_version,
+            state=resolved_state,
             light_factory=self.light_factory,
         )
 
@@ -1266,6 +1356,12 @@ class AsyncLightIntegration:
     def _cue_library(self, explicit: CueLibrary | None) -> CueLibrary | None:
         return self.cue_library if explicit is None else explicit
 
+    def _state_tracker(
+        self,
+        explicit: SceneStateTracker | None,
+    ) -> SceneStateTracker:
+        return self.state_tracker if explicit is None else explicit
+
     def _preset_names(self) -> tuple[str, ...]:
         return _integration_preset_names(self.preset_names, self.preset_library)
 
@@ -1274,6 +1370,17 @@ class AsyncLightIntegration:
 
     def _obj(self, explicit: int | None) -> int:
         return self.obj if explicit is None else explicit
+
+    def _state_inputs(
+        self,
+        *,
+        state_version: int,
+        state: Mapping[str, object] | None,
+    ) -> tuple[int, Mapping[str, object] | None]:
+        if state is not None or state_version != 0:
+            return state_version, state
+        snapshot = self.state_snapshot()
+        return _state_version(snapshot), _state_from_snapshot(snapshot)
 
     async def _require_control_readiness(
         self,
@@ -1306,6 +1413,35 @@ def _integration_cue_names(
 ) -> tuple[str, ...]:
     explicit = tuple(names)
     return explicit if explicit else () if library is None else tuple(library.names())
+
+
+def _state_payload(version: int, state: SceneState | None) -> dict[str, object]:
+    return {
+        "version": version,
+        "state": {"scene": None} if state is None else state.to_dict(),
+    }
+
+
+def _history_payload(history: tuple[tuple[int, SceneState], ...]) -> dict[str, object]:
+    return {
+        "events": [
+            {
+                "version": version,
+                "state": state.to_dict(),
+            }
+            for version, state in history
+        ]
+    }
+
+
+def _state_version(snapshot: Mapping[str, object]) -> int:
+    raw_version = snapshot.get("version")
+    return raw_version if isinstance(raw_version, int) else 0
+
+
+def _state_from_snapshot(snapshot: Mapping[str, object]) -> Mapping[str, object] | None:
+    raw_state = snapshot.get("state")
+    return raw_state if isinstance(raw_state, Mapping) else None
 
 
 def _integration_scene_payload(

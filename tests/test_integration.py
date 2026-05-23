@@ -196,6 +196,10 @@ class FakeSceneLight:
         return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
 
 
+class FakeControlStatusLight(FakeSceneLight, FakeStatusLight):
+    pass
+
+
 class AsyncFakeValidationLight:
     def __init__(self, *, acknowledged: bool = True) -> None:
         self.acknowledged = acknowledged
@@ -245,6 +249,10 @@ class AsyncFakeSceneLight:
         self.scenes.append(scene)
         self.control_modes.append(control_mode)
         return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
+
+
+class AsyncFakeControlStatusLight(AsyncFakeSceneLight, AsyncFakeStatusLight):
+    pass
 
 
 class FailingLight:
@@ -634,9 +642,11 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(payload["action"], "scene")
         self.assertEqual(light.control_modes, [0x01])
         self.assertEqual(light.scenes[0].brightness, 45)
+        self.assertEqual(integration.state_snapshot()["version"], 1)
+        self.assertEqual(integration.state()["scene"]["brightness"], 45)
 
     def test_light_integration_runs_controls_directly(self) -> None:
-        light = FakeSceneLight()
+        light = FakeControlStatusLight()
         presets = ScenePresetLibrary.from_mapping({"key": {"brightness": 25}})
         cues = CueLibrary.from_mapping({"intro": {"steps": [{"preset": "key"}]}})
         integration = LightIntegration(
@@ -672,6 +682,36 @@ class IntegrationTests(unittest.TestCase):
             [12.0, 30.0, 14.0, 25.0, 25.0],
         )
         self.assertEqual(light.control_modes, [0x01, 0x01, 0x01, 0x01, 0x01])
+        self.assertEqual(integration.state_snapshot()["version"], 4)
+        self.assertEqual(integration.state()["action"], "cue")
+        self.assertEqual(integration.state()["scene"]["brightness"], 25.0)
+        history = integration.state_history(limit=2)
+        self.assertEqual(
+            [event["version"] for event in history["events"]],
+            [3, 4],
+        )
+        self.assertEqual(
+            integration.wait_for_state_update(3, timeout=0)["state"]["action"],
+            "cue",
+        )
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.test",
+                    "ports": [],
+                },
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            readiness = integration.readiness()
+            snapshot = integration.snapshot()
+
+        self.assertEqual(readiness["state"]["version"], 4)
+        self.assertEqual(readiness["state"]["snapshot"]["action"], "cue")
+        self.assertTrue(readiness["ready_for"]["confirmed_control"])
+        self.assertEqual(snapshot["payloads"]["ready"]["state"]["version"], 4)
 
     def test_light_integration_control_readiness_guard_fails_closed(self) -> None:
         integration = LightIntegration(
@@ -1042,9 +1082,11 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["action"], "scene")
         self.assertEqual(light.control_modes, [0x01])
         self.assertEqual(light.scenes[0].brightness, 45)
+        self.assertEqual(integration.state_snapshot()["version"], 1)
+        self.assertEqual(integration.state()["scene"]["brightness"], 45)
 
     async def test_async_light_integration_runs_controls_directly(self) -> None:
-        light = AsyncFakeSceneLight()
+        light = AsyncFakeControlStatusLight()
         presets = ScenePresetLibrary.from_mapping({"key": {"brightness": 25}})
         cues = CueLibrary.from_mapping({"intro": {"steps": [{"preset": "key"}]}})
         integration = AsyncLightIntegration(
@@ -1080,6 +1122,30 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
             [12.0, 30.0, 14.0, 25.0, 25.0],
         )
         self.assertEqual(light.control_modes, [0x01, 0x01, 0x01, 0x01, 0x01])
+        self.assertEqual(integration.state_snapshot()["version"], 4)
+        self.assertEqual(integration.state()["action"], "cue")
+        self.assertEqual(integration.state()["scene"]["brightness"], 25.0)
+        history = integration.state_history(limit=2)
+        self.assertEqual(
+            [event["version"] for event in history["events"]],
+            [3, 4],
+        )
+        update = await integration.wait_for_state_update(3, timeout=0)
+        self.assertEqual(update["state"]["action"], "cue")
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            readiness = await integration.readiness()
+            snapshot = await integration.snapshot()
+
+        self.assertEqual(readiness["state"]["version"], 4)
+        self.assertEqual(readiness["state"]["snapshot"]["action"], "cue")
+        self.assertTrue(readiness["ready_for"]["confirmed_control"])
+        self.assertEqual(snapshot["payloads"]["ready"]["state"]["version"], 4)
 
     async def test_async_light_integration_control_readiness_guard_fails_closed(
         self,
