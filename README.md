@@ -339,7 +339,10 @@ exact helper bundle that needs Bluetooth permission.
 `zlight discover-usb` and returns every attempt with ACK/timeout evidence.
 Read-only discovery works without `--allow-control`; control candidates require
 the bridge to be started with `--allow-control` and the request body to include
-`allow_control: true`.
+`allow_control: true`. The response summary includes `status_counts`,
+`confirmed_names`, `echoed_write_names`, and a nested `control` summary so setup
+tools can decide whether any write primitive was actually ACK-confirmed without
+scraping every raw attempt.
 
 `GET /status` returns read-only identity/status fields plus the raw
 `CommandResult` evidence for global device info, firmware, voltage/status,
@@ -636,7 +639,11 @@ A later bounded run with `--register-device-ids 0,1 --control-kinds sleep`
 confirmed both registration ids ACK over USB, but `set_sleep_obj1` still
 returned `sent_no_response`. Registering device id `1` changed the next probe's
 reported `device_id` to `1`; re-registering device id `0` restored the original
-probe state.
+probe state. A subsequent sleep-only matrix against first words `0x0001`,
+`0x0100`, `0x0000`, `0x0101`, and `0x0301` confirmed that `0x0301` remains an
+echo-only route while the other first words time out for object control. macOS
+USB descriptors show a single `Zhiyun Virtual ComPort` full-speed device
+(`VID 0xfff8`, `PID 0x0180`) exposed as `/dev/cu.usbmodem21301`.
 
 Zhiyun did not expose detailed release notes through the protocol data gathered
 here, so behavior claims in this project are based on observed commands rather

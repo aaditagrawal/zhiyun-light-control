@@ -85,6 +85,19 @@ class DiscoveryTests(unittest.TestCase):
             attempts,
         )
         self.assertEqual(payload["summary"]["confirmed"], 3)
+        self.assertEqual(payload["summary"]["status_counts"]["acknowledged"], 3)
+        self.assertEqual(payload["summary"]["status_counts"]["echoed_write"], 1)
+        self.assertIn("global_device_info", payload["summary"]["confirmed_names"])
+        self.assertEqual(
+            payload["summary"]["echoed_write_names"],
+            ["first_word_0x0301_read_brightness_obj0"],
+        )
+        self.assertEqual(payload["summary"]["control"]["attempted"], 11)
+        self.assertEqual(payload["summary"]["control"]["confirmed"], 1)
+        self.assertEqual(
+            payload["summary"]["control"]["confirmed_names"],
+            ["register_default_group_dev0_group0"],
+        )
         self.assertEqual(payload["control_object_ids"], [1])
         self.assertEqual(payload["control_first_words"], [0x0100])
         self.assertEqual(payload["control_modes"], [0x33, 0x01])
@@ -114,6 +127,10 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(
             attempts["set_brightness_obj0_mode0x33_fw0x0301"]["status"],
             "echoed_write",
+        )
+        self.assertIn(
+            "set_brightness_obj0_mode0x33_fw0x0301",
+            payload["summary"]["control"]["unconfirmed_responsive"],
         )
         self.assertIn(0x0301, light.frame_first_words)
 

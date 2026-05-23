@@ -53,6 +53,10 @@ narrowed matrix confirmed `register_default_group_dev0_group0` and
 timed out.
 After registering device id `1`, a probe reported `device_id: 1`; registering
 device id `0` restored the original reported id.
+A later sleep-only matrix tested control first words `0x0001`, `0x0100`,
+`0x0000`, `0x0101`, and `0x0301` for object ids `0` and `1`. `0x0301` still
+returned exact write echoes, while the other first words timed out; none were
+ACK-confirmed object control.
 
 `discover-usb --allow-control` can separately vary control object ids and
 control frame first words with `--control-object-ids` and
@@ -64,6 +68,10 @@ vary the registration prelude with `--register-device-ids` and
 defaults to `0x33,0x01` so one run compares the official Vega write operation
 byte with the older operation byte. Because alternate registration ids are
 visible in later probes, re-register the intended id after experiments.
+Discovery reports include `summary.status_counts`, `confirmed_names`,
+`echoed_write_names`, and `summary.control` so automated setup tools can
+distinguish confirmed control from transport echoes without parsing every
+attempt.
 
 The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
 For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,

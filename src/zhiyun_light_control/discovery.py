@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -109,7 +110,26 @@ class UsbDiscoveryReport:
     def unconfirmed_responsive(self) -> tuple[DiscoveryAttempt, ...]:
         return tuple(attempt for attempt in self.responsive if not attempt.confirmed)
 
+    @property
+    def control_attempts(self) -> tuple[DiscoveryAttempt, ...]:
+        return tuple(
+            attempt
+            for attempt in self.attempts
+            if attempt.category.startswith("control")
+        )
+
+    @property
+    def confirmed_control(self) -> tuple[DiscoveryAttempt, ...]:
+        return tuple(attempt for attempt in self.control_attempts if attempt.confirmed)
+
+    @property
+    def responsive_control(self) -> tuple[DiscoveryAttempt, ...]:
+        return tuple(
+            attempt for attempt in self.control_attempts if not attempt.result.timed_out
+        )
+
     def to_dict(self) -> dict[str, object]:
+        status_counts = Counter(attempt.status for attempt in self.attempts)
         return {
             "transport": "usb",
             "object_ids": list(self.object_ids),
@@ -125,9 +145,29 @@ class UsbDiscoveryReport:
                 "attempted": len(self.attempts),
                 "responsive": len(self.responsive),
                 "confirmed": len(self.confirmed),
+                "status_counts": dict(sorted(status_counts.items())),
+                "confirmed_names": [attempt.name for attempt in self.confirmed],
+                "echoed_write_names": [
+                    attempt.name
+                    for attempt in self.attempts
+                    if attempt.status == "echoed_write"
+                ],
                 "unconfirmed_responsive": [
                     attempt.name for attempt in self.unconfirmed_responsive
                 ],
+                "control": {
+                    "attempted": len(self.control_attempts),
+                    "responsive": len(self.responsive_control),
+                    "confirmed": len(self.confirmed_control),
+                    "confirmed_names": [
+                        attempt.name for attempt in self.confirmed_control
+                    ],
+                    "unconfirmed_responsive": [
+                        attempt.name
+                        for attempt in self.responsive_control
+                        if not attempt.confirmed
+                    ],
+                },
             },
             "attempts": [attempt.to_dict() for attempt in self.attempts],
             "notes": list(self.notes),
