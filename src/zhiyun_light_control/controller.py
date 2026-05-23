@@ -27,7 +27,15 @@ from .presets import (
     scene_from_mapping,
     scene_from_optional_mapping,
 )
-from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
+from .protocol import (
+    DEFAULT_CONTROL_MODE,
+    RUNTIME_TYPE,
+    RuntimeCommand,
+    brightness_payload,
+    cct_payload,
+    register_payload,
+    sleep_payload,
+)
 from .state import (
     SceneState,
     SceneStateTracker,
@@ -73,6 +81,183 @@ class LightController:
     def probe(self):
         with self.light_factory() as light:
             return light.probe()
+
+    def register(
+        self,
+        device_id: int = 0,
+        group_id: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        with self.light_factory() as light:
+            result = light.exchange_runtime(
+                RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                register_payload(device_id, group_id),
+            )
+        self._require_acknowledged([result], require_acknowledged, action="register")
+        return _command_response("register", result)
+
+    def read_brightness(
+        self,
+        obj: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        return self._read_runtime_command(
+            "read_brightness",
+            RuntimeCommand.BRIGHTNESS,
+            brightness_payload(obj, read=True),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def read_cct(
+        self,
+        obj: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        return self._read_runtime_command(
+            "read_cct",
+            RuntimeCommand.CCT,
+            cct_payload(obj, read=True),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def read_sleep(
+        self,
+        obj: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        return self._read_runtime_command(
+            "read_sleep",
+            RuntimeCommand.SLEEP,
+            sleep_payload(obj, read=True),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_brightness(
+        self,
+        value: float,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, brightness=value)
+        with self.light_factory() as light:
+            result = light.set_brightness(
+                obj,
+                value,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_brightness",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_cct(
+        self,
+        kelvin: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, kelvin=kelvin)
+        with self.light_factory() as light:
+            result = light.set_cct(
+                obj,
+                kelvin,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_cct",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_sleep(
+        self,
+        value: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, sleep=value)
+        with self.light_factory() as light:
+            result = light.set_sleep(
+                obj,
+                value,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_sleep",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_rgb(
+        self,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, red=red, green=green, blue=blue)
+        with self.light_factory() as light:
+            result = light.set_rgb(
+                obj,
+                red,
+                green,
+                blue,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_rgb",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_hsi(
+        self,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(
+            obj=obj,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+        )
+        with self.light_factory() as light:
+            result = light.set_hsi(
+                obj,
+                hue,
+                saturation,
+                intensity,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_hsi",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
 
     def apply_scene(
         self,
@@ -438,6 +623,31 @@ class LightController:
         if scene is not None:
             self._record_scene(scene, action, results)
 
+    def _record_primitive(
+        self,
+        action: str,
+        scene: Scene,
+        result: CommandResult,
+        *,
+        require_acknowledged: bool | None,
+    ) -> dict[str, object]:
+        self._record_scene(scene, action, [result])
+        self._require_acknowledged([result], require_acknowledged, action=action)
+        return _primitive_response(action, scene, result)
+
+    def _read_runtime_command(
+        self,
+        action: str,
+        command: RuntimeCommand,
+        payload: bytes,
+        *,
+        require_acknowledged: bool | None,
+    ) -> dict[str, object]:
+        with self.light_factory() as light:
+            result = light.exchange_runtime(command, payload)
+        self._require_acknowledged([result], require_acknowledged, action=action)
+        return _command_response(action, result)
+
     def _run_preset_step(
         self,
         light: object,
@@ -564,6 +774,183 @@ class AsyncLightController:
     async def probe(self):
         async with self.light_factory() as light:
             return await light.probe()
+
+    async def register(
+        self,
+        device_id: int = 0,
+        group_id: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        async with self.light_factory() as light:
+            result = await light.exchange_runtime(
+                RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                register_payload(device_id, group_id),
+            )
+        self._require_acknowledged([result], require_acknowledged, action="register")
+        return _command_response("register", result)
+
+    async def read_brightness(
+        self,
+        obj: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        return await self._read_runtime_command(
+            "read_brightness",
+            RuntimeCommand.BRIGHTNESS,
+            brightness_payload(obj, read=True),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def read_cct(
+        self,
+        obj: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        return await self._read_runtime_command(
+            "read_cct",
+            RuntimeCommand.CCT,
+            cct_payload(obj, read=True),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def read_sleep(
+        self,
+        obj: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        return await self._read_runtime_command(
+            "read_sleep",
+            RuntimeCommand.SLEEP,
+            sleep_payload(obj, read=True),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_brightness(
+        self,
+        value: float,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, brightness=value)
+        async with self.light_factory() as light:
+            result = await light.set_brightness(
+                obj,
+                value,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_brightness",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_cct(
+        self,
+        kelvin: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, kelvin=kelvin)
+        async with self.light_factory() as light:
+            result = await light.set_cct(
+                obj,
+                kelvin,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_cct",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_sleep(
+        self,
+        value: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, sleep=value)
+        async with self.light_factory() as light:
+            result = await light.set_sleep(
+                obj,
+                value,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_sleep",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_rgb(
+        self,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, red=red, green=green, blue=blue)
+        async with self.light_factory() as light:
+            result = await light.set_rgb(
+                obj,
+                red,
+                green,
+                blue,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_rgb",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_hsi(
+        self,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(
+            obj=obj,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+        )
+        async with self.light_factory() as light:
+            result = await light.set_hsi(
+                obj,
+                hue,
+                saturation,
+                intensity,
+                control_mode=self._control_mode(control_mode),
+            )
+        return self._record_primitive(
+            "set_hsi",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
 
     async def apply_scene(
         self,
@@ -928,6 +1315,31 @@ class AsyncLightController:
         scene = _response_scene(response)
         if scene is not None:
             self._record_scene(scene, action, results)
+
+    def _record_primitive(
+        self,
+        action: str,
+        scene: Scene,
+        result: CommandResult,
+        *,
+        require_acknowledged: bool | None,
+    ) -> dict[str, object]:
+        self._record_scene(scene, action, [result])
+        self._require_acknowledged([result], require_acknowledged, action=action)
+        return _primitive_response(action, scene, result)
+
+    async def _read_runtime_command(
+        self,
+        action: str,
+        command: RuntimeCommand,
+        payload: bytes,
+        *,
+        require_acknowledged: bool | None,
+    ) -> dict[str, object]:
+        async with self.light_factory() as light:
+            result = await light.exchange_runtime(command, payload)
+        self._require_acknowledged([result], require_acknowledged, action=action)
+        return _command_response(action, result)
 
     async def _run_preset_step(
         self,
@@ -1382,6 +1794,30 @@ def _scene_response(
         "results": [result.to_dict() for result in result_items],
         "applied": results_confirmed(tuple(result_items)),
         "reason": _results_reason(result_items),
+    }
+
+
+def _primitive_response(
+    action: str,
+    scene: Scene,
+    result: CommandResult,
+) -> dict[str, object]:
+    response = _scene_response(action, scene, [result])
+    response["result"] = result.to_dict()
+    response["acknowledged"] = result.acknowledged
+    response["transport_status"] = result.transport_status
+    return response
+
+
+def _command_response(
+    action: str,
+    result: CommandResult,
+) -> dict[str, object]:
+    return {
+        "action": action,
+        "result": result.to_dict(),
+        "acknowledged": result.acknowledged,
+        "transport_status": result.transport_status,
     }
 
 

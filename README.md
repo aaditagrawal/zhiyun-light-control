@@ -702,13 +702,15 @@ They also expose `connection_candidates()`, `best_connection_config()`,
 hosts can turn USB/BLE discovery and BLE endpoint ACK evidence into reusable
 SDK configs without starting the HTTP bridge.
 The integration facade also exposes direct control helpers:
+`register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
+`set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,
 `apply_scene()`, `apply_preset()`, `run_sequence()`, `run_cue()`, and
-`run_named_cue()`. Pass `require_ready=True` to check `control_requests` before
-opening the transport, or combine it with `require_acknowledged=True` to require
-the stricter `confirmed_control` readiness preflight. Direct integration control
-updates the integration's own state tracker, so `state()`, `state_snapshot()`,
-`state_history()`, and `wait_for_state_update()` work without manually creating a
-controller.
+`run_named_cue()`. Pass `require_ready=True` to state-changing helpers to check
+`control_requests` before opening the transport, or combine it with
+`require_acknowledged=True` to require the stricter `confirmed_control`
+readiness preflight. Direct integration control updates the integration's own
+state tracker, so `state()`, `state_snapshot()`, `state_history()`, and
+`wait_for_state_update()` work without manually creating a controller.
 
 Host applications can get the same setup model without starting the HTTP bridge
 or shelling out to the CLI:
@@ -753,6 +755,9 @@ print(usb_discovery["summary"]["confirmed_names"])
 print([candidate.to_dict() for candidate in route_candidates])
 print(selected_integration.config.to_dict())
 print(plan["steps"])
+
+primitive = integration.set_brightness(35, require_ready=True)
+print(primitive["transport_status"], integration.state()["action"])
 
 result = integration.apply_scene(
     {"brightness": 35, "kelvin": 5600},
@@ -818,6 +823,9 @@ async def main() -> None:
     print(selected.config.to_dict())
     print(validation["summary"]["ready_for"])
     print(plan["steps"])
+
+    primitive = await integration.set_brightness(35, require_ready=True)
+    print(primitive["transport_status"], integration.state()["action"])
 
     result = await integration.apply_scene(
         {"brightness": 35},

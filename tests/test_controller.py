@@ -21,6 +21,8 @@ class FakeLight:
     def __init__(self, *, acknowledged: bool = True) -> None:
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
+        self.runtime_requests: list[tuple[int, bytes]] = []
+        self.primitive_calls: list[tuple[str, int, object, int]] = []
         self.transitions: list[tuple[Scene, Scene, int, float, str]] = []
 
     def __enter__(self) -> FakeLight:
@@ -31,6 +33,73 @@ class FakeLight:
 
     def probe(self):
         return {"firmware": "test"}
+
+    def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        del timeout
+        self.runtime_requests.append((cmd, payload))
+        return _result(cmd, acknowledged=self.acknowledged)
+
+    def set_brightness(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("brightness", obj, value, control_mode))
+        return _result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)
+
+    def set_cct(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("cct", obj, kelvin, control_mode))
+        return _result(RuntimeCommand.CCT, acknowledged=self.acknowledged)
+
+    def set_sleep(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("sleep", obj, value, control_mode))
+        return _result(RuntimeCommand.SLEEP, acknowledged=self.acknowledged)
+
+    def set_rgb(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("rgb", obj, (red, green, blue), control_mode))
+        return _result(RuntimeCommand.RGB, acknowledged=self.acknowledged)
+
+    def set_hsi(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("hsi", obj, (hue, saturation, intensity), control_mode)
+        )
+        return _result(RuntimeCommand.HSI, acknowledged=self.acknowledged)
 
     def apply_scene(self, scene: Scene, *, control_mode: int = 0x33):
         del control_mode
@@ -96,6 +165,40 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual([event["version"] for event in history["events"]], [1, 2])
         self.assertEqual(history["events"][0]["state"]["action"], "scene")
         self.assertEqual(history["events"][1]["state"]["action"], "preset")
+
+    def test_controller_runs_primitive_commands_with_state_evidence(self) -> None:
+        light = FakeLight()
+        controller = LightController(light_factory=FakeFactory(light))
+
+        register = controller.register(device_id=1, group_id=2)
+        read = controller.read_brightness(obj=1)
+        brightness = controller.set_brightness(35, obj=2, control_mode=0x01)
+        cct = controller.set_cct(5600, obj=2, control_mode=0x01)
+        sleep = controller.set_sleep(0, obj=2, control_mode=0x01)
+        rgb = controller.set_rgb(255, 180, 120, obj=2, control_mode=0x01)
+        hsi = controller.set_hsi(30.0, 0.5, 40, obj=2, control_mode=0x01)
+
+        self.assertTrue(register["acknowledged"])
+        self.assertEqual(register["action"], "register")
+        self.assertTrue(read["acknowledged"])
+        self.assertEqual(read["action"], "read_brightness")
+        self.assertTrue(brightness["applied"])
+        self.assertEqual(cct["scene"]["kelvin"], 5600)
+        self.assertEqual(sleep["scene"]["sleep"], 0)
+        self.assertEqual(rgb["scene"]["red"], 255)
+        self.assertEqual(hsi["scene"]["hue"], 30.0)
+        self.assertEqual(
+            light.primitive_calls,
+            [
+                ("brightness", 2, 35, 0x01),
+                ("cct", 2, 5600, 0x01),
+                ("sleep", 2, 0, 0x01),
+                ("rgb", 2, (255, 180, 120), 0x01),
+                ("hsi", 2, (30.0, 0.5, 40), 0x01),
+            ],
+        )
+        self.assertEqual(controller.state()["action"], "set_hsi")
+        self.assertEqual(controller.state_snapshot()["version"], 5)
 
     def test_controller_runs_sequences_and_stops_on_unconfirmed_steps(self) -> None:
         light = FakeLight(acknowledged=False)

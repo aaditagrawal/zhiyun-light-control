@@ -181,6 +181,7 @@ class FakeSceneLight:
     def __init__(self) -> None:
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.primitive_calls: list[tuple[str, int, object, int]] = []
 
     def __enter__(self) -> FakeSceneLight:
         return self
@@ -198,9 +199,80 @@ class FakeSceneLight:
         self.control_modes.append(control_mode)
         return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
 
+    def set_brightness(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("brightness", obj, value, control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")
+
+    def set_cct(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("cct", obj, kelvin, control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.CCT, b"\x00")
+
+    def set_sleep(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("sleep", obj, value, control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.SLEEP, b"\x00")
+
+    def set_rgb(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("rgb", obj, (red, green, blue), control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.RGB, b"\x00")
+
+    def set_hsi(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("hsi", obj, (hue, saturation, intensity), control_mode)
+        )
+        return _result(RUNTIME_TYPE, RuntimeCommand.HSI, b"\x00")
+
 
 class FakeControlStatusLight(FakeSceneLight, FakeStatusLight):
-    pass
+    def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        if cmd in {
+            RuntimeCommand.REGISTER_DEFAULT_GROUP,
+            RuntimeCommand.BRIGHTNESS,
+            RuntimeCommand.CCT,
+            RuntimeCommand.SLEEP,
+        }:
+            del payload, timeout
+            return _result(RUNTIME_TYPE, cmd, b"\x00")
+        return FakeStatusLight.exchange_runtime(self, cmd, payload, timeout=timeout)
 
 
 class AsyncFakeValidationLight:
@@ -236,6 +308,7 @@ class AsyncFakeSceneLight:
     def __init__(self) -> None:
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.primitive_calls: list[tuple[str, int, object, int]] = []
 
     async def __aenter__(self) -> AsyncFakeSceneLight:
         return self
@@ -253,9 +326,85 @@ class AsyncFakeSceneLight:
         self.control_modes.append(control_mode)
         return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
 
+    async def set_brightness(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("brightness", obj, value, control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")
+
+    async def set_cct(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("cct", obj, kelvin, control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.CCT, b"\x00")
+
+    async def set_sleep(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("sleep", obj, value, control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.SLEEP, b"\x00")
+
+    async def set_rgb(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("rgb", obj, (red, green, blue), control_mode))
+        return _result(RUNTIME_TYPE, RuntimeCommand.RGB, b"\x00")
+
+    async def set_hsi(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("hsi", obj, (hue, saturation, intensity), control_mode)
+        )
+        return _result(RUNTIME_TYPE, RuntimeCommand.HSI, b"\x00")
+
 
 class AsyncFakeControlStatusLight(AsyncFakeSceneLight, AsyncFakeStatusLight):
-    pass
+    async def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        if cmd in {
+            RuntimeCommand.REGISTER_DEFAULT_GROUP,
+            RuntimeCommand.BRIGHTNESS,
+            RuntimeCommand.CCT,
+            RuntimeCommand.SLEEP,
+        }:
+            del payload, timeout
+            return _result(RUNTIME_TYPE, cmd, b"\x00")
+        return await AsyncFakeStatusLight.exchange_runtime(
+            self,
+            cmd,
+            payload,
+            timeout=timeout,
+        )
 
 
 class FailingLight:
@@ -820,6 +969,44 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(integration.state_snapshot()["version"], 1)
         self.assertEqual(integration.state()["scene"]["brightness"], 45)
 
+    def test_light_integration_runs_primitive_controls_directly(self) -> None:
+        light = FakeControlStatusLight()
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            obj=2,
+            light_factory=FakeFactory(light),
+        )
+
+        register = integration.register(device_id=1, group_id=2)
+        read = integration.read_brightness()
+        brightness = integration.set_brightness(35, control_mode=0x01)
+        cct = integration.set_cct(5600, control_mode=0x01)
+        sleep = integration.set_sleep(0, control_mode=0x01)
+        rgb = integration.set_rgb(255, 180, 120, control_mode=0x01)
+        hsi = integration.set_hsi(30.0, 0.5, 40, control_mode=0x01)
+
+        self.assertTrue(register["acknowledged"])
+        self.assertEqual(register["action"], "register")
+        self.assertTrue(read["acknowledged"])
+        self.assertEqual(read["action"], "read_brightness")
+        self.assertTrue(brightness["applied"])
+        self.assertEqual(cct["scene"]["kelvin"], 5600)
+        self.assertEqual(sleep["scene"]["sleep"], 0)
+        self.assertEqual(rgb["scene"]["red"], 255)
+        self.assertEqual(hsi["scene"]["hue"], 30.0)
+        self.assertEqual(
+            light.primitive_calls,
+            [
+                ("brightness", 2, 35, 0x01),
+                ("cct", 2, 5600, 0x01),
+                ("sleep", 2, 0, 0x01),
+                ("rgb", 2, (255, 180, 120), 0x01),
+                ("hsi", 2, (30.0, 0.5, 40), 0x01),
+            ],
+        )
+        self.assertEqual(integration.state_snapshot()["version"], 5)
+        self.assertEqual(integration.state()["action"], "set_hsi")
+
     def test_light_integration_runs_controls_directly(self) -> None:
         light = FakeControlStatusLight()
         presets = ScenePresetLibrary.from_mapping({"key": {"brightness": 25}})
@@ -1345,6 +1532,44 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(light.scenes[0].brightness, 45)
         self.assertEqual(integration.state_snapshot()["version"], 1)
         self.assertEqual(integration.state()["scene"]["brightness"], 45)
+
+    async def test_async_light_integration_runs_primitive_controls(self) -> None:
+        light = AsyncFakeControlStatusLight()
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            obj=2,
+            light_factory=AsyncFakeFactory(light),
+        )
+
+        register = await integration.register(device_id=1, group_id=2)
+        read = await integration.read_brightness()
+        brightness = await integration.set_brightness(35, control_mode=0x01)
+        cct = await integration.set_cct(5600, control_mode=0x01)
+        sleep = await integration.set_sleep(0, control_mode=0x01)
+        rgb = await integration.set_rgb(255, 180, 120, control_mode=0x01)
+        hsi = await integration.set_hsi(30.0, 0.5, 40, control_mode=0x01)
+
+        self.assertTrue(register["acknowledged"])
+        self.assertEqual(register["action"], "register")
+        self.assertTrue(read["acknowledged"])
+        self.assertEqual(read["action"], "read_brightness")
+        self.assertTrue(brightness["applied"])
+        self.assertEqual(cct["scene"]["kelvin"], 5600)
+        self.assertEqual(sleep["scene"]["sleep"], 0)
+        self.assertEqual(rgb["scene"]["red"], 255)
+        self.assertEqual(hsi["scene"]["hue"], 30.0)
+        self.assertEqual(
+            light.primitive_calls,
+            [
+                ("brightness", 2, 35, 0x01),
+                ("cct", 2, 5600, 0x01),
+                ("sleep", 2, 0, 0x01),
+                ("rgb", 2, (255, 180, 120), 0x01),
+                ("hsi", 2, (30.0, 0.5, 40), 0x01),
+            ],
+        )
+        self.assertEqual(integration.state_snapshot()["version"], 5)
+        self.assertEqual(integration.state()["action"], "set_hsi")
 
     async def test_async_light_integration_runs_controls_directly(self) -> None:
         light = AsyncFakeControlStatusLight()

@@ -242,7 +242,9 @@ SDK callers can reach the same surface through `LightController.plan_scene()`,
 `LightBridgeClient` helpers when the HTTP bridge is the process boundary.
 Embedded hosts that already use `LightIntegration` or `AsyncLightIntegration`
 can attach preset/cue libraries there and call the same `plan_*` helpers before
-opening USB or BLE. The same integration objects also expose direct
+opening USB or BLE. The same integration objects also expose direct primitive
+helpers for `register`, `read_brightness`, `read_cct`, `read_sleep`,
+`set_brightness`, `set_cct`, `set_sleep`, `set_rgb`, and `set_hsi`, plus
 `apply_scene`, `apply_preset`, `run_sequence`, `run_cue`, and `run_named_cue`
 control helpers with opt-in readiness checks for embedded hosts that do not run
 the HTTP bridge. Direct integration control records into the integration state

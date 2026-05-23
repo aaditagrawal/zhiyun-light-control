@@ -502,6 +502,182 @@ class LightIntegration:
             require_acknowledged=require_acknowledged,
         )
 
+    def register(
+        self,
+        device_id: int = 0,
+        group_id: int = 0,
+        *,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return self.controller(
+            require_acknowledged=require_acknowledged,
+        ).register(
+            device_id=device_id,
+            group_id=group_id,
+            require_acknowledged=require_acknowledged,
+        )
+
+    def read_brightness(
+        self,
+        *,
+        obj: int | None = None,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return self.controller().read_brightness(
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def read_cct(
+        self,
+        *,
+        obj: int | None = None,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return self.controller().read_cct(
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def read_sleep(
+        self,
+        *,
+        obj: int | None = None,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return self.controller().read_sleep(
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_brightness(
+        self,
+        value: float,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_brightness(
+            value,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_cct(
+        self,
+        kelvin: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_cct(
+            kelvin,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_sleep(
+        self,
+        value: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_sleep(
+            value,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_rgb(
+        self,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_rgb(
+            red,
+            green,
+            blue,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    def set_hsi(
+        self,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_hsi(
+            hue,
+            saturation,
+            intensity,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
     def apply_scene(
         self,
         scene: Scene | Mapping[str, object],
@@ -1310,6 +1486,182 @@ class AsyncLightIntegration:
             cue_library=self._cue_library(cue_library),
             state_tracker=self._state_tracker(state_tracker),
             control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def register(
+        self,
+        device_id: int = 0,
+        group_id: int = 0,
+        *,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return await self.controller(
+            require_acknowledged=require_acknowledged,
+        ).register(
+            device_id=device_id,
+            group_id=group_id,
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def read_brightness(
+        self,
+        *,
+        obj: int | None = None,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return await self.controller().read_brightness(
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def read_cct(
+        self,
+        *,
+        obj: int | None = None,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return await self.controller().read_cct(
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def read_sleep(
+        self,
+        *,
+        obj: int | None = None,
+        require_acknowledged: bool = False,
+    ) -> dict[str, object]:
+        return await self.controller().read_sleep(
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_brightness(
+        self,
+        value: float,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_brightness(
+            value,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_cct(
+        self,
+        kelvin: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_cct(
+            kelvin,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_sleep(
+        self,
+        value: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_sleep(
+            value,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_rgb(
+        self,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_rgb(
+            red,
+            green,
+            blue,
+            obj=self._obj(obj),
+            require_acknowledged=require_acknowledged,
+        )
+
+    async def set_hsi(
+        self,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        obj: int | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self.controller(
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        ).set_hsi(
+            hue,
+            saturation,
+            intensity,
+            obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
 
