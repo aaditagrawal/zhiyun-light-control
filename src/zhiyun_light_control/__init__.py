@@ -86,7 +86,12 @@ from .http_client import (
     validation_unconfirmed_names,
 )
 from .integration import (
+    AsyncLightIntegration,
     LightIntegration,
+    local_async_integration_snapshot,
+    local_async_readiness,
+    local_async_status_snapshot,
+    local_async_validation,
     local_capabilities,
     local_error_status,
     local_integration_snapshot,
@@ -150,6 +155,7 @@ from .validation import (
 
 __all__ = [
     "AsyncZhiyunLight",
+    "AsyncLightIntegration",
     "AsyncLightController",
     "AsyncProbeResult",
     "ArtDmxPacket",
@@ -254,6 +260,10 @@ __all__ = [
     "flatten_command_batches",
     "iter_frames",
     "inspect_ble_device",
+    "local_async_integration_snapshot",
+    "local_async_readiness",
+    "local_async_status_snapshot",
+    "local_async_validation",
     "local_capabilities",
     "local_error_status",
     "local_integration_snapshot",

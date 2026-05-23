@@ -682,6 +682,34 @@ print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
 ```
 
+Async host applications can use the same setup/preflight model for native BLE
+integrations without starting the HTTP bridge:
+
+```python
+import asyncio
+
+from zhiyun_light_control import AsyncLightIntegration, LightConnectionConfig
+
+
+async def main() -> None:
+    integration = AsyncLightIntegration(
+        config=LightConnectionConfig(
+            transport="ble",
+            name_contains="MOLUS",
+            ble_in_process=True,
+        ),
+    )
+
+    ready = await integration.readiness(include_ble=True)
+    validation = await integration.validate(include_object_reads=True)
+
+    print(ready["ready_for"])
+    print(validation["summary"]["ready_for"])
+
+
+asyncio.run(main())
+```
+
 ```python
 from zhiyun_light_control import LightConnectionConfig, Scene, open_light
 
