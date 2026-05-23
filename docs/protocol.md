@@ -57,9 +57,11 @@ The local HTTP bridge is intentionally small and JSON-only:
 | --- | --- | --- |
 | `GET` | `/health` | Process health |
 | `GET` | `/probe` | Global light probe |
+| `GET` | `/validate` | Read-only hardware validation report |
 | `GET` | `/commands` | List bridge commands |
 | `GET` | `/presets` | List loaded named scene presets |
 | `GET` | `/state` | Last accepted scene/control request |
+| `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
 | `POST` | `/cct` | Set color temperature |
@@ -70,7 +72,10 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/transition` | Apply a timed sequence from one requested scene to another |
 | `POST` | `/preset` | Apply a loaded named preset with optional overrides |
 
-Control endpoints require `zlight serve --allow-control`. Responses include command result details instead of hiding timeouts, because some endpoints are still experimental on the current G60.
+Control endpoints require `zlight serve --allow-control`. `POST /validate` can
+run read-only checks without that flag, but its `allow_control` write checks are
+also gated by it. Responses include command result details instead of hiding
+timeouts, because some endpoints are still experimental on the current G60.
 
 The local bridges default to USB, but `serve`, `osc-serve`, `artnet-serve`, and
 `sacn-serve` also accept `--transport ble` with `--address` or

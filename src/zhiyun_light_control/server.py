@@ -23,6 +23,7 @@ from .protocol import (
     sleep_payload,
 )
 from .state import SceneStateTracker
+from .validation import validate_sync_light
 
 
 class LightHttpServer(ThreadingHTTPServer):
@@ -55,8 +56,16 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         if path == "/commands":
             self._json(
                 {
-                    "get": ["/health", "/probe", "/commands", "/presets", "/state"],
+                    "get": [
+                        "/health",
+                        "/probe",
+                        "/validate",
+                        "/commands",
+                        "/presets",
+                        "/state",
+                    ],
                     "post": [
+                        "/validate",
                         "/register",
                         "/brightness",
                         "/cct",
@@ -85,6 +94,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             with self.server.light_factory() as light:
                 self._json(light.probe().to_dict())
             return
+        if path == "/validate":
+            self._json(self._handle_validate({}))
+            return
         self._json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
 
     def do_OPTIONS(self) -> None:
@@ -93,16 +105,30 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self) -> None:
-        if not self.server.allow_control:
-            self._json(
-                {"error": "control endpoints require --allow-control"},
-                status=HTTPStatus.FORBIDDEN,
-            )
-            return
         try:
             body = self._read_json()
             path = urlparse(self.path).path
-            result = self._handle_control(path, body)
+            if path == "/validate":
+                if _body_bool(body, "allow_control") and not self.server.allow_control:
+                    self._json(
+                        {
+                            "error": (
+                                "validation control checks require bridge "
+                                "--allow-control"
+                            )
+                        },
+                        status=HTTPStatus.FORBIDDEN,
+                    )
+                    return
+                result = self._handle_validate(body)
+            else:
+                if not self.server.allow_control:
+                    self._json(
+                        {"error": "control endpoints require --allow-control"},
+                        status=HTTPStatus.FORBIDDEN,
+                    )
+                    return
+                result = self._handle_control(path, body)
         except Exception as exc:  # pragma: no cover - keeps HTTP errors useful.
             self._json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
@@ -257,6 +283,31 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 }
         raise ValueError("unknown endpoint")
 
+    def _handle_validate(self, body: dict[str, Any]) -> dict[str, Any]:
+        allow_control = _body_bool(body, "allow_control")
+        include_object_reads = _body_bool(body, "include_object_reads")
+        include_color = _body_bool(body, "include_color")
+        with self.server.light_factory() as light:
+            report = validate_sync_light(
+                light,
+                transport="http",
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=int(body.get("device_id", 0)),
+                obj=int(body.get("obj", 1)),
+                brightness=float(body.get("brightness", 35.0)),
+                kelvin=int(body.get("kelvin", 5600)),
+                sleep=int(body.get("sleep", 0)),
+                red=int(body.get("red", 255)),
+                green=int(body.get("green", 255)),
+                blue=int(body.get("blue", 255)),
+                hue=float(body.get("hue", 0.0)),
+                saturation=float(body.get("saturation", 0.0)),
+                intensity=int(body.get("intensity", 35)),
+            )
+        return report.to_dict()
+
     def _transition_start(self, body: dict[str, Any], *, obj: int) -> Scene:
         start_data = body.get("from")
         if start_data is not None:
@@ -334,6 +385,15 @@ def _optional_int(body: dict[str, Any], key: str) -> int | None:
 
 def _optional_float(body: dict[str, Any], key: str) -> float | None:
     return float(body[key]) if key in body and body[key] is not None else None
+
+
+def _body_bool(body: dict[str, Any], key: str, default: bool = False) -> bool:
+    value = body.get(key, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 _SCENE_FIELDS = {field.name for field in fields(Scene)}

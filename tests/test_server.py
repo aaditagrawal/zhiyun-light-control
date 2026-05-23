@@ -4,6 +4,7 @@ import json
 import threading
 import unittest
 from dataclasses import dataclass
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from zhiyun_light_control.models import CommandResult, Scene
@@ -175,6 +176,77 @@ class ServerTests(unittest.TestCase):
             state = json.loads(urlopen(f"{base}/state", timeout=3).read())
             self.assertEqual(state["action"], "transition")
             self.assertEqual(state["scene"]["brightness"], 30.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_validate_read_only_without_control_gate(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=False,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
+            self.assertIn("/validate", commands["get"])
+            self.assertIn("/validate", commands["post"])
+
+            report = json.loads(urlopen(f"{base}/validate", timeout=3).read())
+            self.assertTrue(report["connection_confirmed"])
+            self.assertFalse(report["control_enabled"])
+            self.assertEqual(report["unconfirmed"], [])
+            self.assertEqual([check["name"] for check in report["checks"]], ["probe"])
+
+            request = Request(
+                f"{base}/validate",
+                data=json.dumps({"allow_control": True}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            with self.assertRaises(HTTPError) as raised:
+                urlopen(request, timeout=3).read()
+            self.assertEqual(raised.exception.code, 403)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_validate_can_run_control_checks_when_enabled(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            request = Request(
+                f"{base}/validate",
+                data=json.dumps(
+                    {
+                        "allow_control": True,
+                        "include_object_reads": True,
+                        "brightness": 32,
+                        "kelvin": 5400,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            report = json.loads(urlopen(request, timeout=3).read())
+            self.assertTrue(report["connection_confirmed"])
+            self.assertTrue(report["control_enabled"])
+            self.assertEqual(report["unconfirmed"], [])
+            self.assertTrue(report["all_attempted_confirmed"])
+            names = [check["name"] for check in report["checks"]]
+            self.assertIn("read_brightness", names)
+            self.assertIn("register_default_group", names)
+            self.assertIn("set_brightness", names)
         finally:
             server.shutdown()
             server.server_close()

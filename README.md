@@ -157,9 +157,13 @@ Useful HTTP calls:
 
 ```sh
 curl http://127.0.0.1:8765/probe
+curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/state
 curl http://127.0.0.1:8765/presets
+curl -X POST http://127.0.0.1:8765/validate \
+  -H 'content-type: application/json' \
+  -d '{"allow_control": true, "include_object_reads": true}'
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
@@ -176,6 +180,12 @@ curl -X POST http://127.0.0.1:8765/preset \
 
 For `/transition`, omit `from` to use the bridge's last requested state for the
 same object id.
+
+`GET /validate` returns the same hardware-evidence report as `zlight validate`
+without transmitting control writes. `POST /validate` accepts
+`allow_control`, `include_object_reads`, `include_color`, `obj`, and the same
+test values as the CLI. Write checks only run when the bridge was started with
+`--allow-control`.
 
 OSC bridge:
 
