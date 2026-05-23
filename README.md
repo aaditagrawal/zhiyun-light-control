@@ -123,8 +123,14 @@ The same setup/use split is available as a plain Python SDK script:
 
 ```sh
 uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json
-uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --brightness 35
+uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --include-object-reads
+uv run python examples/sdk_quickstart.py --config ./zhiyun-light.json --allow-control --brightness 35
 ```
+
+The quickstart persists only a route whose read-only status probe succeeded and
+prints `ready_for`, `validation_ready_for`, and unconfirmed primitive names so a
+host can decide whether status, object reads, or control writes are actually
+usable on the selected transport.
 
 `discover-usb` is for bench work. It records global reads, object-read
 candidates, first-word probes, and optional safe control candidates with the
@@ -700,8 +706,11 @@ from zhiyun_light_control import (
 
 config_path = "zhiyun-light.json"
 integration = LightIntegration()
-config = integration.best_connection_config(include_ble=True, include_ble_status=True)
-save_light_connection_config(config, config_path)
+integration = integration.with_confirmed_connection(
+    include_ble=True,
+    include_ble_status=True,
+)
+save_light_connection_config(integration.config, config_path)
 
 integration = integration.with_config(load_light_connection_config(config_path))
 print(integration.status()[1])
@@ -784,10 +793,12 @@ snapshot = integration.snapshot(include_ble_status=True)
 validation = integration.validate(include_object_reads=True)
 usb_discovery = integration.discover_usb(object_ids=(0, 1), first_words=(0x0100,))
 route_candidates = integration.connection_candidates(include_ble=True)
+status_routes = integration.probe_connection_candidates(include_ble=True)
 selected_integration = integration.with_best_connection(
     include_ble=True,
     persistent=True,
 )
+status_confirmed = integration.with_confirmed_connection(include_ble=True)
 plan = integration.plan_named_cue("intro", start_seq=1)
 integration.require_readiness("read_status")
 
@@ -797,7 +808,9 @@ print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
 print(usb_discovery["summary"]["confirmed_names"])
 print([candidate.to_dict() for candidate in route_candidates])
+print([candidate.to_dict() for candidate in status_routes])
 print(selected_integration.config.to_dict())
+print(status_confirmed.config.to_dict())
 print(plan["steps"])
 
 primitive = integration.set_brightness(35, require_ready=True)
