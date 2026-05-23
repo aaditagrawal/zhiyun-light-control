@@ -128,11 +128,20 @@ class AsyncZhiyunLight:
             register_payload(device_id, group_id),
         )
 
+    async def read_brightness(self, obj: int = 0):
+        return await self.command(
+            RuntimeCommand.BRIGHTNESS,
+            brightness_payload(obj, read=True),
+        )
+
     async def set_brightness(self, obj: int, value: float):
         return await self.command(
             RuntimeCommand.BRIGHTNESS,
             brightness_payload(obj, value, read=False),
         )
+
+    async def read_cct(self, obj: int = 0):
+        return await self.command(RuntimeCommand.CCT, cct_payload(obj, read=True))
 
     async def set_cct(self, obj: int, kelvin: int):
         return await self.command(RuntimeCommand.CCT, cct_payload(obj, kelvin, read=False))
@@ -146,11 +155,23 @@ class AsyncZhiyunLight:
             hsi_payload(obj, hue, saturation, intensity),
         )
 
+    async def read_sleep(self, obj: int = 0):
+        return await self.command(RuntimeCommand.SLEEP, sleep_payload(obj, read=True))
+
     async def set_sleep(self, obj: int, value: int):
         return await self.command(RuntimeCommand.SLEEP, sleep_payload(obj, value))
 
     async def get_object_firmware(self, obj: int = 0):
         return await self.command(RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj))
+
+    async def get_object_voltage(self, obj: int = 0):
+        return await self.command(RuntimeCommand.VOLTAGE_BY_OBJECT, object_id_payload(obj))
+
+    async def get_object_mode(self, obj: int = 0):
+        return await self.command(RuntimeCommand.DEVICE_MODE, object_id_payload(obj))
+
+    async def identify(self, obj: int = 0):
+        return await self.command(RuntimeCommand.IDENTIFY, object_id_payload(obj))
 
     async def apply_scene(self, scene: Scene) -> list[CommandResult]:
         results: list[CommandResult] = []

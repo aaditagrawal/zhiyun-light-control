@@ -1,7 +1,7 @@
 """Control helpers for Zhiyun MOLUS lights."""
 
 from .client import ProbeResult, ZhiyunLight
-from .async_client import AsyncZhiyunLight
+from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .artnet import ArtDmxPacket, DmxMapping, decode_artdmx, encode_artdmx, scene_from_dmx
 from .models import CommandResult, Scene
 from .protocol import (
@@ -13,6 +13,7 @@ from .protocol import (
 
 __all__ = [
     "AsyncZhiyunLight",
+    "AsyncProbeResult",
     "ArtDmxPacket",
     "CommandResult",
     "DmxMapping",
