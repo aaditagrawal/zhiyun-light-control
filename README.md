@@ -834,6 +834,18 @@ print(rig.fixture_names())
 print(rig.to_dict()["fixtures"])
 ```
 
+For host applications that need one structured preflight payload for a full
+fixture group, use the rig snapshot API. It returns the same manifest,
+capabilities, readiness, device-discovery, and pending-action shape used by the
+bridge, keyed by fixture:
+
+```python
+snapshot = rig.snapshot_all(allow_control=True, include_ble_status=True)
+for name, item in snapshot["fixtures"].items():
+    summary = item["snapshot"]["summary"]
+    print(name, summary["ready_for"], summary["pending_action_ids"])
+```
+
 For event-loop based systems, use the async controller directly. This is the
 preferred SDK surface for native BLE integrations on Linux, Windows, or macOS
 when the host app already runs asyncio:

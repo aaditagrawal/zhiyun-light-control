@@ -354,6 +354,55 @@ class LightRigTests(unittest.TestCase):
         self.assertTrue(readiness["ready_for"]["control_requests"])
         self.assertEqual(readiness["state"]["version"], 1)
 
+    def test_snapshot_all_includes_capabilities_readiness_and_fixture_metadata(
+        self,
+    ) -> None:
+        key = FakeLight("key")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "usb",
+                        "port": "/dev/cu.key",
+                        "tags": ["set"],
+                    }
+                },
+                "presets": {"scenes": {"look": {"brightness": 30}}},
+                "cues": {"cues": {"intro": {"steps": [{"preset": "look"}]}}},
+            },
+            light_factories={"key": FakeFactory(key)},
+        )
+        rig.apply_preset("key", "look")
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {
+                    "available": True,
+                    "selected_port": "/dev/cu.key",
+                    "ports": [{"path": "/dev/cu.key", "selected": True}],
+                },
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            response = rig.snapshot_all(allow_control=True, include_ble_status=True)
+
+        snapshot = response["fixtures"]["key"]["snapshot"]
+        summary = snapshot["summary"]
+        manifest = snapshot["payloads"]["manifest"]
+        capabilities = snapshot["payloads"]["capabilities"]
+        ready = snapshot["payloads"]["ready"]
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["reason"], "acknowledged")
+        self.assertEqual(summary["selected_usb_port"], "/dev/cu.key")
+        self.assertTrue(summary["ready_for"]["read_status"])
+        self.assertTrue(summary["ready_for"]["confirmed_control"])
+        self.assertEqual(manifest["presets"], ["look"])
+        self.assertEqual(manifest["cues"], ["intro"])
+        self.assertIn("sleep", [item["name"] for item in capabilities["primitives"]])
+        self.assertEqual(ready["state"]["version"], 1)
+        self.assertEqual(rig.capabilities("key")["reason"], "available")
+
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):
             LightRig([{"name": "key"}, {"name": "key"}])
@@ -483,6 +532,43 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(response["applied"])
         self.assertTrue(readiness["ready_for"]["read_status"])
         self.assertEqual(readiness["state"]["version"], 1)
+
+    async def test_async_snapshot_all_returns_per_fixture_integration_payload(
+        self,
+    ) -> None:
+        key = AsyncFakeLight("key")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "ble",
+                        "name_contains": "KEY",
+                    }
+                },
+                "presets": {"scenes": {"look": {"brightness": 40}}},
+            },
+            light_factories={"key": FakeFactory(key)},
+        )
+        await rig.apply_preset("key", "look")
+
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None, "ports": []},
+                "ble": {"macos_status": None, "scan": {"ok": True, "devices": []}},
+            },
+        ):
+            response = await rig.snapshot_all(allow_control=True, include_ble=True)
+
+        snapshot = response["fixtures"]["key"]["snapshot"]
+        summary = snapshot["summary"]
+        manifest = snapshot["payloads"]["manifest"]
+        self.assertTrue(response["applied"])
+        self.assertEqual(summary["transport"], "ble")
+        self.assertTrue(summary["ready_for"]["read_status"])
+        self.assertTrue(summary["ready_for"]["confirmed_control"])
+        self.assertEqual(manifest["presets"], ["look"])
+        self.assertEqual(rig.capabilities("key")["reason"], "available")
 
 
 def _result(

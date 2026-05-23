@@ -171,8 +171,68 @@ class LightRig:
         return LightIntegration(
             config=fixture.config,
             allow_control=allow_control,
+            preset_names=_preset_names(self.preset_library),
+            cue_names=_cue_names(self.cue_library),
             light_factory=self.controller(name).light_factory,
         )
+
+    def capabilities(self, name: str) -> dict[str, object]:
+        payload = self.integration(name).capabilities()
+        return _capabilities_response(name, payload)
+
+    def capabilities_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.capabilities(name)
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_response("rig_capabilities", responses, stopped=False)
+
+    def snapshot(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        state_snapshot = self.controller(name).state_snapshot()
+        payload = self.integration(name, allow_control=allow_control).snapshot(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=_state_version(state_snapshot),
+            state=_state_payload(state_snapshot),
+        )
+        return _snapshot_response(name, payload)
+
+    def snapshot_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.snapshot(
+                name,
+                allow_control=allow_control,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_snapshot", responses, stopped=stopped)
 
     def probe(self, name: str) -> dict[str, object]:
         result = self.controller(name).probe()
@@ -613,8 +673,68 @@ class AsyncLightRig:
         return AsyncLightIntegration(
             config=fixture.config,
             allow_control=allow_control,
+            preset_names=_preset_names(self.preset_library),
+            cue_names=_cue_names(self.cue_library),
             light_factory=self.controller(name).light_factory,
         )
+
+    def capabilities(self, name: str) -> dict[str, object]:
+        payload = self.integration(name).capabilities()
+        return _capabilities_response(name, payload)
+
+    def capabilities_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.capabilities(name)
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_response("rig_capabilities", responses, stopped=False)
+
+    async def snapshot(
+        self,
+        name: str,
+        *,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+    ) -> dict[str, object]:
+        state_snapshot = self.controller(name).state_snapshot()
+        payload = await self.integration(name, allow_control=allow_control).snapshot(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            state_version=_state_version(state_snapshot),
+            state=_state_payload(state_snapshot),
+        )
+        return _snapshot_response(name, payload)
+
+    async def snapshot_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        allow_control: bool = False,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.snapshot(
+                name,
+                allow_control=allow_control,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_snapshot", responses, stopped=stopped)
 
     async def probe(self, name: str) -> dict[str, object]:
         result = await self.controller(name).probe()
@@ -1216,6 +1336,36 @@ def _validation_response(
     }
 
 
+def _capabilities_response(
+    name: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "fixture": name,
+        "capabilities": dict(payload),
+        "ok": True,
+        "reason": "available",
+    }
+
+
+def _snapshot_response(
+    name: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    summary = payload.get("summary")
+    connection_confirmed = (
+        summary.get("connection_confirmed")
+        if isinstance(summary, Mapping)
+        else False
+    )
+    return {
+        "fixture": name,
+        "snapshot": dict(payload),
+        "ok": connection_confirmed is True,
+        "reason": _snapshot_reason(payload),
+    }
+
+
 def _readiness_reason(payload: Mapping[str, object]) -> str:
     error = payload.get("error")
     if error:
@@ -1239,6 +1389,32 @@ def _validation_reason(payload: Mapping[str, object]) -> str:
     if payload.get("connection_confirmed") is True:
         return "acknowledged"
     return "not_confirmed"
+
+
+def _snapshot_reason(payload: Mapping[str, object]) -> str:
+    summary = payload.get("summary")
+    if not isinstance(summary, Mapping):
+        return "not_ready"
+    warnings = summary.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        return "; ".join(str(item) for item in warnings)
+    pending = summary.get("pending_action_ids")
+    if isinstance(pending, list) and pending:
+        return "pending:" + ",".join(str(item) for item in pending)
+    if summary.get("connection_confirmed") is True:
+        return "ready"
+    blocker = summary.get("ble_blocker")
+    if blocker:
+        return str(blocker)
+    return "not_ready"
+
+
+def _preset_names(library: ScenePresetLibrary | None) -> tuple[str, ...]:
+    return tuple(library.names()) if library is not None else ()
+
+
+def _cue_names(library: CueLibrary | None) -> tuple[str, ...]:
+    return tuple(library.names()) if library is not None else ()
 
 
 def _state_version(snapshot: Mapping[str, object]) -> int:
