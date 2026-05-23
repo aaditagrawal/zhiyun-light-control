@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from .macos_ble_app import macos_ble_app_info
 from .transports.ble import (
     BLE_PROFILES,
     BleScanResult,
@@ -56,6 +57,7 @@ def discover_transport_devices(
             "timeout": ble_timeout,
             "name_contains": ble_name_contains,
             "profiles": [profile.to_dict() for profile in BLE_PROFILES.values()],
+            "macos_helper": macos_ble_app_info(),
             "scan": None,
         },
     }

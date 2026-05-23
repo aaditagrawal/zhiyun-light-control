@@ -22,6 +22,7 @@ from .discovery import (
     discover_usb_primitives,
 )
 from .http_client import LightBridgeClient, LightBridgeError
+from .macos_ble_app import macos_ble_app_info, open_macos_bluetooth_settings
 from .models import CommandResult, Scene
 from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
@@ -213,6 +214,23 @@ def build_parser() -> argparse.ArgumentParser:
         help="BLE scan backend. macos-app uses a CoreBluetooth app bundle.",
     )
     scan.set_defaults(func=cmd_scan_ble)
+
+    helper = sub.add_parser(
+        "ble-helper",
+        help="Inspect or prepare the macOS CoreBluetooth helper app.",
+    )
+    helper.add_argument(
+        "--ensure",
+        action="store_true",
+        help="Build the cached helper app if needed.",
+    )
+    helper.add_argument(
+        "--open-settings",
+        action="store_true",
+        help="Open macOS Privacy & Security Bluetooth settings.",
+    )
+    helper.add_argument("--json", action="store_true", help="Print compact JSON.")
+    helper.set_defaults(func=cmd_ble_helper)
 
     frame = sub.add_parser("frame", help="Exchange one raw frame.")
     add_transport_args(frame)
@@ -690,6 +708,20 @@ def cmd_scan_ble(args: argparse.Namespace) -> int:
     )
     print_json(result.to_dict())
     return 0 if result.ok else 2
+
+
+def cmd_ble_helper(args: argparse.Namespace) -> int:
+    payload = {"helper": macos_ble_app_info(ensure=args.ensure)}
+    code = 0
+    if args.ensure and not payload["helper"]["ok"]:
+        code = 2
+    if args.open_settings:
+        settings = open_macos_bluetooth_settings()
+        payload["open_settings"] = settings
+        if not settings["ok"]:
+            code = 2
+    print_json(payload, compact=args.json)
+    return code
 
 
 def cmd_frame(args: argparse.Namespace) -> int:

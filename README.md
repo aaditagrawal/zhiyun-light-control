@@ -158,6 +158,7 @@ Scan BLE devices:
 ```sh
 uv run --extra ble zlight scan-ble --timeout 8
 uv run zlight scan-ble --backend macos-app --name-contains PL103 --timeout 8
+uv run zlight ble-helper --ensure --open-settings
 ```
 
 BLE `probe`, `status`, `register`, `read`, `set`, and `apply` run through a worker
@@ -167,7 +168,8 @@ want direct bleak execution on a stable Bluetooth runtime. On macOS, pass
 `--backend macos-app` for scanning or `--ble-backend macos-app` for one-shot
 commands to use the bundled CoreBluetooth app helper instead of bleak. macOS
 must allow `ZhiyunBleScan` under Bluetooth privacy; otherwise the helper reports
-`Bluetooth state unauthorized: 3`.
+`Bluetooth state unauthorized: 3`. `zlight ble-helper --ensure` prints the
+exact cached helper app path, bundle id, and Bluetooth settings hint.
 
 Full BLE validation sends many exchanges, so run a scan first and choose the
 backend explicitly. On macOS use the bundled app helper; on a stable bleak
@@ -320,7 +322,9 @@ next-step hints for cases such as macOS Bluetooth authorization failures.
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
 Add `include_ble=true` to run a bounded BLE scan through the selected
 `ble_backend` (`worker`, `macos-app`, or `direct`); scan failures such as macOS
-Bluetooth authorization errors are returned as JSON diagnostics.
+Bluetooth authorization errors are returned as JSON diagnostics. The response
+also includes `ble.macos_helper` so local dashboards can point users at the
+exact helper bundle that needs Bluetooth permission.
 
 `POST /discover-usb` runs the same bounded USB protocol matrix as
 `zlight discover-usb` and returns every attempt with ACK/timeout evidence.

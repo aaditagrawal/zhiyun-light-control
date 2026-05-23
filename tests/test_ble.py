@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import types
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
-from zhiyun_light_control.macos_ble_app import MacosBleAppRun
+from zhiyun_light_control.macos_ble_app import (
+    APP_BUNDLE_ID,
+    BLUETOOTH_USAGE,
+    MacosBleAppRun,
+    macos_ble_app_info,
+)
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
     build_runtime_frame,
@@ -53,6 +60,26 @@ class FakeAdvertisement:
 
 
 class SafeBleScanTests(unittest.TestCase):
+    def test_macos_ble_app_info_describes_cached_helper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_path = Path(tmp) / "ZhiyunBleScan.app"
+            with (
+                patch(
+                    "zhiyun_light_control.macos_ble_app._bundle_root",
+                    return_value=app_path,
+                ),
+                patch("zhiyun_light_control.macos_ble_app.sys.platform", "darwin"),
+            ):
+                info = macos_ble_app_info()
+
+        self.assertTrue(info["ok"])
+        self.assertTrue(info["available"])
+        self.assertEqual(info["bundle_id"], APP_BUNDLE_ID)
+        self.assertEqual(info["usage_description"], BLUETOOTH_USAGE)
+        self.assertEqual(info["app_path"], str(app_path))
+        self.assertFalse(info["exists"])
+        self.assertIn("Privacy & Security", info["settings_hint"])
+
     def test_safe_scan_parses_worker_devices(self) -> None:
         payload = {
             "devices": [

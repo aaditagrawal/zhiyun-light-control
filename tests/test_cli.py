@@ -1000,6 +1000,35 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["devices"][0]["address"], "UUID-1")
         scan.assert_called_once_with(timeout=1.0, name_contains="PL103")
 
+    def test_ble_helper_reports_helper_and_opens_settings(self) -> None:
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.macos_ble_app_info",
+                return_value={
+                    "ok": True,
+                    "bundle_id": "local.zhiyun-light-control.ble-scan",
+                    "app_path": "/tmp/ZhiyunBleScan.app",
+                },
+            ) as info,
+            patch(
+                "zhiyun_light_control.cli.open_macos_bluetooth_settings",
+                return_value={"ok": True, "returncode": 0},
+            ) as open_settings,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["ble-helper", "--ensure", "--open-settings", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            payload["helper"]["bundle_id"],
+            "local.zhiyun-light-control.ble-scan",
+        )
+        self.assertTrue(payload["open_settings"]["ok"])
+        info.assert_called_once_with(ensure=True)
+        open_settings.assert_called_once_with()
+
     def test_ble_probe_worker_failure_returns_json_error(self) -> None:
         class FakeAsyncLight:
             async def __aenter__(self):

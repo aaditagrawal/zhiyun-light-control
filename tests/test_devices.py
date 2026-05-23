@@ -33,6 +33,10 @@ class DeviceDiscoveryTests(unittest.TestCase):
             ],
         )
         self.assertFalse(payload["ble"]["included"])
+        self.assertEqual(
+            payload["ble"]["macos_helper"]["bundle_id"],
+            "local.zhiyun-light-control.ble-scan",
+        )
         self.assertIsNone(payload["ble"]["scan"])
 
     def test_discovers_ble_with_selected_backend(self) -> None:

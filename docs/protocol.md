@@ -174,7 +174,9 @@ setup flows. It always returns USB `/dev/cu.usbmodem*` ports and the configured
 USB port, without opening the light. Add `include_ble=true` to run a bounded
 BLE scan with `ble_backend=worker`, `macos-app`, or `direct`; BLE scan errors
 are returned in the `ble.scan` object with the same `ok`, `error`,
-`returncode`, and `signal` fields as `zlight scan-ble`.
+`returncode`, and `signal` fields as `zlight scan-ble`. The response also
+includes `ble.macos_helper`, which names the cached `ZhiyunBleScan.app`, bundle
+id, app path, and settings hint needed for macOS Bluetooth authorization.
 
 HTTP `/discover-usb` exposes the same bounded primitive matrix as
 `zlight discover-usb` for dashboard-driven bench work. The endpoint returns the
@@ -334,7 +336,9 @@ Native bundled CoreBluetooth inspection with an
 ACKed; legacy op `0x01` brightness/sleep controls timed out. Writing raw runtime
 frames to `1827/2ADB` disconnected immediately. Direct Swift/Python processes
 without an app bundle were killed by macOS TCC before scan results were
-returned, which matches the bleak worker `SIGABRT` diagnostics below.
+returned, which matches the bleak worker `SIGABRT` diagnostics below. Use
+`zlight ble-helper --ensure --open-settings` to build the cached helper and open
+the Bluetooth privacy settings for the exact bundle id used by scans.
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
 

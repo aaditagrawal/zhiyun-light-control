@@ -21,6 +21,9 @@ from pathlib import Path
 APP_BUNDLE_NAME = "ZhiyunBleScan"
 APP_BUNDLE_ID = "local.zhiyun-light-control.ble-scan"
 BLUETOOTH_USAGE = "Scan nearby Zhiyun lights for local control."
+BLUETOOTH_SETTINGS_URL = (
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth"
+)
 
 
 @dataclass(frozen=True)
@@ -30,6 +33,64 @@ class MacosBleAppRun:
     error: str | None = None
     returncode: int | None = None
     command: tuple[str, ...] = ()
+
+
+def macos_ble_app_info(
+    *,
+    bundle_name: str = APP_BUNDLE_NAME,
+    ensure: bool = False,
+    swift_path: str | None = None,
+) -> dict[str, object]:
+    app_path = _bundle_root(bundle_name)
+    error: str | None = None
+    if ensure:
+        if sys.platform != "darwin":
+            error = "macOS BLE app helper can only be built on macOS"
+        else:
+            resolved_swift = swift_path or shutil.which("swift")
+            if resolved_swift is None:
+                error = "Swift runtime not found"
+            else:
+                app_path = ensure_macos_ble_app(
+                    bundle_name=bundle_name,
+                    swift_path=resolved_swift,
+                )
+    return {
+        "ok": error is None,
+        "available": sys.platform == "darwin",
+        "bundle_name": bundle_name,
+        "bundle_id": APP_BUNDLE_ID,
+        "app_path": str(app_path),
+        "exists": app_path.exists(),
+        "usage_description": BLUETOOTH_USAGE,
+        "settings_url": BLUETOOTH_SETTINGS_URL,
+        "settings_hint": (
+            f"Allow {bundle_name} in macOS Privacy & Security > Bluetooth, "
+            "then rerun the BLE scan."
+        ),
+        "error": error,
+    }
+
+
+def open_macos_bluetooth_settings() -> dict[str, object]:
+    if sys.platform != "darwin":
+        return {"ok": False, "error": "Bluetooth settings helper requires macOS"}
+    open_path = shutil.which("open")
+    if open_path is None:
+        return {"ok": False, "error": "macOS open command not found"}
+    proc = subprocess.run(
+        [open_path, BLUETOOTH_SETTINGS_URL],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    error = proc.stderr.strip() or proc.stdout.strip() or None
+    return {
+        "ok": proc.returncode == 0,
+        "returncode": proc.returncode,
+        "settings_url": BLUETOOTH_SETTINGS_URL,
+        "error": None if proc.returncode == 0 else error,
+    }
 
 
 def run_macos_ble_app(

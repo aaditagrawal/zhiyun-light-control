@@ -22,6 +22,7 @@ from .discovery import (
     discover_usb_primitives,
 )
 from .http_client import LightBridgeClient, LightBridgeError
+from .macos_ble_app import macos_ble_app_info, open_macos_bluetooth_settings
 from .models import CommandResult, Scene
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .protocol import (
@@ -108,6 +109,7 @@ __all__ = [
     "encode_artdmx",
     "encode_sacn",
     "iter_frames",
+    "macos_ble_app_info",
     "sacn_multicast_address",
     "read_async_status",
     "read_sync_status",
@@ -115,6 +117,7 @@ __all__ = [
     "scan_zhiyun_devices_macos_app",
     "make_light_factory",
     "merge_scene",
+    "open_macos_bluetooth_settings",
     "scene_from_mapping",
     "scene_from_dmx",
     "scene_transition",
