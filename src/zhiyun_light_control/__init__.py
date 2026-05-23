@@ -15,6 +15,12 @@ from .protocol import (
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 from .state import SceneState, SceneStateTracker
 from .transitions import SceneTransition, interpolate_scene, scene_transition
+from .validation import (
+    HardwareValidationReport,
+    PrimitiveCheck,
+    validate_async_light,
+    validate_sync_light,
+)
 
 __all__ = [
     "AsyncZhiyunLight",
@@ -23,7 +29,9 @@ __all__ = [
     "CommandResult",
     "DmxMapping",
     "LightConnectionConfig",
+    "HardwareValidationReport",
     "PersistentLightFactory",
+    "PrimitiveCheck",
     "PresetError",
     "ParsedFrame",
     "ProbeResult",
@@ -48,4 +56,6 @@ __all__ = [
     "scene_from_dmx",
     "scene_transition",
     "interpolate_scene",
+    "validate_async_light",
+    "validate_sync_light",
 ]

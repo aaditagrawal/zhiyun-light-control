@@ -27,6 +27,7 @@ from .protocol import (
 from .sacn import serve_sacn
 from .server import serve
 from .transports.ble import scan_zhiyun_devices, scan_zhiyun_devices_safe
+from .validation import validate_async_light, validate_sync_light
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -46,6 +47,38 @@ def build_parser() -> argparse.ArgumentParser:
     add_transport_args(probe)
     probe.add_argument("--json", action="store_true", help="Print compact JSON.")
     probe.set_defaults(func=cmd_probe)
+
+    validate = sub.add_parser(
+        "validate",
+        help="Run a structured hardware validation report.",
+    )
+    add_transport_args(validate)
+    validate.add_argument("--allow-control", action="store_true")
+    validate.add_argument("--include-object-reads", action="store_true")
+    validate.add_argument("--include-color", action="store_true")
+    validate.add_argument(
+        "--unsafe-in-process",
+        action="store_true",
+        help="Allow direct BLE validation in this process.",
+    )
+    validate.add_argument("--device-id", type=parse_int, default=0)
+    validate.add_argument("--obj", type=parse_int, default=1)
+    validate.add_argument("--brightness", type=float, default=35.0)
+    validate.add_argument("--kelvin", type=int, default=5600)
+    validate.add_argument("--sleep", type=int, default=0)
+    validate.add_argument("--red", type=int, default=255)
+    validate.add_argument("--green", type=int, default=255)
+    validate.add_argument("--blue", type=int, default=255)
+    validate.add_argument("--hue", type=float, default=0.0)
+    validate.add_argument("--saturation", type=float, default=0.0)
+    validate.add_argument("--intensity", type=int, default=35)
+    validate.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit non-zero unless every attempted command is confirmed by ACK.",
+    )
+    validate.add_argument("--json", action="store_true", help="Print compact JSON.")
+    validate.set_defaults(func=cmd_validate)
 
     scan = sub.add_parser("scan-ble", help="Scan for likely Zhiyun BLE devices.")
     scan.add_argument("--timeout", type=float, default=5.0)
@@ -204,6 +237,66 @@ def cmd_probe(args: argparse.Namespace) -> int:
                 }
     print_json(result, compact=args.json)
     return 0
+
+
+def cmd_validate(args: argparse.Namespace) -> int:
+    if args.transport == "ble":
+        if not args.unsafe_in_process:
+            raise SystemExit(
+                "BLE validation uses the direct bleak transport and may crash on this macOS stack; "
+                "run scan-ble first, then re-run validate with --unsafe-in-process on a stable BLE runtime"
+            )
+        report = asyncio.run(_validate_ble(args))
+    else:
+        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+            report = validate_sync_light(
+                light,
+                transport=args.transport,
+                allow_control=args.allow_control,
+                include_object_reads=args.include_object_reads,
+                include_color=args.include_color,
+                device_id=args.device_id,
+                obj=args.obj,
+                brightness=args.brightness,
+                kelvin=args.kelvin,
+                sleep=args.sleep,
+                red=args.red,
+                green=args.green,
+                blue=args.blue,
+                hue=args.hue,
+                saturation=args.saturation,
+                intensity=args.intensity,
+            )
+    print_json(report.to_dict(), compact=args.json)
+    if args.strict and not report.all_attempted_confirmed:
+        return 1
+    return 0 if report.connection_confirmed else 1
+
+
+async def _validate_ble(args: argparse.Namespace):
+    async with AsyncZhiyunLight.ble(
+        address=args.address,
+        name_contains=args.name_contains,
+        timeout=args.timeout,
+    ) as light:
+        return await validate_async_light(
+            light,
+            transport=args.transport,
+            allow_control=args.allow_control,
+            include_object_reads=args.include_object_reads,
+            include_color=args.include_color,
+            device_id=args.device_id,
+            obj=args.obj,
+            brightness=args.brightness,
+            kelvin=args.kelvin,
+            sleep=args.sleep,
+            red=args.red,
+            green=args.green,
+            blue=args.blue,
+            hue=args.hue,
+            saturation=args.saturation,
+            intensity=args.intensity,
+        )
 
 
 async def _probe_ble(args: argparse.Namespace):

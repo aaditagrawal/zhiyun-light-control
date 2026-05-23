@@ -70,6 +70,17 @@ Register the current session to the default group before object-scoped control:
 uv run zlight register --transport usb --device-id 0 --yes
 ```
 
+Run a structured hardware validation report:
+
+```sh
+uv run zlight validate --transport usb
+uv run zlight validate --transport usb --allow-control --include-object-reads
+```
+
+The validation report separates ACK-confirmed primitives from frames that were
+sent but not acknowledged by the device. Use `--strict` when you want a non-zero
+exit unless every attempted command was ACK-confirmed.
+
 Apply a simple scene:
 
 ```sh
@@ -95,6 +106,20 @@ Scan BLE devices:
 
 ```sh
 uv run --extra ble zlight scan-ble --timeout 8
+```
+
+BLE validation uses the direct bleak transport. Because the local macOS
+CoreBluetooth stack can abort the interpreter, the CLI requires an explicit
+opt-in for direct BLE validation:
+
+```sh
+uv run --extra ble zlight validate --transport ble --address AA:BB:CC:DD:EE:FF --unsafe-in-process
+```
+
+Validate the attached USB hardware and generate an evidence report:
+
+```sh
+uv run zlight validate --transport usb --allow-control --include-object-reads
 ```
 
 Send direct controls:
@@ -252,6 +277,22 @@ For integration debugging, use `exchange_runtime()` instead of the convenience
 methods. It returns a `CommandResult` with the transmitted frame, raw response
 bytes, parsed frames, matching ACK, and a transport status:
 `acknowledged`, `sent_no_response`, or `response_without_matching_ack`.
+
+For bench testing and release checks, use the same evidence model through the
+validation API:
+
+```python
+from zhiyun_light_control import ZhiyunLight, validate_sync_light
+
+with ZhiyunLight.usb() as light:
+    report = validate_sync_light(
+        light,
+        allow_control=True,
+        include_object_reads=True,
+    )
+
+print(report.to_dict()["unconfirmed"])
+```
 
 BLE is async:
 

@@ -42,6 +42,13 @@ Object reads still need more live validation. On the upgraded G60, registration 
 
 The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, or `response_without_matching_ack`.
 
+`zlight validate` and `validate_sync_light()` build on `CommandResult` to produce
+a hardware evidence report. A primitive is `confirmed` only when the device
+returns a matching ACK frame with a valid CRC. A transmitted object-control frame
+that receives no response remains `sent_no_response`, not confirmed. Use
+`zlight validate --strict` in automation when unconfirmed attempted primitives
+should fail the run.
+
 ## Media Integration Surface
 
 The local HTTP bridge is intentionally small and JSON-only:
@@ -180,6 +187,11 @@ Older/alternate YC light service:
 - Read characteristic: `0000ffe2-0000-1000-8000-00805f9b34fb`
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
+
+`zlight validate --transport ble` is intentionally guarded by
+`--unsafe-in-process` because direct bleak validation runs in the main process.
+Use crash-isolated `scan-ble` first, then direct BLE validation only on a
+runtime where scanning/connecting is stable.
 
 Current local BLE scan validation:
 
