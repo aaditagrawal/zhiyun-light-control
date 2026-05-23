@@ -42,7 +42,9 @@ from .transports.ble import (
     BLE_PROFILE_NAMES,
     DEFAULT_BLE_PROFILE,
     BleWorkerError,
+    filter_ble_devices_by_name,
     scan_zhiyun_devices,
+    scan_zhiyun_devices_macos_app,
     scan_zhiyun_devices_safe,
 )
 from .transports.usb import DEFAULT_LOCK_TIMEOUT
@@ -83,6 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_transport_args(validate)
     add_ble_profile_args(validate)
+    validate.add_argument(
+        "--ble-backend",
+        choices=["worker", "macos-app", "direct"],
+        default="worker",
+        help="BLE validation backend. macos-app uses a CoreBluetooth app bundle.",
+    )
     validate.add_argument("--allow-control", action="store_true")
     validate.add_argument("--include-object-reads", action="store_true")
     validate.add_argument("--include-color", action="store_true")
@@ -186,6 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     scan = sub.add_parser("scan-ble", help="Scan for likely Zhiyun BLE devices.")
     scan.add_argument("--timeout", type=float, default=5.0)
+    scan.add_argument("--name-contains", help="Filter discovered BLE names.")
     scan.add_argument(
         "--python",
         help="Python executable for the crash-isolated BLE worker.",
@@ -194,6 +203,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--unsafe-in-process",
         action="store_true",
         help="Run bleak scan in this process instead of the crash-isolated worker.",
+    )
+    scan.add_argument(
+        "--backend",
+        choices=["worker", "macos-app", "direct"],
+        default="worker",
+        help="BLE scan backend. macos-app uses a CoreBluetooth app bundle.",
     )
     scan.set_defaults(func=cmd_scan_ble)
 
@@ -347,6 +362,12 @@ def add_transport_args(parser: argparse.ArgumentParser) -> None:
 def add_ble_execution_args(parser: argparse.ArgumentParser) -> None:
     add_ble_profile_args(parser)
     parser.add_argument(
+        "--ble-backend",
+        choices=["worker", "macos-app", "direct"],
+        default="worker",
+        help="BLE command backend. macos-app uses a CoreBluetooth app bundle.",
+    )
+    parser.add_argument(
         "--python",
         help="Python executable for the crash-isolated BLE worker.",
     )
@@ -401,6 +422,12 @@ def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
         "--name-contains", help="BLE name substring used for discovery."
     )
     add_ble_profile_args(parser)
+    parser.add_argument(
+        "--ble-backend",
+        choices=["worker", "macos-app", "direct"],
+        default="worker",
+        help="BLE bridge backend. macos-app uses a CoreBluetooth app bundle.",
+    )
     parser.add_argument(
         "--ble-python",
         help="Python executable for crash-isolated BLE bridge exchanges.",
@@ -531,13 +558,17 @@ async def _status_ble(args: argparse.Namespace):
 
 def cmd_validate(args: argparse.Namespace) -> int:
     if args.transport == "ble":
-        if not args.unsafe_in_process:
+        backend = "direct" if args.unsafe_in_process else args.ble_backend
+        if backend == "worker":
             raise SystemExit(
-                "BLE validation uses the direct bleak transport and may crash on "
-                "this macOS stack; run scan-ble first, then re-run validate with "
-                "--unsafe-in-process on a stable BLE runtime"
+                "BLE validation can run many exchanges; run scan-ble first, then "
+                "re-run validate with --ble-backend macos-app on macOS or "
+                "--unsafe-in-process on a stable direct bleak runtime"
             )
-        report = asyncio.run(_validate_ble(args))
+        try:
+            report = asyncio.run(_validate_ble(args))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc, compact=args.json)
     else:
         with sync_usb_light_from_args(args) as light:
             report = validate_sync_light(
@@ -616,11 +647,26 @@ async def _probe_ble(args: argparse.Namespace):
 
 
 def cmd_scan_ble(args: argparse.Namespace) -> int:
-    if args.unsafe_in_process:
-        devices = asyncio.run(scan_zhiyun_devices(timeout=args.timeout))
+    backend = "direct" if args.unsafe_in_process else args.backend
+    if backend == "direct":
+        devices = filter_ble_devices_by_name(
+            asyncio.run(scan_zhiyun_devices(timeout=args.timeout)),
+            args.name_contains,
+        )
         print_json({"ok": True, "devices": [device.to_dict() for device in devices]})
         return 0
-    result = scan_zhiyun_devices_safe(timeout=args.timeout, python=args.python)
+    if backend == "macos-app":
+        result = scan_zhiyun_devices_macos_app(
+            timeout=args.timeout,
+            name_contains=args.name_contains,
+        )
+        print_json(result.to_dict())
+        return 0 if result.ok else 2
+    result = scan_zhiyun_devices_safe(
+        timeout=args.timeout,
+        name_contains=args.name_contains,
+        python=args.python,
+    )
     print_json(result.to_dict())
     return 0 if result.ok else 2
 
@@ -873,8 +919,23 @@ async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResu
 
 
 def async_ble_light_from_args(args: argparse.Namespace) -> AsyncZhiyunLight:
-    if getattr(args, "unsafe_in_process", False):
+    backend = (
+        "direct"
+        if getattr(args, "unsafe_in_process", False)
+        else getattr(args, "ble_backend", "worker")
+    )
+    if backend == "direct":
         return AsyncZhiyunLight.ble(
+            address=args.address,
+            name_contains=args.name_contains,
+            profile=args.ble_profile,
+            service_uuid=args.ble_service_uuid,
+            write_uuid=args.ble_write_uuid,
+            notify_uuid=args.ble_notify_uuid,
+            timeout=args.timeout,
+        )
+    if backend == "macos-app":
+        return AsyncZhiyunLight.macos_ble_app(
             address=args.address,
             name_contains=args.name_contains,
             profile=args.ble_profile,
@@ -1003,6 +1064,7 @@ def bridge_light_factory(args: argparse.Namespace):
             ble_service_uuid=args.ble_service_uuid,
             ble_write_uuid=args.ble_write_uuid,
             ble_notify_uuid=args.ble_notify_uuid,
+            ble_backend="direct" if args.unsafe_in_process else args.ble_backend,
             ble_python=args.ble_python,
             ble_in_process=args.unsafe_in_process,
             persistent=not args.no_persistent_light,

@@ -12,6 +12,7 @@ import os
 import signal
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -312,6 +313,66 @@ class CrashIsolatedBleTransport:
         return result.rx
 
 
+class MacosBleAppTransport:
+    """BLE transport backed by a macOS CoreBluetooth .app helper."""
+
+    def __init__(
+        self,
+        *,
+        address: str | None = None,
+        name_contains: str | None = None,
+        profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+        service_uuid: str | None = None,
+        write_uuid: str | None = None,
+        notify_uuid: str | None = None,
+        timeout: float = 1.5,
+    ):
+        resolved = resolve_ble_profile(
+            profile,
+            service_uuid=service_uuid,
+            write_uuid=write_uuid,
+            notify_uuid=notify_uuid,
+        )
+        self.address = address
+        self.name_contains = name_contains
+        self.profile = resolved.name
+        self.service_uuid = resolved.service_uuid
+        self.write_uuid = resolved.write_uuid
+        self.notify_uuid = resolved.notify_uuid
+        self.timeout = timeout
+
+    async def __aenter__(self) -> MacosBleAppTransport:
+        await self.open()
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+        await self.close()
+
+    async def open(self) -> None:
+        return
+
+    async def close(self) -> None:
+        return
+
+    async def exchange(self, tx: bytes, timeout: float | None = None) -> bytes:
+        effective_timeout = self.timeout if timeout is None else timeout
+        result = await asyncio.to_thread(
+            exchange_zhiyun_ble_macos_app,
+            tx,
+            address=self.address,
+            name_contains=self.name_contains,
+            service_uuid=self.service_uuid,
+            write_uuid=self.write_uuid,
+            notify_uuid=self.notify_uuid,
+            timeout=effective_timeout,
+        )
+        if result.address:
+            self.address = result.address
+        if not result.ok:
+            raise BleWorkerError(result)
+        return result.rx
+
+
 async def scan_zhiyun_devices(timeout: float = 5.0) -> list[BleDevice]:
     _, BleakScanner = _load_bleak()
     devices = await BleakScanner.discover(timeout=timeout, return_adv=True)
@@ -329,9 +390,74 @@ async def scan_zhiyun_devices(timeout: float = 5.0) -> list[BleDevice]:
     return found
 
 
+def filter_ble_devices_by_name(
+    devices: Iterable[BleDevice],
+    name_contains: str | None,
+) -> tuple[BleDevice, ...]:
+    if not name_contains:
+        return tuple(devices)
+    lowered = name_contains.lower()
+    return tuple(
+        device
+        for device in devices
+        if device.name is not None and lowered in device.name.lower()
+    )
+
+
+def _ble_device_from_payload(item: dict[str, object]) -> BleDevice:
+    name_value = item.get("name")
+    rssi_value = item.get("rssi")
+    return BleDevice(
+        address=str(item.get("address", "")),
+        name=str(name_value) if name_value is not None else None,
+        rssi=rssi_value if isinstance(rssi_value, int) else None,
+    )
+
+
+def _ble_devices_from_payload(payload: dict[str, object]) -> tuple[BleDevice, ...]:
+    return tuple(
+        _ble_device_from_payload(item)
+        for item in _payload_items(payload, "devices")
+    )
+
+
+def scan_zhiyun_devices_macos_app(
+    timeout: float = 5.0,
+    *,
+    name_contains: str | None = None,
+) -> BleScanResult:
+    """Run BLE scanning through a macOS .app helper with Bluetooth usage plist."""
+
+    from ..macos_ble_app import run_macos_ble_app
+
+    args = ["scan", "--timeout", str(timeout)]
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    run = run_macos_ble_app(args, timeout=timeout)
+    if not run.ok:
+        return BleScanResult(
+            ok=False,
+            devices=(),
+            error=run.error,
+            returncode=run.returncode,
+            worker_python="macos-app",
+        )
+    devices = filter_ble_devices_by_name(
+        _ble_devices_from_payload(run.payload),
+        name_contains,
+    )
+    return BleScanResult(
+        ok=True,
+        devices=devices,
+        returncode=run.returncode,
+        worker_python="macos-app",
+    )
+
+
 def scan_zhiyun_devices_safe(
     timeout: float = 5.0,
     *,
+    name_contains: str | None = None,
     python: str | None = None,
 ) -> BleScanResult:
     """Run BLE scanning in a worker process.
@@ -341,11 +467,10 @@ def scan_zhiyun_devices_safe(
     long-lived media-control services alive when that happens.
     """
 
-    run = _run_ble_worker(
-        ["scan", "--timeout", str(timeout)],
-        timeout=timeout,
-        python=python,
-    )
+    args = ["scan", "--timeout", str(timeout)]
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    run = _run_ble_worker(args, timeout=timeout, python=python)
     if not run.ok:
         return BleScanResult(
             ok=False,
@@ -365,13 +490,9 @@ def scan_zhiyun_devices_safe(
             returncode=run.returncode,
             worker_python=run.executable,
         )
-    devices = tuple(
-        BleDevice(
-            address=str(item["address"]),
-            name=item.get("name"),
-            rssi=item.get("rssi"),
-        )
-        for item in payload.get("devices", [])
+    devices = filter_ble_devices_by_name(
+        _ble_devices_from_payload(payload),
+        name_contains,
     )
     return BleScanResult(
         ok=True,
@@ -469,6 +590,75 @@ def exchange_zhiyun_ble_safe(
         error=error,
         returncode=run.returncode,
         worker_python=run.executable,
+    )
+
+
+def exchange_zhiyun_ble_macos_app(
+    tx: bytes,
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+    service_uuid: str | None = None,
+    write_uuid: str | None = None,
+    notify_uuid: str | None = None,
+    timeout: float = 1.5,
+) -> BleExchangeResult:
+    from ..macos_ble_app import run_macos_ble_app
+
+    resolved = resolve_ble_profile(
+        profile,
+        service_uuid=service_uuid,
+        write_uuid=write_uuid,
+        notify_uuid=notify_uuid,
+    )
+    args = [
+        "exchange-raw",
+        "--tx-hex",
+        tx.hex(),
+        "--timeout",
+        str(timeout),
+        "--service-uuid",
+        resolved.service_uuid,
+        "--write-uuid",
+        resolved.write_uuid,
+        "--notify-uuid",
+        resolved.notify_uuid,
+    ]
+    if address:
+        args.extend(["--address", address])
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    run = run_macos_ble_app(args, timeout=timeout)
+    if not run.ok:
+        return BleExchangeResult(
+            ok=False,
+            tx=tx,
+            error=run.error,
+            returncode=run.returncode,
+            worker_python="macos-app",
+        )
+    rx_hex = _payload_string(run.payload, "rx_hex")
+    if rx_hex is None:
+        rx = b""
+    else:
+        try:
+            rx = bytes.fromhex(rx_hex)
+        except ValueError as exc:
+            return BleExchangeResult(
+                ok=False,
+                tx=tx,
+                error=f"could not parse macOS BLE app rx_hex: {exc}",
+                returncode=run.returncode,
+                worker_python="macos-app",
+            )
+    return BleExchangeResult(
+        ok=True,
+        tx=tx,
+        rx=rx,
+        address=_payload_string(run.payload, "address"),
+        returncode=run.returncode,
+        worker_python="macos-app",
     )
 
 
@@ -601,6 +791,16 @@ def _worker_error(stdout: str) -> str | None:
 def _payload_string(payload: dict[object, object], key: str) -> str | None:
     value = payload.get(key)
     return str(value) if value is not None else None
+
+
+def _payload_items(
+    payload: dict[str, object],
+    key: str,
+) -> tuple[dict[str, object], ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, dict))
 
 
 def _format_worker_returncode(returncode: int) -> str:

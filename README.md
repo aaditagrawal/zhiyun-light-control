@@ -20,7 +20,8 @@ Verified over USB on the G60:
 Implemented and still experimental:
 
 - Brightness, CCT, sleep/power, RGB, HSI, and scene application.
-- BLE transport using the direct ZY light service and characteristics seen in ZY Vega.
+- BLE transport using the direct ZY light service and characteristics seen in
+  ZY Vega, plus a macOS bundled CoreBluetooth helper backend.
 - Local HTTP, OSC, Art-Net, and sACN bridges for production tools.
 - Named scene presets loaded from JSON.
 - Requested-state tracking for bridge clients.
@@ -156,18 +157,24 @@ Scan BLE devices:
 
 ```sh
 uv run --extra ble zlight scan-ble --timeout 8
+uv run zlight scan-ble --backend macos-app --name-contains PL103 --timeout 8
 ```
 
 BLE `probe`, `status`, `register`, `read`, `set`, and `apply` run through a worker
 process by default. That keeps the parent CLI/API process alive if
 CoreBluetooth aborts below Python. Pass `--unsafe-in-process` only when you
-want direct bleak execution on a stable Bluetooth runtime.
+want direct bleak execution on a stable Bluetooth runtime. On macOS, pass
+`--backend macos-app` for scanning or `--ble-backend macos-app` for one-shot
+commands to use the bundled CoreBluetooth app helper instead of bleak. macOS
+must allow `ZhiyunBleScan` under Bluetooth privacy; otherwise the helper reports
+`Bluetooth state unauthorized: 3`.
 
-Full BLE validation still uses the direct bleak transport. Because the local
-macOS CoreBluetooth stack can abort the interpreter, the CLI requires an
-explicit opt-in for direct BLE validation:
+Full BLE validation sends many exchanges, so run a scan first and choose the
+backend explicitly. On macOS use the bundled app helper; on a stable bleak
+runtime you can opt into direct in-process BLE:
 
 ```sh
+uv run zlight validate --transport ble --ble-backend macos-app --name-contains PL103
 uv run --extra ble zlight validate --transport ble --address AA:BB:CC:DD:EE:FF --unsafe-in-process
 ```
 
@@ -211,8 +218,9 @@ surface by adding `--transport ble` plus `--address` or `--name-contains`.
 Bridge processes keep one light context open by default. USB and direct BLE use
 that for lower-latency live control; worker-isolated BLE reconnects per exchange
 so a CoreBluetooth abort does not terminate the bridge process. Add
+`--ble-backend macos-app` for the bundled macOS CoreBluetooth helper,
 `--unsafe-in-process` only on a stable BLE runtime where you want direct bleak
-execution, and add `--no-persistent-light` when debugging connection setup.
+execution, and `--no-persistent-light` when debugging connection setup.
 
 HTTP JSON bridge:
 
@@ -228,6 +236,7 @@ BLE bridge example:
 
 ```sh
 uv run --extra ble zlight serve --transport ble --name-contains MOLUS --allow-control
+uv run zlight serve --transport ble --ble-backend macos-app --name-contains PL103 --allow-control
 ```
 
 Useful HTTP calls:
@@ -400,14 +409,15 @@ print(report.to_dict()["unconfirmed"])
 ```
 
 BLE is async. Use `isolated_ble()` for the same worker-protected behavior as
-the CLI, or `ble()` when you explicitly want direct bleak execution:
+the CLI, `macos_ble_app()` for the bundled CoreBluetooth app helper on macOS,
+or `ble()` when you explicitly want direct bleak execution:
 
 ```python
 import asyncio
 from zhiyun_light_control import AsyncZhiyunLight, Scene, read_async_status
 
 async def main():
-    async with AsyncZhiyunLight.isolated_ble(
+    async with AsyncZhiyunLight.macos_ble_app(
         name_contains="MOLUS",
         profile="legacy",
     ) as light:
@@ -450,8 +460,11 @@ One-shot BLE probe/status/control commands use the same worker isolation by
 default; `--unsafe-in-process` is available for direct bleak runs on stable
 runtimes. On the local Mac, `zlight status --transport ble` also returns a
 structured `SIGABRT` worker diagnostic before any BLE ACK is received.
-Native bundled CoreBluetooth probes with an `NSBluetoothAlwaysUsageDescription`
-plist do work on this Mac and found the G60 as `PL103_EDFE`.
+The `macos-app` backend builds a cached `ZhiyunBleScan.app` with
+`NSBluetoothAlwaysUsageDescription` and runs a Swift CoreBluetooth helper inside
+that bundle. A standalone native probe previously found the G60 as
+`PL103_EDFE`; current `macos-app` scans are blocked until macOS Bluetooth
+privacy authorizes `ZhiyunBleScan`.
 
 BLE command exchange supports three named characteristic profiles:
 
@@ -466,8 +479,8 @@ selected profile with `--ble-service-uuid`, `--ble-write-uuid`, and
 `write_uuid`, and `notify_uuid` arguments.
 
 USB control, bridge code paths, and BLE module imports are verified. BLE control
-still needs validation on a Python/macOS/Bluetooth stack where bleak scanning is
-stable.
+still needs validation once the macOS helper is authorized or on a
+Python/macOS/Bluetooth stack where bleak scanning is stable.
 
 ## Firmware
 

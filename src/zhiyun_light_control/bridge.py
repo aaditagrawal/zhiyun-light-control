@@ -28,6 +28,7 @@ class LightConnectionConfig:
     ble_write_uuid: str | None = None
     ble_notify_uuid: str | None = None
     ble_python: str | None = None
+    ble_backend: str = "worker"
     ble_in_process: bool = False
     persistent: bool = False
 
@@ -210,8 +211,19 @@ class SyncBleLight:
         return self._run(getattr(self._light, method)(*args, **kwargs))
 
     def _make_async_light(self) -> AsyncZhiyunLight:
-        if self.config.ble_in_process:
+        backend = "direct" if self.config.ble_in_process else self.config.ble_backend
+        if backend == "direct":
             return AsyncZhiyunLight.ble(
+                address=self.config.address,
+                name_contains=self.config.name_contains,
+                profile=self.config.ble_profile,
+                service_uuid=self.config.ble_service_uuid,
+                write_uuid=self.config.ble_write_uuid,
+                notify_uuid=self.config.ble_notify_uuid,
+                timeout=self.config.timeout,
+            )
+        if backend == "macos-app":
+            return AsyncZhiyunLight.macos_ble_app(
                 address=self.config.address,
                 name_contains=self.config.name_contains,
                 profile=self.config.ble_profile,

@@ -42,7 +42,9 @@ from .transports.ble import (
     BleProfile,
     BleWorkerError,
     CrashIsolatedBleTransport,
+    MacosBleAppTransport,
     resolve_ble_profile,
+    scan_zhiyun_devices_macos_app,
 )
 from .validation import (
     HardwareValidationReport,
@@ -74,6 +76,7 @@ __all__ = [
     "LightConnectionConfig",
     "LightStatusReport",
     "HardwareValidationReport",
+    "MacosBleAppTransport",
     "PersistentLightFactory",
     "PrimitiveCheck",
     "PresetError",
@@ -99,6 +102,7 @@ __all__ = [
     "read_async_status",
     "read_sync_status",
     "resolve_ble_profile",
+    "scan_zhiyun_devices_macos_app",
     "make_light_factory",
     "merge_scene",
     "scene_from_mapping",

@@ -719,6 +719,200 @@ class CliTests(unittest.TestCase):
             python=None,
         )
 
+    def test_ble_probe_can_use_macos_app_backend(self) -> None:
+        class FakeProbe:
+            def to_dict(self):
+                return {"address": "UUID-1", "firmware": "test"}
+
+        class FakeAsyncLight:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+                return
+
+            async def probe(self):
+                return FakeProbe()
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.AsyncZhiyunLight.isolated_ble"
+            ) as isolated,
+            patch(
+                "zhiyun_light_control.cli.AsyncZhiyunLight.macos_ble_app",
+                return_value=FakeAsyncLight(),
+            ) as macos_ble,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "probe",
+                    "--transport",
+                    "ble",
+                    "--ble-backend",
+                    "macos-app",
+                    "--address",
+                    "UUID-1",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["firmware"], "test")
+        isolated.assert_not_called()
+        macos_ble.assert_called_once_with(
+            address="UUID-1",
+            name_contains=None,
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
+            timeout=1.5,
+        )
+
+    def test_ble_validate_can_use_macos_app_backend(self) -> None:
+        class FakeReport:
+            connection_confirmed = True
+            all_attempted_confirmed = True
+
+            def to_dict(self):
+                return {"connection_confirmed": True}
+
+        class FakeAsyncLight:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+                return
+
+        async def fake_validate(_light, **kwargs):
+            calls["kwargs"] = kwargs
+            return FakeReport()
+
+        calls = {}
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.AsyncZhiyunLight.macos_ble_app",
+                return_value=FakeAsyncLight(),
+            ) as macos_ble,
+            patch(
+                "zhiyun_light_control.cli.validate_async_light",
+                new=fake_validate,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "validate",
+                    "--transport",
+                    "ble",
+                    "--ble-backend",
+                    "macos-app",
+                    "--name-contains",
+                    "PL103",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["connection_confirmed"])
+        self.assertFalse(calls["kwargs"]["allow_control"])
+        macos_ble.assert_called_once_with(
+            address=None,
+            name_contains="PL103",
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
+            timeout=1.5,
+        )
+
+    def test_ble_validate_worker_failure_returns_json_error(self) -> None:
+        class FakeAsyncLight:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+                return
+
+        async def fake_validate(_light, **_kwargs):
+            tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+            raise BleWorkerError(
+                BleExchangeResult(
+                    ok=False,
+                    tx=tx,
+                    error="Bluetooth state unauthorized: 3",
+                    worker_python="macos-app",
+                )
+            )
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.AsyncZhiyunLight.macos_ble_app",
+                return_value=FakeAsyncLight(),
+            ),
+            patch(
+                "zhiyun_light_control.cli.validate_async_light",
+                new=fake_validate,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "validate",
+                    "--transport",
+                    "ble",
+                    "--ble-backend",
+                    "macos-app",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 2)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["exchange"]["worker_python"], "macos-app")
+
+    def test_scan_ble_can_use_macos_app_backend(self) -> None:
+        class FakeScanResult:
+            ok = True
+
+            def to_dict(self):
+                return {
+                    "ok": True,
+                    "devices": [{"address": "UUID-1", "name": "PL103_EDFE"}],
+                }
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.scan_zhiyun_devices_macos_app",
+                return_value=FakeScanResult(),
+            ) as scan,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "scan-ble",
+                    "--backend",
+                    "macos-app",
+                    "--timeout",
+                    "1",
+                    "--name-contains",
+                    "PL103",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["devices"][0]["address"], "UUID-1")
+        scan.assert_called_once_with(timeout=1.0, name_contains="PL103")
+
     def test_ble_probe_worker_failure_returns_json_error(self) -> None:
         class FakeAsyncLight:
             async def __aenter__(self):
@@ -784,6 +978,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(config.address, "AA:BB")
         self.assertEqual(config.usb_lock_timeout, 0.25)
         self.assertEqual(config.ble_profile, "direct")
+        self.assertEqual(config.ble_backend, "direct")
         self.assertIsNone(config.ble_service_uuid)
         self.assertIsNone(config.ble_write_uuid)
         self.assertIsNone(config.ble_notify_uuid)
@@ -805,6 +1000,8 @@ class CliTests(unittest.TestCase):
                     "ble",
                     "--ble-profile",
                     "yc",
+                    "--ble-backend",
+                    "macos-app",
                     "--ble-service-uuid",
                     "service-test",
                     "--ble-write-uuid",
@@ -817,6 +1014,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         config = make_factory.call_args.args[0]
         self.assertEqual(config.ble_profile, "yc")
+        self.assertEqual(config.ble_backend, "macos-app")
         self.assertEqual(config.ble_service_uuid, "service-test")
         self.assertEqual(config.ble_write_uuid, "write-test")
         self.assertEqual(config.ble_notify_uuid, "notify-test")

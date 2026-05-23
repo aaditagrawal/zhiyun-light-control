@@ -11,6 +11,7 @@ from .transports.ble import (
     BLE_PROFILE_NAMES,
     DEFAULT_BLE_PROFILE,
     BleTransport,
+    filter_ble_devices_by_name,
     scan_zhiyun_devices,
 )
 
@@ -24,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
 
     scan = sub.add_parser("scan", help="Scan for likely Zhiyun BLE devices.")
     scan.add_argument("--timeout", type=float, default=5.0)
+    scan.add_argument("--name-contains")
 
     exchange = sub.add_parser("exchange-raw", help="Exchange one raw frame.")
     exchange.add_argument("--tx-hex", required=True)
@@ -41,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(args_list)
     if args.command == "scan":
-        return _scan_main(args.timeout)
+        return _scan_main(args.timeout, args.name_contains)
     if args.command == "exchange-raw":
         return _exchange_main(args)
     raise AssertionError(args.command)
@@ -50,13 +52,17 @@ def main(argv: list[str] | None = None) -> int:
 def _legacy_scan_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=float, default=5.0)
+    parser.add_argument("--name-contains")
     args = parser.parse_args(argv)
-    return _scan_main(args.timeout)
+    return _scan_main(args.timeout, args.name_contains)
 
 
-def _scan_main(timeout: float) -> int:
+def _scan_main(timeout: float, name_contains: str | None = None) -> int:
     try:
-        devices = asyncio.run(scan_zhiyun_devices(timeout=timeout))
+        devices = filter_ble_devices_by_name(
+            asyncio.run(scan_zhiyun_devices(timeout=timeout)),
+            name_contains,
+        )
     except Exception as exc:
         print(json.dumps({"devices": [], "error": str(exc)}, sort_keys=True))
         return 1

@@ -32,6 +32,7 @@ from .transports.ble import (
     BleProfile,
     BleTransport,
     CrashIsolatedBleTransport,
+    MacosBleAppTransport,
 )
 
 
@@ -110,6 +111,30 @@ class AsyncZhiyunLight:
                 notify_uuid=notify_uuid,
                 timeout=timeout,
                 python=python,
+            )
+        )
+
+    @classmethod
+    def macos_ble_app(
+        cls,
+        *,
+        address: str | None = None,
+        name_contains: str | None = None,
+        profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+        service_uuid: str | None = None,
+        write_uuid: str | None = None,
+        notify_uuid: str | None = None,
+        timeout: float = 1.5,
+    ) -> AsyncZhiyunLight:
+        return cls(
+            MacosBleAppTransport(
+                address=address,
+                name_contains=name_contains,
+                profile=profile,
+                service_uuid=service_uuid,
+                write_uuid=write_uuid,
+                notify_uuid=notify_uuid,
+                timeout=timeout,
             )
         )
 

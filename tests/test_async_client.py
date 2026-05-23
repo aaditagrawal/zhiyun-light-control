@@ -94,6 +94,25 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(light.transport.timeout, 1.0)
         self.assertEqual(light.transport.python, "python-test")
 
+    async def test_macos_ble_app_uses_native_app_transport(self) -> None:
+        light = AsyncZhiyunLight.macos_ble_app(
+            address="UUID-1",
+            name_contains="PL103",
+            profile="legacy",
+            service_uuid="service-test",
+            write_uuid="write-test",
+            notify_uuid="notify-test",
+            timeout=1.0,
+        )
+
+        self.assertEqual(light.transport.address, "UUID-1")
+        self.assertEqual(light.transport.name_contains, "PL103")
+        self.assertEqual(light.transport.profile, "legacy+custom")
+        self.assertEqual(light.transport.service_uuid, "service-test")
+        self.assertEqual(light.transport.write_uuid, "write-test")
+        self.assertEqual(light.transport.notify_uuid, "notify-test")
+        self.assertEqual(light.transport.timeout, 1.0)
+
     async def test_async_apply_scene_orders_media_workflow_commands(self) -> None:
         transport = AsyncEchoAckTransport()
         light = AsyncZhiyunLight(transport)

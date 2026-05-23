@@ -5,6 +5,7 @@ import types
 import unittest
 from unittest.mock import patch
 
+from zhiyun_light_control.macos_ble_app import MacosBleAppRun
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
     build_runtime_frame,
@@ -22,9 +23,12 @@ from zhiyun_light_control.transports.ble import (
     BleProfile,
     BleTransport,
     CrashIsolatedBleTransport,
+    MacosBleAppTransport,
+    exchange_zhiyun_ble_macos_app,
     exchange_zhiyun_ble_safe,
     resolve_ble_profile,
     scan_zhiyun_devices,
+    scan_zhiyun_devices_macos_app,
     scan_zhiyun_devices_safe,
 )
 
@@ -112,6 +116,55 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(
             result.error, "BLE support requires installing the 'ble' extra"
         )
+
+    def test_macos_app_scan_parses_devices(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=True,
+            payload={
+                "devices": [
+                    {"address": "UUID-1", "name": "PL103_EDFE", "rssi": -47},
+                    {"address": "UUID-2", "name": "Keyboard", "rssi": -52},
+                ]
+            },
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ) as run:
+            result = scan_zhiyun_devices_macos_app(
+                timeout=1.0,
+                name_contains="PL103",
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.worker_python, "macos-app")
+        self.assertEqual(len(result.devices), 1)
+        self.assertEqual(result.devices[0].address, "UUID-1")
+        self.assertEqual(result.devices[0].name, "PL103_EDFE")
+        self.assertEqual(
+            run.call_args.args[0],
+            ["scan", "--timeout", "1.0", "--name-contains", "PL103"],
+        )
+
+    def test_macos_app_scan_reports_helper_error(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=False,
+            payload={},
+            error="Bluetooth is not powered on",
+            returncode=1,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ):
+            result = scan_zhiyun_devices_macos_app(timeout=1.0)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error, "Bluetooth is not powered on")
+        self.assertEqual(result.returncode, 1)
 
 
 class SafeBleExchangeTests(unittest.TestCase):
@@ -222,6 +275,53 @@ class SafeBleExchangeTests(unittest.TestCase):
         self.assertEqual(result.returncode, -6)
         self.assertEqual(result.signal_name, "SIGABRT")
         self.assertEqual(result.error, "worker terminated by signal 6 (SIGABRT)")
+
+    def test_macos_app_exchange_uses_resolved_characteristics(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
+        run_result = MacosBleAppRun(
+            ok=True,
+            payload={"address": "UUID-1", "rx_hex": rx.hex()},
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ) as run:
+            result = exchange_zhiyun_ble_macos_app(
+                tx,
+                address="UUID-1",
+                profile="legacy",
+                timeout=1.0,
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.address, "UUID-1")
+        self.assertEqual(result.rx, rx)
+        self.assertEqual(result.worker_python, "macos-app")
+        helper_args = run.call_args.args[0]
+        self.assertEqual(helper_args[0], "exchange-raw")
+        self.assertIn(LEGACY_ZY_SERVICE_UUID, helper_args)
+        self.assertIn(LEGACY_ZY_WRITE_UUID, helper_args)
+        self.assertIn(LEGACY_ZY_NOTIFY_UUID, helper_args)
+
+    def test_macos_app_exchange_reports_invalid_rx_hex(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        run_result = MacosBleAppRun(
+            ok=True,
+            payload={"address": "UUID-1", "rx_hex": "not-hex"},
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ):
+            result = exchange_zhiyun_ble_macos_app(tx, timeout=1.0)
+
+        self.assertFalse(result.ok)
+        self.assertIn("could not parse macOS BLE app rx_hex", result.error)
 
 
 class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
@@ -384,6 +484,30 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
             DIRECT_ZY_SERVICE_UUID,
         )
         self.assertEqual(exchange.call_args.kwargs["python"], "python-test")
+
+    async def test_macos_app_transport_uses_native_exchange(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
+
+        with patch(
+            "zhiyun_light_control.transports.ble.exchange_zhiyun_ble_macos_app",
+            return_value=BleExchangeResult(ok=True, tx=tx, rx=rx, address="UUID-1"),
+        ) as exchange:
+            async with MacosBleAppTransport(
+                address="UUID-1",
+                profile="legacy",
+                timeout=1.0,
+            ) as transport:
+                result = await transport.exchange(tx, timeout=1.0)
+
+        self.assertEqual(result, rx)
+        self.assertEqual(transport.address, "UUID-1")
+        exchange.assert_called_once()
+        self.assertEqual(exchange.call_args.kwargs["address"], "UUID-1")
+        self.assertEqual(
+            exchange.call_args.kwargs["service_uuid"],
+            LEGACY_ZY_SERVICE_UUID,
+        )
 
 
 if __name__ == "__main__":

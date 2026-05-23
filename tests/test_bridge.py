@@ -217,6 +217,40 @@ class BridgeFactoryTests(unittest.TestCase):
             python=None,
         )
 
+    def test_ble_factory_can_use_macos_app_backend(self) -> None:
+        fake = FakeAsyncLight()
+
+        with (
+            patch(
+                "zhiyun_light_control.bridge.AsyncZhiyunLight.isolated_ble"
+            ) as isolated_ble,
+            patch(
+                "zhiyun_light_control.bridge.AsyncZhiyunLight.macos_ble_app",
+                return_value=fake,
+            ) as macos_ble,
+        ):
+            factory = make_light_factory(
+                LightConnectionConfig(
+                    transport="ble",
+                    address="UUID-1",
+                    ble_backend="macos-app",
+                    ble_profile="legacy",
+                )
+            )
+            with factory() as light:
+                light.probe()
+
+        isolated_ble.assert_not_called()
+        macos_ble.assert_called_once_with(
+            address="UUID-1",
+            name_contains=None,
+            profile="legacy",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
+            timeout=1.5,
+        )
+
     def test_persistent_factory_reuses_open_light_until_closed(self) -> None:
         contexts: list[FakeSyncContext] = []
 
