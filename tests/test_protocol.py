@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import unittest
 
+import zhiyun_light_control as zlight
 from zhiyun_light_control.protocol import (
     LEGACY_CONTROL_MODE,
     RuntimeCommand,
     UpdaterCommand,
+    brightness_payload,
     brightness_with_mode_payload,
     build_frame,
     build_runtime_frame,
@@ -13,10 +15,15 @@ from zhiyun_light_control.protocol import (
     first_frame,
     first_response_frame,
     has_echo_frame,
+    parse_brightness_payload,
+    parse_cct_payload,
     parse_chip_sync,
     parse_device_id,
     parse_device_info,
+    parse_hsi_payload,
     parse_read_sn,
+    parse_rgb_payload,
+    parse_sleep_payload,
     parse_version,
     register_payload,
     sleep_payload,
@@ -24,6 +31,16 @@ from zhiyun_light_control.protocol import (
 
 
 class ProtocolTests(unittest.TestCase):
+    def test_protocol_primitives_are_public_sdk_exports(self) -> None:
+        self.assertIs(zlight.RuntimeCommand, RuntimeCommand)
+        self.assertIs(zlight.UpdaterCommand, UpdaterCommand)
+        self.assertEqual(
+            zlight.brightness_payload(1, 35).hex(),
+            brightness_payload(1, 35).hex(),
+        )
+        self.assertIn("RuntimeCommand", zlight.__all__)
+        self.assertIn("first_frame", zlight.__all__)
+
     def test_runtime_frame_matches_live_probe(self) -> None:
         frame = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
         self.assertEqual(frame.hex(), "243c0600000101000320d4ad")
@@ -74,6 +91,48 @@ class ProtocolTests(unittest.TestCase):
             "01000101",
         )
         self.assertEqual(sleep_payload(1, read=True).hex(), "01000000")
+
+    def test_parse_functional_value_payloads(self) -> None:
+        brightness = first_frame(
+            build_runtime_frame(
+                1,
+                RuntimeCommand.BRIGHTNESS,
+                bytes.fromhex("02000000000c42"),
+            ),
+            cmd=RuntimeCommand.BRIGHTNESS,
+        )
+        cct = first_frame(
+            build_runtime_frame(1, RuntimeCommand.CCT, bytes.fromhex("020000e015")),
+            cmd=RuntimeCommand.CCT,
+        )
+        sleep = first_frame(
+            build_runtime_frame(1, RuntimeCommand.SLEEP, bytes.fromhex("02000001")),
+            cmd=RuntimeCommand.SLEEP,
+        )
+        rgb = first_frame(
+            build_runtime_frame(
+                1,
+                RuntimeCommand.RGB,
+                bytes.fromhex("020000ff00b4007800"),
+            ),
+            cmd=RuntimeCommand.RGB,
+        )
+        hsi = first_frame(
+            build_runtime_frame(
+                1,
+                RuntimeCommand.HSI,
+                bytes.fromhex("0200000000f0410000003f2800"),
+            ),
+            cmd=RuntimeCommand.HSI,
+        )
+
+        self.assertEqual(parse_brightness_payload(brightness).to_dict()["value"], 35.0)
+        self.assertEqual(parse_cct_payload(cct).to_dict()["value"], 5600)
+        self.assertEqual(parse_sleep_payload(sleep).to_dict()["value"], 1)
+        self.assertEqual(parse_rgb_payload(rgb).to_dict()["value"], [255, 180, 120])
+        self.assertEqual(parse_hsi_payload(hsi).to_dict()["value"], [30.0, 0.5, 40])
+        self.assertEqual(parse_brightness_payload(brightness).obj, 2)
+        self.assertEqual(parse_brightness_payload(brightness).operation, 0)
 
     def test_parse_device_info_after_upgrade(self) -> None:
         rx = bytes.fromhex(

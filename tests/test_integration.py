@@ -264,13 +264,14 @@ class FakeControlStatusLight(FakeSceneLight, FakeStatusLight):
         *,
         timeout: float = 0.8,
     ) -> CommandResult:
-        if cmd in {
-            RuntimeCommand.REGISTER_DEFAULT_GROUP,
-            RuntimeCommand.BRIGHTNESS,
-            RuntimeCommand.CCT,
-            RuntimeCommand.SLEEP,
-        }:
-            del payload, timeout
+        if cmd == RuntimeCommand.BRIGHTNESS:
+            return _result(RUNTIME_TYPE, cmd, bytes.fromhex("02000000000c42"))
+        if cmd == RuntimeCommand.CCT:
+            return _result(RUNTIME_TYPE, cmd, bytes.fromhex("020000e015"))
+        if cmd == RuntimeCommand.SLEEP:
+            return _result(RUNTIME_TYPE, cmd, bytes.fromhex("02000000"))
+        if cmd == RuntimeCommand.REGISTER_DEFAULT_GROUP:
+            del payload
             return _result(RUNTIME_TYPE, cmd, b"\x00")
         return FakeStatusLight.exchange_runtime(self, cmd, payload, timeout=timeout)
 
@@ -391,13 +392,14 @@ class AsyncFakeControlStatusLight(AsyncFakeSceneLight, AsyncFakeStatusLight):
         *,
         timeout: float = 1.5,
     ) -> CommandResult:
-        if cmd in {
-            RuntimeCommand.REGISTER_DEFAULT_GROUP,
-            RuntimeCommand.BRIGHTNESS,
-            RuntimeCommand.CCT,
-            RuntimeCommand.SLEEP,
-        }:
-            del payload, timeout
+        if cmd == RuntimeCommand.BRIGHTNESS:
+            return _result(RUNTIME_TYPE, cmd, bytes.fromhex("02000000000c42"))
+        if cmd == RuntimeCommand.CCT:
+            return _result(RUNTIME_TYPE, cmd, bytes.fromhex("020000e015"))
+        if cmd == RuntimeCommand.SLEEP:
+            return _result(RUNTIME_TYPE, cmd, bytes.fromhex("02000000"))
+        if cmd == RuntimeCommand.REGISTER_DEFAULT_GROUP:
+            del payload
             return _result(RUNTIME_TYPE, cmd, b"\x00")
         return await AsyncFakeStatusLight.exchange_runtime(
             self,
@@ -989,6 +991,8 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(register["action"], "register")
         self.assertTrue(read["acknowledged"])
         self.assertEqual(read["action"], "read_brightness")
+        self.assertEqual(read["value"], 35.0)
+        self.assertEqual(read["obj"], 2)
         self.assertTrue(brightness["applied"])
         self.assertEqual(cct["scene"]["kelvin"], 5600)
         self.assertEqual(sleep["scene"]["sleep"], 0)
@@ -1553,6 +1557,8 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(register["action"], "register")
         self.assertTrue(read["acknowledged"])
         self.assertEqual(read["action"], "read_brightness")
+        self.assertEqual(read["value"], 35.0)
+        self.assertEqual(read["obj"], 2)
         self.assertTrue(brightness["applied"])
         self.assertEqual(cct["scene"]["kelvin"], 5600)
         self.assertEqual(sleep["scene"]["sleep"], 0)

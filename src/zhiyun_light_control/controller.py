@@ -30,9 +30,16 @@ from .presets import (
 from .protocol import (
     DEFAULT_CONTROL_MODE,
     RUNTIME_TYPE,
+    FunctionalValue,
+    ParsedFrame,
     RuntimeCommand,
     brightness_payload,
     cct_payload,
+    parse_brightness_payload,
+    parse_cct_payload,
+    parse_hsi_payload,
+    parse_rgb_payload,
+    parse_sleep_payload,
     register_payload,
     sleep_payload,
 )
@@ -1806,6 +1813,12 @@ def _primitive_response(
     response["result"] = result.to_dict()
     response["acknowledged"] = result.acknowledged
     response["transport_status"] = result.transport_status
+    decoded = _decoded_command_value(result)
+    if decoded is not None:
+        response["decoded"] = decoded
+        response["value"] = decoded["value"]
+        response["obj"] = decoded["obj"]
+        response["operation"] = decoded["operation"]
     return response
 
 
@@ -1813,12 +1826,47 @@ def _command_response(
     action: str,
     result: CommandResult,
 ) -> dict[str, object]:
-    return {
+    response = {
         "action": action,
         "result": result.to_dict(),
         "acknowledged": result.acknowledged,
         "transport_status": result.transport_status,
     }
+    decoded = _decoded_command_value(result)
+    if decoded is not None:
+        response["decoded"] = decoded
+        response["value"] = decoded["value"]
+        response["obj"] = decoded["obj"]
+        response["operation"] = decoded["operation"]
+    return response
+
+
+def _decoded_command_value(result: CommandResult) -> dict[str, object] | None:
+    if not result.acknowledged or result.ack is None:
+        return None
+    parser = _primitive_parser(result.command)
+    if parser is None:
+        return None
+    try:
+        return parser(result.ack).to_dict()
+    except ValueError:
+        return None
+
+
+def _primitive_parser(
+    command: int,
+) -> Callable[[ParsedFrame], FunctionalValue] | None:
+    if command == RuntimeCommand.BRIGHTNESS:
+        return parse_brightness_payload
+    if command == RuntimeCommand.CCT:
+        return parse_cct_payload
+    if command == RuntimeCommand.SLEEP:
+        return parse_sleep_payload
+    if command == RuntimeCommand.RGB:
+        return parse_rgb_payload
+    if command == RuntimeCommand.HSI:
+        return parse_hsi_payload
+    return None
 
 
 def _results_reason(results: Iterable[CommandResult]) -> str | None:

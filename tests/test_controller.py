@@ -43,6 +43,24 @@ class FakeLight:
     ) -> CommandResult:
         del timeout
         self.runtime_requests.append((cmd, payload))
+        if cmd == RuntimeCommand.BRIGHTNESS:
+            return _result(
+                cmd,
+                acknowledged=self.acknowledged,
+                payload=bytes.fromhex("01000000000c42"),
+            )
+        if cmd == RuntimeCommand.CCT:
+            return _result(
+                cmd,
+                acknowledged=self.acknowledged,
+                payload=bytes.fromhex("010000e015"),
+            )
+        if cmd == RuntimeCommand.SLEEP:
+            return _result(
+                cmd,
+                acknowledged=self.acknowledged,
+                payload=bytes.fromhex("01000000"),
+            )
         return _result(cmd, acknowledged=self.acknowledged)
 
     def set_brightness(
@@ -182,6 +200,10 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(register["action"], "register")
         self.assertTrue(read["acknowledged"])
         self.assertEqual(read["action"], "read_brightness")
+        self.assertEqual(read["value"], 35.0)
+        self.assertEqual(read["obj"], 1)
+        self.assertEqual(read["operation"], 0)
+        self.assertEqual(read["decoded"]["value"], 35.0)
         self.assertTrue(brightness["applied"])
         self.assertEqual(cct["scene"]["kelvin"], 5600)
         self.assertEqual(sleep["scene"]["sleep"], 0)
@@ -377,11 +399,16 @@ class ControllerTests(unittest.TestCase):
         self.assertTrue(factory.closed)
 
 
-def _result(command: int, *, acknowledged: bool) -> CommandResult:
+def _result(
+    command: int,
+    *,
+    acknowledged: bool,
+    payload: bytes = b"\x00",
+) -> CommandResult:
     tx = build_runtime_frame(1, command, b"")
     if not acknowledged:
         return CommandResult(command, tx, b"", (), None)
-    rx = build_runtime_frame(1, command, b"\x00")
+    rx = build_runtime_frame(1, command, payload)
     ack = first_frame(rx, cmd=command)
     return CommandResult(command, tx, rx, (ack,), ack)
 

@@ -708,9 +708,17 @@ The integration facade also exposes direct control helpers:
 `run_named_cue()`. Pass `require_ready=True` to state-changing helpers to check
 `control_requests` before opening the transport, or combine it with
 `require_acknowledged=True` to require the stricter `confirmed_control`
-readiness preflight. Direct integration control updates the integration's own
-state tracker, so `state()`, `state_snapshot()`, `state_history()`, and
+readiness preflight. Primitive read responses include decoded `value`, `obj`,
+and `operation` fields when an ACK contains a parseable functional payload, while
+the raw `CommandResult` evidence remains available under `result`. Direct
+integration control updates the integration's own state tracker, so `state()`,
+`state_snapshot()`, `state_history()`, and
 `wait_for_state_update()` work without manually creating a controller.
+For lower-level hosts, protocol primitives such as `RuntimeCommand`,
+`UpdaterCommand`, `build_runtime_frame()`, `first_frame()`, and the
+brightness/CCT/sleep/RGB/HSI payload parsers are exported from the package root,
+so custom transports can stay on the public SDK surface instead of importing
+private module internals.
 
 Host applications can get the same setup model without starting the HTTP bridge
 or shelling out to the CLI:
@@ -758,6 +766,8 @@ print(plan["steps"])
 
 primitive = integration.set_brightness(35, require_ready=True)
 print(primitive["transport_status"], integration.state()["action"])
+read_brightness = integration.read_brightness()
+print(read_brightness.get("value"), read_brightness["transport_status"])
 
 result = integration.apply_scene(
     {"brightness": 35, "kelvin": 5600},
@@ -826,6 +836,8 @@ async def main() -> None:
 
     primitive = await integration.set_brightness(35, require_ready=True)
     print(primitive["transport_status"], integration.state()["action"])
+    read_brightness = await integration.read_brightness()
+    print(read_brightness.get("value"), read_brightness["transport_status"])
 
     result = await integration.apply_scene(
         {"brightness": 35},

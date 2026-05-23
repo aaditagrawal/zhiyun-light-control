@@ -127,6 +127,23 @@ class ReadSnInfo:
         return self.identifier_bytes[::-1].hex()
 
 
+@dataclass(frozen=True)
+class FunctionalValue:
+    obj: int | None
+    operation: int | None
+    value: int | float | tuple[int, ...] | tuple[float, float, int]
+
+    def to_dict(self) -> dict[str, object]:
+        value: object = (
+            list(self.value) if isinstance(self.value, tuple) else self.value
+        )
+        return {
+            "obj": self.obj,
+            "operation": self.operation,
+            "value": value,
+        }
+
+
 def crc16(data: bytes) -> int:
     return binascii.crc_hqx(data, 0)
 
@@ -336,6 +353,36 @@ def object_id_payload(obj: int) -> bytes:
     return struct.pack("<H", obj & 0xFFFF)
 
 
+def parse_brightness_payload(frame: ParsedFrame) -> FunctionalValue:
+    obj, operation, value = _parse_functional_value(frame.payload, "<f")
+    return FunctionalValue(obj=obj, operation=operation, value=value[0])
+
+
+def parse_cct_payload(frame: ParsedFrame) -> FunctionalValue:
+    obj, operation, value = _parse_functional_value(frame.payload, "<H")
+    return FunctionalValue(obj=obj, operation=operation, value=value[0])
+
+
+def parse_sleep_payload(frame: ParsedFrame) -> FunctionalValue:
+    obj, operation, value = _parse_functional_value(frame.payload, "<B")
+    return FunctionalValue(obj=obj, operation=operation, value=value[0])
+
+
+def parse_rgb_payload(frame: ParsedFrame) -> FunctionalValue:
+    obj, operation, value = _parse_functional_value(frame.payload, "<HHH")
+    return FunctionalValue(obj=obj, operation=operation, value=value)
+
+
+def parse_hsi_payload(frame: ParsedFrame) -> FunctionalValue:
+    obj, operation, value = _parse_functional_value(frame.payload, "<ffH")
+    hue, saturation, intensity = value
+    return FunctionalValue(
+        obj=obj,
+        operation=operation,
+        value=(hue, saturation, intensity),
+    )
+
+
 def parse_c_string_payload(payload: bytes) -> list[str]:
     return [
         part.decode("ascii", errors="replace")
@@ -399,3 +446,21 @@ def parse_read_sn(frame: ParsedFrame) -> ReadSnInfo:
         identifier_bytes=payload[3:],
         raw=payload,
     )
+
+
+def _parse_functional_value(
+    payload: bytes,
+    fmt: str,
+) -> tuple[int | None, int | None, tuple[int | float, ...]]:
+    value_size = struct.calcsize(fmt)
+    if len(payload) >= value_size + 3:
+        obj, operation = struct.unpack_from("<HB", payload, 0)
+        offset = 3
+    elif len(payload) >= value_size:
+        obj = None
+        operation = None
+        offset = 0
+    else:
+        raise ValueError("functional payload is too short")
+    value = struct.unpack_from(fmt, payload, offset)
+    return obj, operation, value

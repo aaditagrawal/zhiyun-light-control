@@ -247,9 +247,15 @@ helpers for `register`, `read_brightness`, `read_cct`, `read_sleep`,
 `set_brightness`, `set_cct`, `set_sleep`, `set_rgb`, and `set_hsi`, plus
 `apply_scene`, `apply_preset`, `run_sequence`, `run_cue`, and `run_named_cue`
 control helpers with opt-in readiness checks for embedded hosts that do not run
-the HTTP bridge. Direct integration control records into the integration state
-tracker so subsequent `state_snapshot`, `state_history`, and readiness/snapshot
-payloads include the latest control evidence by default.
+the HTTP bridge. Primitive responses preserve raw `CommandResult` evidence and
+add decoded functional payload fields when an ACK carries brightness, CCT, sleep,
+RGB, or HSI values. Direct integration control records into the integration
+state tracker so subsequent `state_snapshot`, `state_history`, and
+readiness/snapshot payloads include the latest control evidence by default.
+Low-level protocol callers can import `RuntimeCommand`, `UpdaterCommand`,
+`build_runtime_frame`, `first_frame`, payload builders, and functional payload
+parsers directly from `zhiyun_light_control` when building custom transports or
+external SDK adapters.
 For transport setup, embedded hosts can call `connection_candidates` and
 `with_best_connection` to derive ranked USB/BLE `LightConnectionConfig` objects
 from local discovery, or `ble_endpoint_connection_candidates` and
