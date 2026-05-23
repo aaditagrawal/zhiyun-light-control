@@ -2050,6 +2050,7 @@ def control_guard_response() -> dict[str, object]:
             "start bridge with --allow-control",
             "check ready_for.control_requests before posting control requests",
             "treat responses as applied only when acknowledged evidence is true",
+            "use client-side ACK guards when downstream automation must fail closed",
         ],
         "default_required_readiness": ["control_requests"],
         "strict_required_readiness": ["confirmed_control"],
@@ -2067,6 +2068,9 @@ def control_guard_response() -> dict[str, object]:
             "strict_guard": (
                 "LightBridgeClient(base_url, require_ready_for_controls=True, "
                 "control_readiness=['confirmed_control'])"
+            ),
+            "ack_guard": (
+                "LightBridgeClient(base_url, require_acknowledged_controls=True)"
             ),
         },
     }

@@ -49,6 +49,15 @@ class LightBridgeNotReady(RuntimeError):
         )
 
 
+class LightBridgeUnconfirmed(RuntimeError):
+    def __init__(self, payload: Mapping[str, object]):
+        self.payload = _string_key_dict(payload)
+        self.statuses = bridge_response_statuses(payload)
+        self.reason = bridge_response_reason(payload)
+        details = self.reason or ", ".join(self.statuses) or "not acknowledged"
+        super().__init__(f"bridge control response was not confirmed ({details})")
+
+
 class LightBridgeClient:
     """Convenience wrapper for the local JSON bridge API."""
 
@@ -59,11 +68,13 @@ class LightBridgeClient:
         timeout: float = 3.0,
         require_ready_for_controls: bool = False,
         control_readiness: Iterable[str] | None = None,
+        require_acknowledged_controls: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.require_ready_for_controls = require_ready_for_controls
         self.control_readiness = _control_readiness_capabilities(control_readiness)
+        self.require_acknowledged_controls = require_acknowledged_controls
 
     def health(self) -> dict[str, object]:
         return self._get("/health")
@@ -131,6 +142,7 @@ class LightBridgeClient:
         snapshot["client"] = {
             "require_ready_for_controls": self.require_ready_for_controls,
             "control_readiness": list(self.control_readiness),
+            "require_acknowledged_controls": self.require_acknowledged_controls,
         }
         return snapshot
 
@@ -405,7 +417,7 @@ class LightBridgeClient:
         required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post("/register", {"device_id": device_id})
+        return self._post_control("/register", {"device_id": device_id})
 
     def set_brightness(
         self,
@@ -417,7 +429,7 @@ class LightBridgeClient:
         required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post(
+        return self._post_control(
             "/brightness",
             _with_control_mode({"obj": obj, "value": value}, control_mode),
         )
@@ -432,7 +444,7 @@ class LightBridgeClient:
         required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post(
+        return self._post_control(
             "/cct",
             _with_control_mode({"obj": obj, "kelvin": kelvin}, control_mode),
         )
@@ -447,7 +459,7 @@ class LightBridgeClient:
         required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post(
+        return self._post_control(
             "/sleep",
             _with_control_mode({"obj": obj, "value": value}, control_mode),
         )
@@ -464,7 +476,7 @@ class LightBridgeClient:
         required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post(
+        return self._post_control(
             "/rgb",
             _with_control_mode(
                 {"obj": obj, "red": red, "green": green, "blue": blue}, control_mode
@@ -483,7 +495,7 @@ class LightBridgeClient:
         required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post(
+        return self._post_control(
             "/hsi",
             _with_control_mode(
                 {
@@ -514,7 +526,7 @@ class LightBridgeClient:
         }
         if timeout is not None:
             payload["timeout"] = timeout
-        return self._post("/frame", payload)
+        return self._post_control("/frame", payload)
 
     def apply_scene(
         self,
@@ -526,7 +538,7 @@ class LightBridgeClient:
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
         payload = _scene_payload(scene)
-        return self._post("/scene", _with_control_mode(payload, control_mode))
+        return self._post_control("/scene", _with_control_mode(payload, control_mode))
 
     def transition(
         self,
@@ -549,7 +561,10 @@ class LightBridgeClient:
         }
         if from_scene is not None:
             payload["from"] = _scene_payload(from_scene)
-        return self._post("/transition", _with_control_mode(payload, control_mode))
+        return self._post_control(
+            "/transition",
+            _with_control_mode(payload, control_mode),
+        )
 
     def apply_preset(
         self,
@@ -564,7 +579,7 @@ class LightBridgeClient:
         payload = {"name": name}
         if overrides is not None:
             payload.update(overrides)
-        return self._post("/preset", _with_control_mode(payload, control_mode))
+        return self._post_control("/preset", _with_control_mode(payload, control_mode))
 
     def run_sequence(
         self,
@@ -580,7 +595,10 @@ class LightBridgeClient:
             "steps": [dict(step) for step in steps],
             "stop_on_unconfirmed": stop_on_unconfirmed,
         }
-        return self._post("/sequence", _with_control_mode(payload, control_mode))
+        return self._post_control(
+            "/sequence",
+            _with_control_mode(payload, control_mode),
+        )
 
     def run_cue(
         self,
@@ -591,7 +609,10 @@ class LightBridgeClient:
         required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post("/sequence", _with_control_mode(dict(cue), control_mode))
+        return self._post_control(
+            "/sequence",
+            _with_control_mode(dict(cue), control_mode),
+        )
 
     def run_named_cue(
         self,
@@ -609,13 +630,23 @@ class LightBridgeClient:
             payload["obj"] = obj
         if stop_on_unconfirmed is not None:
             payload["stop_on_unconfirmed"] = stop_on_unconfirmed
-        return self._post("/cue", _with_control_mode(payload, control_mode))
+        return self._post_control("/cue", _with_control_mode(payload, control_mode))
 
     def _get(self, path: str) -> dict[str, object]:
         return self._request("GET", path)
 
     def _post(self, path: str, payload: Mapping[str, object]) -> dict[str, object]:
         return self._request("POST", path, payload)
+
+    def _post_control(
+        self,
+        path: str,
+        payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        response = self._post(path, payload)
+        if self.require_acknowledged_controls:
+            require_acknowledged_response(response)
+        return response
 
     def _require_control_readiness(
         self,
@@ -710,6 +741,15 @@ def bridge_response_reason(payload: Mapping[str, object]) -> str | None:
     if statuses and any(status != "acknowledged" for status in statuses):
         return "unconfirmed"
     return None
+
+
+def require_acknowledged_response(
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    response = _string_key_dict(payload)
+    if not bridge_response_applied(response):
+        raise LightBridgeUnconfirmed(response)
+    return response
 
 
 def validation_summary(payload: Mapping[str, object]) -> dict[str, object]:

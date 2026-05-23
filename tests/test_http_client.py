@@ -9,6 +9,7 @@ from zhiyun_light_control import (
     LightBridgeClient,
     LightBridgeError,
     LightBridgeNotReady,
+    LightBridgeUnconfirmed,
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
@@ -39,6 +40,7 @@ from zhiyun_light_control import (
     request_template_query,
     request_template_required_readiness,
     request_templates,
+    require_acknowledged_response,
     validation_category,
     validation_ready,
     validation_ready_for,
@@ -157,6 +159,27 @@ class FakeLight:
             )
             for _ in range(steps)
         ]
+
+
+class UnconfirmedLight(FakeLight):
+    def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
+        del timeout
+        self.commands.append((cmd, payload))
+        tx = build_runtime_frame(1, cmd, payload)
+        return CommandResult(cmd, tx, b"", (), None)
+
+    def exchange_frame(
+        self,
+        first_word: int,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ):
+        del timeout
+        self.commands.append((cmd, payload))
+        tx = build_frame(first_word, 1, cmd, payload)
+        return CommandResult(cmd, tx, b"", (), None)
 
 
 class HttpClientTests(unittest.TestCase):
@@ -502,6 +525,43 @@ class HttpClientTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_ack_guard_fails_closed_after_unconfirmed_control_response(self) -> None:
+        light = UnconfirmedLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(
+            f"http://127.0.0.1:{server.server_port}",
+            require_acknowledged_controls=True,
+        )
+        try:
+            with self.assertRaises(LightBridgeUnconfirmed) as control_error:
+                client.set_sleep(0)
+            self.assertEqual(control_error.exception.reason, "sent_no_response")
+            self.assertEqual(
+                control_error.exception.statuses,
+                ["sent_no_response"],
+            )
+            self.assertFalse(
+                bridge_response_applied(control_error.exception.payload),
+            )
+            self.assertEqual(light.commands[-1][0], RuntimeCommand.SLEEP)
+            state = client.state()
+            self.assertEqual(state["action"], "sleep")
+            self.assertFalse(state["applied"])
+
+            confirmed = require_acknowledged_response({"acknowledged": True})
+            self.assertTrue(confirmed["acknowledged"])
+            with self.assertRaises(LightBridgeUnconfirmed):
+                require_acknowledged_response({"transport_status": "echoed_write"})
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_client_can_default_all_control_methods_to_readiness_gate(self) -> None:
         light = FakeLight()
         server = LightHttpServer(
@@ -629,6 +689,7 @@ class HttpClientTests(unittest.TestCase):
                 {
                     "require_ready_for_controls": True,
                     "control_readiness": ["confirmed_control"],
+                    "require_acknowledged_controls": False,
                 },
             )
             self.assertEqual(

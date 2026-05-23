@@ -628,6 +628,13 @@ guard every state-changing helper by default, or pass
 ACK-proven control request before running cues. Individual methods such as
 `set_brightness()`, `apply_scene()`, and `run_named_cue()` also accept
 `require_ready=True` to check `control_requests` before posting the command. Call
+`LightBridgeClient(..., require_acknowledged_controls=True)` to fail closed after
+posting any state-changing helper when the bridge returns `sent_no_response`,
+`echoed_write`, or another unconfirmed status; the raised
+`LightBridgeUnconfirmed` includes `payload`, `statuses`, and `reason`.
+`require_acknowledged_response(payload)` applies the same ACK check to stored
+bridge responses.
+Call
 `require_readiness("control_requests")` directly for explicit preflights, or
 `wait_until_ready("read_status", timeout=5)` when a controller is starting
 alongside the bridge. These raise `LightBridgeNotReady` with
