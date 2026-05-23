@@ -394,6 +394,7 @@ def build_parser() -> argparse.ArgumentParser:
     server.add_argument(
         "--preset-file", help="JSON file containing named scene presets."
     )
+    server.add_argument("--cue-file", help="JSON file containing named cues.")
     server.add_argument("--allow-control", action="store_true")
     server.set_defaults(func=cmd_serve)
 
@@ -1154,6 +1155,11 @@ def load_preset_library(args: argparse.Namespace) -> ScenePresetLibrary | None:
     return ScenePresetLibrary.load(path) if path else None
 
 
+def load_cue_library(args: argparse.Namespace) -> CueLibrary | None:
+    path = getattr(args, "cue_file", None)
+    return CueLibrary.load(path) if path else None
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     serve(
         host=args.host,
@@ -1162,6 +1168,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         allow_control=args.allow_control,
         light_factory=bridge_light_factory(args),
         preset_library=load_preset_library(args),
+        cue_library=load_cue_library(args),
         cors_origin=args.cors_origin,
         transport=args.transport,
         ble_backend="direct" if args.unsafe_in_process else args.ble_backend,

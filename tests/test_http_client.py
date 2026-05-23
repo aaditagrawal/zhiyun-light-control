@@ -15,6 +15,7 @@ from zhiyun_light_control import (
     command_result_status,
     readiness_actions_by_id,
 )
+from zhiyun_light_control.cues import CueLibrary
 from zhiyun_light_control.models import CommandResult, Scene
 from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import (
@@ -134,11 +135,15 @@ class HttpClientTests(unittest.TestCase):
         library = ScenePresetLibrary.from_mapping(
             {"scenes": {"key": {"brightness": 40, "kelvin": 5200}}}
         )
+        cue_library = CueLibrary.from_mapping(
+            {"intro": {"steps": [{"scene": {"brightness": 18}}]}}
+        )
         server = LightHttpServer(
             ("127.0.0.1", 0),
             allow_control=True,
             light_factory=lambda: light,
             preset_library=library,
+            cue_library=cue_library,
         )
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -171,6 +176,7 @@ class HttpClientTests(unittest.TestCase):
             devices = client.devices()
             self.assertIn("usb", devices)
             self.assertFalse(devices["ble"]["included"])
+            self.assertEqual(sorted(client.cues()["cues"]), ["intro"])
             inspect_result = BleInspectResult(
                 ok=True,
                 address="UUID-1",
@@ -320,6 +326,11 @@ class HttpClientTests(unittest.TestCase):
             )
             self.assertTrue(cue["applied"])
             self.assertFalse(cue["stopped"])
+
+            named_cue = client.run_named_cue("intro", control_mode=0x01)
+            self.assertEqual(named_cue["cue"], "intro")
+            self.assertTrue(named_cue["applied"])
+            self.assertEqual(named_cue["steps"][0]["scene"]["brightness"], 18.0)
 
             validation = client.validate(allow_control=True, values={"brightness": 32})
             self.assertTrue(validation["connection_confirmed"])

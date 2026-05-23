@@ -127,6 +127,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/events` | Server-Sent Events stream of requested bridge state |
 | `GET` | `/history` | Recent requested-state event history for reconnect recovery |
 | `GET` | `/presets` | List loaded named scene presets |
+| `GET` | `/cues` | List loaded named cue sequences |
 | `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
 | `POST` | `/plan` | Resolve a scene/preset/transition/sequence without writes |
@@ -144,6 +145,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/transition` | Apply a timed sequence from one requested scene to another |
 | `POST` | `/preset` | Apply a loaded named preset with optional overrides |
 | `POST` | `/sequence` | Run ordered scene, preset, and transition cue steps |
+| `POST` | `/cue` | Run a loaded named cue sequence |
 
 Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
@@ -311,6 +313,10 @@ per-step `applied` and `reason` fields plus an aggregate sequence result. Pass
 `stop_on_unconfirmed: true` to stop executing after the first unacknowledged
 step. `zlight cue --cue-file examples/cues.json --cue warm-key --yes` loads the
 same structure from a named JSON cue file and posts it to a running HTTP bridge.
+When the bridge is started with `--cue-file`, `GET /cues` exposes the loaded
+definitions and `POST /cue` runs one by `name` or `cue` through the same
+sequencer. The named-cue endpoint records bridge state with action `cue` while
+preserving the same per-step and aggregate ACK evidence as `/sequence`.
 
 The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and maps DMX channels to a `Scene`:
 

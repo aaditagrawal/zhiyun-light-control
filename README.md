@@ -240,7 +240,7 @@ execution, and `--no-persistent-light` when debugging connection setup.
 HTTP JSON bridge:
 
 ```sh
-uv run zlight serve --host 127.0.0.1 --port 8765 --preset-file examples/scenes.json --allow-control
+uv run zlight serve --host 127.0.0.1 --port 8765 --preset-file examples/scenes.json --cue-file examples/cues.json --allow-control
 ```
 
 The HTTP bridge serves JSON CORS headers for browser dashboards by default.
@@ -271,6 +271,7 @@ curl http://127.0.0.1:8765/events?limit=1
 curl http://127.0.0.1:8765/history?limit=10
 curl http://127.0.0.1:8765/state
 curl http://127.0.0.1:8765/presets
+curl http://127.0.0.1:8765/cues
 curl -X POST http://127.0.0.1:8765/discover-usb \
   -H 'content-type: application/json' \
   -d '{"object_ids": [0, 1], "first_words": ["0x0100", "0x0301"], "timeout": 0.4}'
@@ -304,6 +305,9 @@ curl -X POST http://127.0.0.1:8765/preset \
 curl -X POST http://127.0.0.1:8765/sequence \
   -H 'content-type: application/json' \
   -d '{"steps": [{"scene": {"brightness": 10}}, {"preset": "key", "overrides": {"brightness": 45}}, {"to": {"brightness": 60}, "steps": 4, "duration": 1.0}]}'
+curl -X POST http://127.0.0.1:8765/cue \
+  -H 'content-type: application/json' \
+  -d '{"name": "warm-key", "stop_on_unconfirmed": true}'
 ```
 
 Run a named cue from a JSON cue file against a running bridge:
@@ -402,9 +406,12 @@ with `to`, and returns per-step `applied`/`reason` evidence plus an aggregate
 sequence result. Add `stop_on_unconfirmed: true` when a cue should stop after
 the first unacknowledged write.
 
-`zlight cue` loads the same shape from a JSON file and posts it to a running
-HTTP bridge. Cue files can be top-level cue mappings or contain a `cues` object;
-see `examples/cues.json`.
+`GET /cues` and `POST /cue` expose server-loaded named cues from
+`zlight serve --cue-file`. `POST /cue` takes `name` or `cue`, then runs the
+stored sequence through the same evidence path as `/sequence`. `zlight cue` can
+also load the same shape client-side and post it to a running HTTP bridge. Cue
+files can be top-level cue mappings or contain a `cues` object; see
+`examples/cues.json`.
 
 `GET /validate` returns the same hardware-evidence report as `zlight validate`
 without transmitting control writes. `POST /validate` accepts
@@ -487,6 +494,7 @@ print(bridge.diagnostics()["connection_confirmed"])
 print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
+print(bridge.cues()["cues"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
 ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
 print(ble["endpoint_candidates"])
@@ -520,6 +528,8 @@ named = bridge.run_cue(
     }
 )
 print(named["stopped"])
+server_named = bridge.run_named_cue("warm-key", stop_on_unconfirmed=True)
+print(server_named["cue"], server_named["applied"])
 ```
 
 This wrapper preserves the bridge's JSON evidence fields, so callers should

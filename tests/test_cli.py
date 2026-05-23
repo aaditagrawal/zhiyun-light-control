@@ -137,6 +137,31 @@ class CliTests(unittest.TestCase):
         self.assertEqual(client.calls[0][0]["steps"], [{"scene": {}}])
         self.assertEqual(client.calls[0][1], 0x01)
 
+    def test_serve_loads_cue_file_for_bridge(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_serve(**kwargs: object) -> None:
+            calls.append(dict(kwargs))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cues.json"
+            path.write_text(
+                json.dumps({"cues": {"intro": {"steps": [{"scene": {}}]}}}),
+                encoding="utf-8",
+            )
+            with (
+                patch("zhiyun_light_control.cli.serve", side_effect=fake_serve),
+                patch(
+                    "zhiyun_light_control.cli.bridge_light_factory",
+                    return_value=lambda: None,
+                ),
+            ):
+                code = main(["serve", "--cue-file", str(path)])
+
+        self.assertEqual(code, 0)
+        cue_library = calls[0]["cue_library"]
+        self.assertEqual(cue_library.names(), ["intro"])
+
     def test_validate_strict_fails_when_control_is_unconfirmed(self) -> None:
         class FakeLight:
             def __init__(self) -> None:

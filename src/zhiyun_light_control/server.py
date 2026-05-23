@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
+from .cues import CueLibrary
 from .devices import (
     BLE_BACKENDS,
     discover_transport_devices,
@@ -53,6 +54,7 @@ class LightHttpServer(ThreadingHTTPServer):
         allow_control: bool = False,
         light_factory: Callable[[], object] | None = None,
         preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
         state_tracker: SceneStateTracker | None = None,
         cors_origin: str | None = "*",
         transport: str = "usb",
@@ -67,6 +69,7 @@ class LightHttpServer(ThreadingHTTPServer):
         self.allow_control = allow_control
         self.light_factory = light_factory or (lambda: ZhiyunLight.usb(port=port))
         self.preset_library = preset_library
+        self.cue_library = cue_library
         self.state_tracker = state_tracker or SceneStateTracker()
         self.cors_origin = cors_origin
         self.transport = transport
@@ -103,6 +106,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/events",
                         "/history",
                         "/presets",
+                        "/cues",
                         "/state",
                     ],
                     "post": [
@@ -122,10 +126,14 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/transition",
                         "/preset",
                         "/sequence",
+                        "/cue",
                     ],
                     "control_enabled": self.server.allow_control,
                     "presets": self.server.preset_library.names()
                     if self.server.preset_library
+                    else [],
+                    "cues": self.server.cue_library.names()
+                    if self.server.cue_library
                     else [],
                 }
             )
@@ -136,6 +144,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     allow_control=self.server.allow_control,
                     presets=self.server.preset_library.names()
                     if self.server.preset_library
+                    else [],
+                    cues=self.server.cue_library.names()
+                    if self.server.cue_library
                     else [],
                 )
             )
@@ -164,6 +175,10 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         if path == "/presets":
             library = self.server.preset_library
             self._json(library.to_dict() if library else {"scenes": {}})
+            return
+        if path == "/cues":
+            library = self.server.cue_library
+            self._json(library.to_dict() if library else {"cues": {}})
             return
         if path == "/state":
             self._json(self.server.state_tracker.to_dict())
@@ -405,6 +420,13 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     obj=obj,
                     control_mode=control_mode,
                 )
+            if path == "/cue":
+                return self._handle_named_cue(
+                    light,
+                    body,
+                    obj=obj,
+                    control_mode=control_mode,
+                )
         raise ValueError("unknown endpoint")
 
     def _handle_plan(self, body: dict[str, object]) -> dict[str, object]:
@@ -588,6 +610,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         *,
         obj: int,
         control_mode: int,
+        state_action: str = "sequence",
     ) -> dict[str, object]:
         raw_steps = body.get("steps")
         if not isinstance(raw_steps, list) or not raw_steps:
@@ -619,7 +642,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         if current_scene is not None:
             self._record_scene(
                 current_scene,
-                action="sequence",
+                action=state_action,
                 results=sequence_results,
             )
         return {
@@ -628,6 +651,33 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             "applied": applied,
             "reason": reason,
         }
+
+    def _handle_named_cue(
+        self,
+        light,
+        body: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+    ) -> dict[str, object]:
+        library = self.server.cue_library
+        if library is None:
+            raise ValueError("no cue file loaded")
+        name_value = body.get("cue", body.get("name"))
+        if name_value is None:
+            raise ValueError("cue request requires name or cue")
+        name = str(name_value)
+        cue = library.get(name)
+        if "stop_on_unconfirmed" in body:
+            cue["stop_on_unconfirmed"] = _body_bool(body, "stop_on_unconfirmed")
+        result = self._handle_sequence(
+            light,
+            cue,
+            obj=obj,
+            control_mode=control_mode,
+            state_action="cue",
+        )
+        return {"cue": name, **result}
 
     def _handle_sequence_step(
         self,
@@ -1147,6 +1197,7 @@ def openapi_schema() -> dict[str, object]:
                 )
             },
             "/presets": {"get": _operation("List loaded scene presets", "Presets")},
+            "/cues": {"get": _operation("List loaded named cues", "Cues")},
             "/state": {"get": _operation("Read requested bridge state", "State")},
             "/register": {
                 "post": _operation(
@@ -1225,6 +1276,13 @@ def openapi_schema() -> dict[str, object]:
                     request_schema="SequenceRequest",
                 )
             },
+            "/cue": {
+                "post": _operation(
+                    "Run a loaded named cue",
+                    "CueResponse",
+                    request_schema="CueRequest",
+                )
+            },
         },
         "components": {"schemas": _openapi_schemas()},
     }
@@ -1279,8 +1337,9 @@ def _openapi_schemas() -> dict[str, object]:
                 "post": {"type": "array", "items": {"type": "string"}},
                 "control_enabled": {"type": "boolean"},
                 "presets": {"type": "array", "items": {"type": "string"}},
+                "cues": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["get", "post", "control_enabled", "presets"],
+            "required": ["get", "post", "control_enabled", "presets", "cues"],
         },
         "Capabilities": {"type": "object", "additionalProperties": True},
         "Diagnostics": {"type": "object", "additionalProperties": True},
@@ -1371,6 +1430,7 @@ def _openapi_schemas() -> dict[str, object]:
         "BleEndpointTest": {"type": "object", "additionalProperties": True},
         "UsbDiscovery": {"type": "object", "additionalProperties": True},
         "Presets": {"type": "object", "additionalProperties": True},
+        "Cues": {"type": "object", "additionalProperties": True},
         "State": {"type": "object", "additionalProperties": True},
         "ValidationRequest": {
             "type": "object",
@@ -1516,6 +1576,8 @@ def _openapi_schemas() -> dict[str, object]:
         "PresetResponse": {"type": "object", "additionalProperties": True},
         "SequenceRequest": {"type": "object", "additionalProperties": True},
         "SequenceResponse": {"type": "object", "additionalProperties": True},
+        "CueRequest": {"type": "object", "additionalProperties": True},
+        "CueResponse": {"type": "object", "additionalProperties": True},
     }
 
 
@@ -1523,12 +1585,14 @@ def capabilities_response(
     *,
     allow_control: bool,
     presets: list[str],
+    cues: list[str],
 ) -> dict[str, object]:
     return {
         "api": "zhiyun-light-control",
         "control_enabled": allow_control,
         "scene_fields": list(_SCENE_FIELD_ORDER),
         "presets": presets,
+        "cues": cues,
         "evidence_statuses": [
             "acknowledged",
             "sent_no_response",
@@ -1683,6 +1747,13 @@ def capabilities_response(
                 "confirmation": "bounded recent state-event history",
             },
             {
+                "name": "cues",
+                "method": "GET",
+                "path": "/cues",
+                "requires_control": False,
+                "confirmation": "loaded named cue definitions",
+            },
+            {
                 "name": "register",
                 "method": "POST",
                 "path": "/register",
@@ -1775,6 +1846,14 @@ def capabilities_response(
                 "requires_control": True,
                 "fields": ["steps", "stop_on_unconfirmed", "control_mode"],
                 "confirmation": "all step results acknowledged",
+            },
+            {
+                "name": "cue",
+                "method": "POST",
+                "path": "/cue",
+                "requires_control": True,
+                "fields": ["name", "cue", "obj", "stop_on_unconfirmed", "control_mode"],
+                "confirmation": "all named cue step results acknowledged",
             },
         ],
     }
@@ -2087,6 +2166,7 @@ def serve(
     allow_control: bool = False,
     light_factory: Callable[[], object] | None = None,
     preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
     state_tracker: SceneStateTracker | None = None,
     cors_origin: str | None = "*",
     transport: str = "usb",
@@ -2102,6 +2182,7 @@ def serve(
         allow_control=allow_control,
         light_factory=light_factory,
         preset_library=preset_library,
+        cue_library=cue_library,
         state_tracker=state_tracker,
         cors_origin=cors_origin,
         transport=transport,

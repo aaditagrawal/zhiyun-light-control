@@ -8,6 +8,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from zhiyun_light_control.cues import CueLibrary
 from zhiyun_light_control.models import CommandResult, Scene
 from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import (
@@ -370,6 +371,63 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_runs_loaded_named_cue(self) -> None:
+        light = FakeLight()
+        cue_library = CueLibrary.from_mapping(
+            {
+                "intro": {
+                    "steps": [
+                        {"scene": {"brightness": 10}},
+                        {"to": {"brightness": 20}, "steps": 2, "duration": 0},
+                    ],
+                    "stop_on_unconfirmed": True,
+                }
+            }
+        )
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+            cue_library=cue_library,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            cues = json.loads(urlopen(f"{base}/cues", timeout=3).read())
+            self.assertEqual(sorted(cues["cues"]), ["intro"])
+
+            request = Request(
+                f"{base}/cue",
+                data=json.dumps(
+                    {
+                        "name": "intro",
+                        "control_mode": "0x01",
+                        "obj": 1,
+                        "stop_on_unconfirmed": False,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            response = json.loads(urlopen(request, timeout=3).read())
+
+            self.assertEqual(response["cue"], "intro")
+            self.assertTrue(response["applied"])
+            self.assertFalse(response["stopped"])
+            self.assertEqual(
+                [step["action"] for step in response["steps"]],
+                ["scene", "transition"],
+            )
+            self.assertEqual(light.payloads[0][1][2], 0x01)
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["action"], "cue")
+            self.assertEqual(state["scene"]["brightness"], 20.0)
+            self.assertTrue(state["applied"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_sequence_can_stop_on_unconfirmed_step(self) -> None:
         light = FakeUnconfirmedLight()
         server = LightHttpServer(
@@ -501,11 +559,13 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/capabilities", commands["get"])
             self.assertIn("/devices", commands["get"])
             self.assertIn("/ready", commands["get"])
+            self.assertIn("/cues", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/plan", commands["post"])
             self.assertIn("/inspect-ble", commands["post"])
             self.assertIn("/test-ble-endpoints", commands["post"])
             self.assertIn("/sequence", commands["post"])
+            self.assertIn("/cue", commands["post"])
 
             capabilities = json.loads(
                 urlopen(f"{base}/capabilities", timeout=3).read()
@@ -513,6 +573,7 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(capabilities["control_enabled"])
             self.assertIn("sent_no_response", capabilities["evidence_statuses"])
             self.assertIn("brightness", capabilities["scene_fields"])
+            self.assertEqual(capabilities["cues"], [])
             primitives = {
                 primitive["name"]: primitive for primitive in capabilities["primitives"]
             }
@@ -534,6 +595,9 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
             self.assertEqual(primitives["sequence"]["path"], "/sequence")
+            self.assertEqual(primitives["cue"]["path"], "/cue")
+            self.assertTrue(primitives["cue"]["requires_control"])
+            self.assertFalse(primitives["cues"]["requires_control"])
             self.assertEqual(primitives["devices"]["path"], "/devices")
             self.assertFalse(primitives["ready"]["requires_control"])
             self.assertFalse(primitives["events"]["requires_control"])
@@ -970,7 +1034,9 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/discover-usb", schema["paths"])
             self.assertIn("/events", schema["paths"])
             self.assertIn("/history", schema["paths"])
+            self.assertIn("/cues", schema["paths"])
             self.assertIn("/sequence", schema["paths"])
+            self.assertIn("/cue", schema["paths"])
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
             self.assertIn("CommandResult", schema["components"]["schemas"])
@@ -994,7 +1060,10 @@ class ServerTests(unittest.TestCase):
             self.assertIn("BleEndpointTest", schema["components"]["schemas"])
             self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])
             self.assertIn("UsbDiscovery", schema["components"]["schemas"])
+            self.assertIn("Cues", schema["components"]["schemas"])
             self.assertIn("SequenceRequest", schema["components"]["schemas"])
+            self.assertIn("CueRequest", schema["components"]["schemas"])
+            self.assertIn("CueResponse", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])
@@ -1003,8 +1072,10 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/ready", commands["get"])
             self.assertIn("/events", commands["get"])
             self.assertIn("/history", commands["get"])
+            self.assertIn("/cues", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/test-ble-endpoints", commands["post"])
+            self.assertIn("/cue", commands["post"])
             self.assertIn("/frame", commands["post"])
 
             options = Request(f"{base}/scene", method="OPTIONS")

@@ -107,6 +107,9 @@ class LightBridgeClient:
     def presets(self) -> dict[str, object]:
         return self._get("/presets")
 
+    def cues(self) -> dict[str, object]:
+        return self._get("/cues")
+
     def state_events(
         self,
         *,
@@ -399,6 +402,21 @@ class LightBridgeClient:
         control_mode: int | None = None,
     ) -> dict[str, object]:
         return self._post("/sequence", _with_control_mode(dict(cue), control_mode))
+
+    def run_named_cue(
+        self,
+        name: str,
+        *,
+        control_mode: int | None = None,
+        obj: int | None = None,
+        stop_on_unconfirmed: bool | None = None,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {"name": name}
+        if obj is not None:
+            payload["obj"] = obj
+        if stop_on_unconfirmed is not None:
+            payload["stop_on_unconfirmed"] = stop_on_unconfirmed
+        return self._post("/cue", _with_control_mode(payload, control_mode))
 
     def _get(self, path: str) -> dict[str, object]:
         return self._request("GET", path)
