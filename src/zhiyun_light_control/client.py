@@ -29,7 +29,7 @@ from .protocol import (
     sleep_payload,
 )
 from .transitions import EasingName, scene_transition, transition_interval
-from .transports.usb import UsbTransport
+from .transports.usb import DEFAULT_LOCK_TIMEOUT, UsbTransport
 
 
 @dataclass(frozen=True)
@@ -65,8 +65,14 @@ class ZhiyunLight:
         self.close()
 
     @classmethod
-    def usb(cls, port: str | None = None, *, timeout: float = 0.8) -> ZhiyunLight:
-        return cls(UsbTransport(port=port, timeout=timeout))
+    def usb(
+        cls,
+        port: str | None = None,
+        *,
+        timeout: float = 0.8,
+        lock_timeout: float | None = DEFAULT_LOCK_TIMEOUT,
+    ) -> ZhiyunLight:
+        return cls(UsbTransport(port=port, timeout=timeout, lock_timeout=lock_timeout))
 
     def close(self) -> None:
         if hasattr(self.transport, "close"):

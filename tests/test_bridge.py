@@ -75,6 +75,7 @@ class BridgeFactoryTests(unittest.TestCase):
                 transport="usb",
                 port="/dev/cu.test",
                 timeout=2.0,
+                usb_lock_timeout=0.25,
             )
         )
 
@@ -83,6 +84,7 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertIsInstance(light, ZhiyunLight)
         self.assertEqual(light.transport.port, "/dev/cu.test")
         self.assertEqual(light.transport.timeout, 2.0)
+        self.assertEqual(light.transport.lock_timeout, 0.25)
 
     def test_ble_factory_adapts_async_client_to_sync_bridge_interface(self) -> None:
         fake = FakeAsyncLight()

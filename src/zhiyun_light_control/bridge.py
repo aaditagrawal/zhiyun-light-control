@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
 from .models import Scene
+from .transports.usb import DEFAULT_LOCK_TIMEOUT
 
 
 @dataclass(frozen=True)
@@ -19,6 +20,7 @@ class LightConnectionConfig:
     address: str | None = None
     name_contains: str | None = None
     timeout: float = 1.5
+    usb_lock_timeout: float | None = DEFAULT_LOCK_TIMEOUT
     ble_python: str | None = None
     ble_in_process: bool = False
     persistent: bool = False
@@ -36,7 +38,11 @@ def make_light_factory(config: LightConnectionConfig) -> LightFactory:
 
 def make_one_shot_light_factory(config: LightConnectionConfig) -> LightFactory:
     if config.transport == "usb":
-        return lambda: ZhiyunLight.usb(port=config.port, timeout=config.timeout)
+        return lambda: ZhiyunLight.usb(
+            port=config.port,
+            timeout=config.timeout,
+            lock_timeout=config.usb_lock_timeout,
+        )
     if config.transport == "ble":
         return lambda: SyncBleLight(config)
     raise ValueError(f"unsupported light transport: {config.transport}")

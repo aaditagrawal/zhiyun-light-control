@@ -90,6 +90,11 @@ Direct `register`, `read`, `set`, and `apply` commands also exit non-zero when
 the transmitted command does not receive an ACK, so shell scripts can distinguish
 working primitives from timeouts.
 
+USB opens use an advisory process lock keyed by the serial device so parallel
+CLI or bridge processes do not interleave frames on the same light. The default
+wait is 10 seconds; use `--usb-lock-timeout 0` to fail fast or
+`--usb-lock-timeout none` to wait indefinitely.
+
 Run the broader USB discovery matrix while working on unknown primitive shapes:
 
 ```sh

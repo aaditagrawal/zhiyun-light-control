@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from zhiyun_light_control import Scene, ZhiyunLight
 from zhiyun_light_control.protocol import (
@@ -46,6 +47,26 @@ class EchoThenAckTransport:
 
 
 class ClientTests(unittest.TestCase):
+    def test_usb_factory_passes_lock_timeout_to_transport(self) -> None:
+        transport = EchoAckTransport()
+
+        with patch(
+            "zhiyun_light_control.client.UsbTransport",
+            return_value=transport,
+        ) as make_transport:
+            light = ZhiyunLight.usb(
+                port="/dev/cu.test",
+                timeout=2.0,
+                lock_timeout=0.25,
+            )
+
+        self.assertIs(light.transport, transport)
+        make_transport.assert_called_once_with(
+            port="/dev/cu.test",
+            timeout=2.0,
+            lock_timeout=0.25,
+        )
+
     def test_exchange_runtime_exposes_raw_bytes_and_ack(self) -> None:
         transport = EchoAckTransport()
         light = ZhiyunLight(transport)

@@ -62,6 +62,12 @@ The direct CLI commands `register`, `read`, `set`, and `apply` use the same ACK
 definition for their process exit status. They print the full `CommandResult`
 payload either way, but unacknowledged transmissions return exit code `1`.
 
+USB transports take an advisory file lock before opening the serial device and
+hold it until close. This serializes independent CLI or bridge processes that
+target the same `/dev/cu.usbmodem*` path and avoids interleaved request/response
+frames. `--usb-lock-timeout` controls the wait: `0` fails fast and `none` waits
+indefinitely.
+
 ## Media Integration Surface
 
 The local HTTP bridge is intentionally small and JSON-only:

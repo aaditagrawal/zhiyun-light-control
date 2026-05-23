@@ -373,6 +373,8 @@ class CliTests(unittest.TestCase):
                     "--ble-python",
                     "python-test",
                     "--unsafe-in-process",
+                    "--usb-lock-timeout",
+                    "0.25",
                     "--cors-origin",
                     "http://studio.local",
                 ]
@@ -382,6 +384,7 @@ class CliTests(unittest.TestCase):
         config = make_factory.call_args.args[0]
         self.assertEqual(config.transport, "ble")
         self.assertEqual(config.address, "AA:BB")
+        self.assertEqual(config.usb_lock_timeout, 0.25)
         self.assertEqual(config.ble_python, "python-test")
         self.assertTrue(config.ble_in_process)
         self.assertEqual(serve.call_args.kwargs["cors_origin"], "http://studio.local")

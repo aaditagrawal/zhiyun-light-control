@@ -36,6 +36,7 @@ from .transports.ble import (
     scan_zhiyun_devices,
     scan_zhiyun_devices_safe,
 )
+from .transports.usb import DEFAULT_LOCK_TIMEOUT
 from .validation import validate_async_light, validate_sync_light
 
 
@@ -98,6 +99,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*."
     )
     discover.add_argument("--timeout", type=float, default=0.5)
+    discover.add_argument(
+        "--usb-lock-timeout",
+        type=parse_optional_float,
+        default=DEFAULT_LOCK_TIMEOUT,
+        help="Seconds to wait for the USB port lock. Use 'none' to wait forever.",
+    )
     discover.add_argument(
         "--object-ids",
         type=parse_int_list,
@@ -258,6 +265,12 @@ def add_transport_args(parser: argparse.ArgumentParser) -> None:
         "--name-contains", help="BLE name substring used for discovery."
     )
     parser.add_argument("--timeout", type=float, default=1.5)
+    parser.add_argument(
+        "--usb-lock-timeout",
+        type=parse_optional_float,
+        default=DEFAULT_LOCK_TIMEOUT,
+        help="Seconds to wait for the USB port lock. Use 'none' to wait forever.",
+    )
 
 
 def add_ble_execution_args(parser: argparse.ArgumentParser) -> None:
@@ -293,6 +306,12 @@ def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--light-timeout", type=float, default=1.5)
     parser.add_argument(
+        "--usb-lock-timeout",
+        type=parse_optional_float,
+        default=DEFAULT_LOCK_TIMEOUT,
+        help="Seconds to wait for the USB port lock. Use 'none' to wait forever.",
+    )
+    parser.add_argument(
         "--no-persistent-light",
         action="store_true",
         help=(
@@ -310,6 +329,12 @@ def parse_optional_int(text: str) -> int | None:
     if text.lower() in {"none", "off", "disabled"}:
         return None
     return int(text, 0)
+
+
+def parse_optional_float(text: str) -> float | None:
+    if text.lower() in {"none", "off", "disabled"}:
+        return None
+    return float(text)
 
 
 def parse_optional_text(text: str) -> str | None:
@@ -332,7 +357,7 @@ def cmd_probe(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             return print_ble_runtime_error(exc, compact=args.json)
     else:
-        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+        with sync_usb_light_from_args(args) as light:
             result = light.probe().to_dict()
             chip = light.chip_sync()
             if chip:
@@ -357,7 +382,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
             )
         report = asyncio.run(_validate_ble(args))
     else:
-        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+        with sync_usb_light_from_args(args) as light:
             report = validate_sync_light(
                 light,
                 transport=args.transport,
@@ -383,7 +408,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_discover_usb(args: argparse.Namespace) -> int:
-    with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+    with sync_usb_light_from_args(args) as light:
         report = discover_usb_primitives(
             light,
             object_ids=args.object_ids,
@@ -447,7 +472,7 @@ def cmd_register(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             return print_ble_runtime_error(exc)
     else:
-        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+        with sync_usb_light_from_args(args) as light:
             result = light.exchange_runtime(
                 RuntimeCommand.REGISTER_DEFAULT_GROUP,
                 register_payload(args.device_id),
@@ -471,7 +496,7 @@ def cmd_read(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             return print_ble_runtime_error(exc)
     else:
-        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+        with sync_usb_light_from_args(args) as light:
             result = _read_usb(light, args)
     print_json(result.to_dict())
     return command_result_exit_code(result)
@@ -512,7 +537,7 @@ def cmd_set(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             return print_ble_runtime_error(exc)
     else:
-        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+        with sync_usb_light_from_args(args) as light:
             result = _set_usb(light, args)
     print_json(result.to_dict())
     return command_result_exit_code(result)
@@ -601,7 +626,7 @@ def cmd_apply(args: argparse.Namespace) -> int:
         except RuntimeError as exc:
             return print_ble_runtime_error(exc)
     else:
-        with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
+        with sync_usb_light_from_args(args) as light:
             results = light.apply_scene(scene)
     print_json(
         {"scene": scene.to_dict(), "results": [result.to_dict() for result in results]}
@@ -615,6 +640,14 @@ def command_result_exit_code(result: CommandResult) -> int:
 
 def command_results_exit_code(results: list[CommandResult]) -> int:
     return 0 if all(result.acknowledged for result in results) else 1
+
+
+def sync_usb_light_from_args(args: argparse.Namespace) -> ZhiyunLight:
+    return ZhiyunLight.usb(
+        port=args.port,
+        timeout=args.timeout,
+        lock_timeout=args.usb_lock_timeout,
+    )
 
 
 async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResult]:
@@ -740,6 +773,7 @@ def bridge_light_factory(args: argparse.Namespace):
             address=args.address,
             name_contains=args.name_contains,
             timeout=args.light_timeout,
+            usb_lock_timeout=args.usb_lock_timeout,
             ble_python=args.ble_python,
             ble_in_process=args.unsafe_in_process,
             persistent=not args.no_persistent_light,
