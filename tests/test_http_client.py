@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import unittest
 
 from zhiyun_light_control import LightBridgeClient, LightBridgeError
@@ -166,6 +167,43 @@ class HttpClientTests(unittest.TestCase):
 
             validation = client.validate(allow_control=True, values={"brightness": 32})
             self.assertTrue(validation["connection_confirmed"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_client_iterates_state_events(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(f"http://127.0.0.1:{server.server_port}")
+        try:
+            initial = next(client.state_events(limit=1, timeout=0.1))
+            self.assertEqual(initial["version"], 0)
+            self.assertIsNone(initial["state"]["scene"])
+
+            events: list[dict[str, object]] = []
+
+            def collect_events() -> None:
+                events.extend(
+                    client.state_events(limit=1, timeout=2.0, initial=False)
+                )
+
+            event_thread = threading.Thread(target=collect_events)
+            event_thread.start()
+            time.sleep(0.1)
+            client.set_brightness(22)
+            event_thread.join(timeout=3)
+
+            self.assertFalse(event_thread.is_alive())
+            self.assertEqual(events[0]["version"], 1)
+            state = events[0]["state"]
+            self.assertEqual(state["scene"]["brightness"], 22.0)
+            self.assertEqual(state["action"], "brightness")
         finally:
             server.shutdown()
             server.server_close()

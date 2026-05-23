@@ -114,6 +114,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/commands` | List bridge commands |
 | `GET` | `/capabilities` | Discover primitives, fields, and evidence statuses |
 | `GET` | `/diagnostics` | Check bridge transport readiness and next steps |
+| `GET` | `/events` | Server-Sent Events stream of requested bridge state |
 | `GET` | `/presets` | List loaded named scene presets |
 | `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
@@ -206,6 +207,12 @@ light; unconfirmed writes keep the requested scene visible but report
 `applied: false` with a reason such as `sent_no_response` or `echoed_write`.
 This gives media tools a stable polling surface without hiding weak hardware
 evidence.
+
+HTTP `/events` streams the same state model as Server-Sent Events for dashboards
+and automation panels. By default it sends the current snapshot first, then
+future updates. `limit`, `timeout`, and `initial=false` query parameters make it
+usable in finite scripts and tests; browsers can consume it directly with
+`EventSource`.
 
 HTTP `/transition` accepts either explicit `from` and `to` scene objects or
 top-level target scene fields. If `from` is omitted, the bridge uses the last

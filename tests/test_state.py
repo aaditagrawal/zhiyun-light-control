@@ -35,6 +35,23 @@ class StateTests(unittest.TestCase):
         self.assertEqual(payload["action"], "scene")
         self.assertTrue(payload["applied"])
         self.assertEqual(payload["result_statuses"], ["acknowledged"])
+        version, versioned_state = tracker.versioned_snapshot()
+        self.assertEqual(version, 1)
+        self.assertIs(versioned_state, state)
+
+    def test_tracker_waits_for_versioned_updates(self) -> None:
+        tracker = SceneStateTracker()
+        version, state = tracker.versioned_snapshot()
+        self.assertEqual(version, 0)
+        self.assertIsNone(state)
+
+        tracker.record(Scene(obj=1, brightness=20), source="test", action="scene")
+        version, state = tracker.wait_for_update(0, timeout=0.1)
+
+        self.assertEqual(version, 1)
+        self.assertIsNotNone(state)
+        assert state is not None
+        self.assertEqual(state.scene.brightness, 20)
 
     def test_tracker_infers_unconfirmed_results(self) -> None:
         tracker = SceneStateTracker()

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import fields
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
@@ -64,7 +64,8 @@ class LightRequestHandler(BaseHTTPRequestHandler):
     server: LightHttpServer
 
     def do_GET(self) -> None:
-        path = urlparse(self.path).path
+        parsed = urlparse(self.path)
+        path = parsed.path
         if path == "/health":
             self._json({"ok": True})
             return
@@ -80,6 +81,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/commands",
                         "/capabilities",
                         "/diagnostics",
+                        "/events",
                         "/presets",
                         "/state",
                     ],
@@ -116,6 +118,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/diagnostics":
             self._json(self._handle_diagnostics())
+            return
+        if path == "/events":
+            self._handle_events(parsed.query)
             return
         if path == "/openapi.json":
             self._json(openapi_schema())
@@ -582,6 +587,56 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             error=error,
         )
 
+    def _handle_events(self, query: str) -> None:
+        params = parse_qs(query)
+        limit = _query_int(params, "limit", default=0)
+        timeout = _query_float(params, "timeout", default=30.0)
+        include_initial = _query_bool(params, "initial", default=True)
+        self.send_response(HTTPStatus.OK)
+        self.send_header("content-type", "text/event-stream")
+        self.send_header("cache-control", "no-cache")
+        if limit > 0:
+            self.send_header("connection", "close")
+            self.close_connection = True
+        else:
+            self.send_header("connection", "keep-alive")
+        if self.server.cors_origin:
+            self.send_header("access-control-allow-origin", self.server.cors_origin)
+        self.end_headers()
+        sent = 0
+        version, state = self.server.state_tracker.versioned_snapshot()
+        try:
+            if include_initial:
+                self._write_state_event(version, state)
+                sent += 1
+            while limit <= 0 or sent < limit:
+                next_version, next_state = self.server.state_tracker.wait_for_update(
+                    version,
+                    timeout=timeout,
+                )
+                if next_version == version:
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    if limit > 0:
+                        break
+                    continue
+                version = next_version
+                self._write_state_event(version, next_state)
+                sent += 1
+        except OSError:
+            return
+
+    def _write_state_event(self, version: int, state) -> None:
+        payload = {
+            "version": version,
+            "state": {"scene": None} if state is None else state.to_dict(),
+        }
+        data = json.dumps(payload, sort_keys=True)
+        self.wfile.write(f"id: {version}\n".encode())
+        self.wfile.write(b"event: state\n")
+        self.wfile.write(f"data: {data}\n\n".encode())
+        self.wfile.flush()
+
     def _transition_start(self, body: dict[str, object], *, obj: int) -> Scene:
         start_data = body.get("from")
         if start_data is not None:
@@ -666,6 +721,21 @@ def openapi_schema() -> dict[str, object]:
                     "Check bridge transport readiness",
                     "Diagnostics",
                 )
+            },
+            "/events": {
+                "get": {
+                    "summary": "Stream bridge state events",
+                    "responses": {
+                        "200": {
+                            "description": "Server-Sent Events stream",
+                            "content": {
+                                "text/event-stream": {
+                                    "schema": {"type": "string"}
+                                }
+                            },
+                        }
+                    },
+                }
             },
             "/probe": {"get": _operation("Probe the connected light", "Probe")},
             "/status": {
@@ -1035,6 +1105,14 @@ def capabilities_response(
                 "confirmation": "per-check validation report",
             },
             {
+                "name": "events",
+                "method": "GET",
+                "path": "/events",
+                "requires_control": False,
+                "fields": ["limit", "timeout", "initial"],
+                "confirmation": "state-event stream mirrors requested bridge state",
+            },
+            {
                 "name": "register",
                 "method": "POST",
                 "path": "/register",
@@ -1278,6 +1356,38 @@ def _body_bool(body: dict[str, object], key: str, default: bool = False) -> bool
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _query_bool(
+    params: dict[str, list[str]],
+    key: str,
+    *,
+    default: bool = False,
+) -> bool:
+    values = params.get(key)
+    if not values:
+        return default
+    return values[-1].strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _query_int(
+    params: dict[str, list[str]],
+    key: str,
+    *,
+    default: int,
+) -> int:
+    values = params.get(key)
+    return int(values[-1], 0) if values else default
+
+
+def _query_float(
+    params: dict[str, list[str]],
+    key: str,
+    *,
+    default: float,
+) -> float:
+    values = params.get(key)
+    return float(values[-1]) if values else default
 
 
 def _body_int(

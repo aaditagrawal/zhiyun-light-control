@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .models import Scene
@@ -55,6 +56,40 @@ class LightBridgeClient:
 
     def presets(self) -> dict[str, object]:
         return self._get("/presets")
+
+    def state_events(
+        self,
+        *,
+        limit: int | None = None,
+        timeout: float = 30.0,
+        initial: bool = True,
+    ) -> Iterator[dict[str, object]]:
+        query: dict[str, object] = {
+            "timeout": timeout,
+            "initial": str(initial).lower(),
+        }
+        if limit is not None:
+            query["limit"] = limit
+        request = Request(
+            f"{self.base_url}/events?{urlencode(query)}",
+            headers={"accept": "text/event-stream"},
+            method="GET",
+        )
+        read_timeout = max(self.timeout, timeout + 2.0)
+        with urlopen(request, timeout=read_timeout) as response:
+            data_lines: list[str] = []
+            for raw_line in response:
+                line = raw_line.decode("utf-8").rstrip("\r\n")
+                if line == "":
+                    if data_lines:
+                        payload = json.loads("\n".join(data_lines))
+                        if not isinstance(payload, dict):
+                            raise ValueError("state event was not a JSON object")
+                        yield payload
+                    data_lines = []
+                    continue
+                if line.startswith("data:"):
+                    data_lines.append(line[5:].lstrip())
 
     def validate(
         self,

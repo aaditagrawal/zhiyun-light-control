@@ -410,6 +410,7 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
             self.assertEqual(primitives["sequence"]["path"], "/sequence")
+            self.assertFalse(primitives["events"]["requires_control"])
 
             diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
             self.assertTrue(diagnostics["ok"])
@@ -546,6 +547,31 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_events_stream_initial_state(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            light_factory=lambda: light,
+            cors_origin="http://studio.local",
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            response = urlopen(f"{base}/events?limit=1&timeout=0.1", timeout=3)
+            payload = response.read().decode("utf-8")
+            self.assertEqual(response.headers["content-type"], "text/event-stream")
+            self.assertEqual(
+                response.headers["access-control-allow-origin"],
+                "http://studio.local",
+            )
+            self.assertIn("event: state", payload)
+            self.assertIn('"version": 0', payload)
+            self.assertIn('"scene": null', payload)
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_exposes_openapi_schema_and_configurable_cors(self) -> None:
         light = FakeLight()
         server = LightHttpServer(
@@ -568,6 +594,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", schema["paths"])
             self.assertIn("/capabilities", schema["paths"])
             self.assertIn("/diagnostics", schema["paths"])
+            self.assertIn("/events", schema["paths"])
             self.assertIn("/sequence", schema["paths"])
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
@@ -580,6 +607,7 @@ class ServerTests(unittest.TestCase):
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])
             self.assertIn("/status", commands["get"])
+            self.assertIn("/events", commands["get"])
             self.assertIn("/frame", commands["post"])
 
             options = Request(f"{base}/scene", method="OPTIONS")

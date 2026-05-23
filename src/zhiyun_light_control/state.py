@@ -28,8 +28,9 @@ class SceneState:
 
 class SceneStateTracker:
     def __init__(self) -> None:
-        self._lock = threading.Lock()
+        self._condition = threading.Condition(threading.Lock())
         self._state: SceneState | None = None
+        self._version = 0
 
     def record(
         self,
@@ -56,13 +57,33 @@ class SceneStateTracker:
             reason=reason,
             result_statuses=statuses,
         )
-        with self._lock:
+        with self._condition:
             self._state = state
+            self._version += 1
+            self._condition.notify_all()
         return state
 
     def snapshot(self) -> SceneState | None:
-        with self._lock:
+        with self._condition:
             return self._state
+
+    def versioned_snapshot(self) -> tuple[int, SceneState | None]:
+        with self._condition:
+            return self._version, self._state
+
+    def wait_for_update(
+        self,
+        after_version: int,
+        *,
+        timeout: float | None = None,
+    ) -> tuple[int, SceneState | None]:
+        with self._condition:
+            if self._version <= after_version:
+                self._condition.wait_for(
+                    lambda: self._version > after_version,
+                    timeout=timeout,
+                )
+            return self._version, self._state
 
     def to_dict(self) -> dict[str, object]:
         state = self.snapshot()
