@@ -16,6 +16,15 @@ class DeviceDiscoveryTests(unittest.TestCase):
         with patch(
             "zhiyun_light_control.devices.list_usb_ports",
             return_value=("/dev/cu.usbmodem21301", "/dev/cu.usbmodem31301"),
+        ), patch(
+            "zhiyun_light_control.devices.list_usb_port_metadata",
+            return_value={
+                "/dev/cu.usbmodem31301": {
+                    "vendor_id": 0xFFF8,
+                    "vendor_id_hex": "0xfff8",
+                    "product_name": "Zhiyun Virtual ComPort",
+                }
+            },
         ):
             payload = discover_transport_devices(
                 configured_transport="usb",
@@ -29,7 +38,15 @@ class DeviceDiscoveryTests(unittest.TestCase):
             payload["usb"]["ports"],
             [
                 {"path": "/dev/cu.usbmodem21301", "selected": False},
-                {"path": "/dev/cu.usbmodem31301", "selected": True},
+                {
+                    "path": "/dev/cu.usbmodem31301",
+                    "selected": True,
+                    "metadata": {
+                        "vendor_id": 0xFFF8,
+                        "vendor_id_hex": "0xfff8",
+                        "product_name": "Zhiyun Virtual ComPort",
+                    },
+                },
             ],
         )
         self.assertFalse(payload["ble"]["included"])
@@ -51,6 +68,10 @@ class DeviceDiscoveryTests(unittest.TestCase):
             patch(
                 "zhiyun_light_control.devices.list_usb_ports",
                 return_value=("/dev/cu.usbmodem21301",),
+            ),
+            patch(
+                "zhiyun_light_control.devices.list_usb_port_metadata",
+                return_value={},
             ),
             patch(
                 "zhiyun_light_control.devices.scan_zhiyun_devices_macos_app",

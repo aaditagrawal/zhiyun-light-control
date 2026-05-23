@@ -7,13 +7,19 @@ import fcntl
 import glob
 import hashlib
 import os
+import plistlib
+import re
 import select
+import subprocess
+import sys
 import tempfile
 import termios
 import time
+from collections.abc import Iterator
 
 DEFAULT_TIMEOUT = 0.8
 DEFAULT_LOCK_TIMEOUT = 10.0
+_USBMODEM_LOCATION_RE = re.compile(r"usbmodem([0-9a-fA-F]+)")
 
 
 class UsbTransport:
@@ -122,6 +128,154 @@ def find_usb_port(port: str | None = None) -> str:
 
 def list_usb_ports() -> tuple[str, ...]:
     return tuple(sorted(glob.glob("/dev/cu.usbmodem*")))
+
+
+def list_usb_port_metadata(
+    ports: tuple[str, ...] | None = None,
+) -> dict[str, dict[str, object]]:
+    """Return best-effort USB descriptor metadata keyed by serial device path."""
+
+    ports = list_usb_ports() if ports is None else ports
+    if sys.platform != "darwin":
+        return {port: {} for port in ports}
+    return _darwin_usb_port_metadata(ports)
+
+
+def _darwin_usb_port_metadata(
+    ports: tuple[str, ...],
+    *,
+    timeout: float = 2.0,
+) -> dict[str, dict[str, object]]:
+    locations = {
+        port: location
+        for port in ports
+        if (location := _darwin_usbmodem_location_id(port)) is not None
+    }
+    if not locations:
+        return {port: {} for port in ports}
+    try:
+        result = subprocess.run(
+            ["ioreg", "-p", "IOUSB", "-l", "-w", "0", "-a"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {
+            port: _location_only_metadata(location)
+            for port, location in locations.items()
+        } | {port: {} for port in ports if port not in locations}
+    if result.returncode != 0 or not result.stdout:
+        return {
+            port: _location_only_metadata(location)
+            for port, location in locations.items()
+        } | {port: {} for port in ports if port not in locations}
+    try:
+        tree = plistlib.loads(result.stdout)
+    except plistlib.InvalidFileException:
+        return {
+            port: _location_only_metadata(location)
+            for port, location in locations.items()
+        } | {port: {} for port in ports if port not in locations}
+    usb_entries = {
+        location: _usb_entry_metadata(entry)
+        for entry in _iter_ioreg_entries(tree)
+        if (location := _int_property(entry, "locationID")) is not None
+    }
+    metadata: dict[str, dict[str, object]] = {}
+    for port in ports:
+        location = locations.get(port)
+        if location is None:
+            metadata[port] = {}
+            continue
+        descriptor = dict(usb_entries.get(location, {}))
+        if not descriptor:
+            descriptor = _location_only_metadata(location)
+        metadata[port] = descriptor
+    return metadata
+
+
+def _darwin_usbmodem_location_id(port: str) -> int | None:
+    match = _USBMODEM_LOCATION_RE.search(os.path.basename(port))
+    if not match:
+        return None
+    suffix = match.group(1)
+    if len(suffix) <= 2:
+        return None
+    try:
+        return int(suffix[:-2], 16) << 16
+    except ValueError:
+        return None
+
+
+def _iter_ioreg_entries(item: object) -> Iterator[dict[str, object]]:
+    if isinstance(item, dict):
+        yield item
+        children = item.get("IORegistryEntryChildren")
+        if isinstance(children, list):
+            for child in children:
+                yield from _iter_ioreg_entries(child)
+    elif isinstance(item, list):
+        for child in item:
+            yield from _iter_ioreg_entries(child)
+
+
+def _usb_entry_metadata(entry: dict[str, object]) -> dict[str, object]:
+    location = _int_property(entry, "locationID")
+    metadata = _location_only_metadata(location) if location is not None else {}
+    _set_int_metadata(metadata, "vendor_id", entry, "idVendor", width=4)
+    _set_int_metadata(metadata, "product_id", entry, "idProduct", width=4)
+    _set_int_metadata(metadata, "bcd_device", entry, "bcdDevice", width=4)
+    _set_int_metadata(metadata, "usb_speed", entry, "USBSpeed")
+    _set_int_metadata(metadata, "usb_link_speed", entry, "UsbLinkSpeed")
+    _set_int_metadata(metadata, "device_speed", entry, "Device Speed")
+    _set_text_metadata(metadata, "vendor_name", entry, "USB Vendor Name")
+    _set_text_metadata(metadata, "product_name", entry, "USB Product Name")
+    _set_text_metadata(metadata, "serial_number", entry, "USB Serial Number")
+    _set_text_metadata(metadata, "serial_number", entry, "kUSBSerialNumberString")
+    metadata["source"] = "macos-ioreg"
+    return metadata
+
+
+def _location_only_metadata(location: int) -> dict[str, object]:
+    return {
+        "location_id": location,
+        "location_id_hex": f"0x{location:08x}",
+        "source": "macos-port-name",
+    }
+
+
+def _set_int_metadata(
+    metadata: dict[str, object],
+    name: str,
+    entry: dict[str, object],
+    key: str,
+    *,
+    width: int | None = None,
+) -> None:
+    value = _int_property(entry, key)
+    if value is None:
+        return
+    metadata[name] = value
+    if width is not None:
+        metadata[f"{name}_hex"] = f"0x{value:0{width}x}"
+
+
+def _set_text_metadata(
+    metadata: dict[str, object],
+    name: str,
+    entry: dict[str, object],
+    key: str,
+) -> None:
+    value = entry.get(key)
+    if isinstance(value, str) and value:
+        metadata[name] = value
+
+
+def _int_property(entry: dict[str, object], key: str) -> int | None:
+    value = entry.get(key)
+    return value if isinstance(value, int) else None
 
 
 def _acquire_usb_lock(

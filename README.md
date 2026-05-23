@@ -329,11 +329,14 @@ turns true when the bridge is connected and started with `--allow-control`;
 ACK-confirmed control request.
 
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
-Add `include_ble=true` to run a bounded BLE scan through the selected
-`ble_backend` (`worker`, `macos-app`, or `direct`); scan failures such as macOS
-Bluetooth authorization errors are returned as JSON diagnostics. The response
-also includes `ble.macos_helper` so local dashboards can point users at the
-exact helper bundle that needs Bluetooth permission.
+On macOS it also attaches best-effort USB descriptor metadata such as
+`vendor_id_hex`, `product_id_hex`, `product_name`, `vendor_name`, and
+`location_id_hex`; this lets setup tools verify that the selected serial device
+is the Zhiyun Virtual ComPort. Add `include_ble=true` to run a bounded BLE scan
+through the selected `ble_backend` (`worker`, `macos-app`, or `direct`); scan
+failures such as macOS Bluetooth authorization errors are returned as JSON
+diagnostics. The response also includes `ble.macos_helper` so local dashboards
+can point users at the exact helper bundle that needs Bluetooth permission.
 
 `POST /discover-usb` runs the same bounded USB protocol matrix as
 `zlight discover-usb` and returns every attempt with ACK/timeout evidence.

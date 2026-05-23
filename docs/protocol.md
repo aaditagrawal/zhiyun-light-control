@@ -186,12 +186,15 @@ worker-isolated BLE still performs each raw BLE exchange in a child process. Use
 
 HTTP `/devices` exposes transport discovery for dashboards and controller
 setup flows. It always returns USB `/dev/cu.usbmodem*` ports and the configured
-USB port, without opening the light. Add `include_ble=true` to run a bounded
-BLE scan with `ble_backend=worker`, `macos-app`, or `direct`; BLE scan errors
-are returned in the `ble.scan` object with the same `ok`, `error`,
-`returncode`, and `signal` fields as `zlight scan-ble`. The response also
-includes `ble.macos_helper`, which names the cached `ZhiyunBleScan.app`, bundle
-id, app path, and settings hint needed for macOS Bluetooth authorization.
+USB port, without opening the light. On macOS, each port can include descriptor
+metadata from IOKit such as `vendor_id_hex`, `product_id_hex`, `product_name`,
+`vendor_name`, and `location_id_hex`; for the attached G60 this identifies
+`Zhiyun Virtual ComPort` at `VID 0xfff8`, `PID 0x0180`. Add `include_ble=true`
+to run a bounded BLE scan with `ble_backend=worker`, `macos-app`, or `direct`;
+BLE scan errors are returned in the `ble.scan` object with the same `ok`,
+`error`, `returncode`, and `signal` fields as `zlight scan-ble`. The response
+also includes `ble.macos_helper`, which names the cached `ZhiyunBleScan.app`,
+bundle id, app path, and settings hint needed for macOS Bluetooth authorization.
 
 HTTP `/discover-usb` exposes the same bounded primitive matrix as
 `zlight discover-usb` for dashboard-driven bench work. The endpoint returns the

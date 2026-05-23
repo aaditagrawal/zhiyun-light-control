@@ -610,6 +610,14 @@ class ServerTests(unittest.TestCase):
                     ),
                 ),
                 patch(
+                    "zhiyun_light_control.devices.list_usb_port_metadata",
+                    return_value={
+                        "/dev/cu.usbmodem31301": {
+                            "product_name": "Zhiyun Virtual ComPort",
+                        }
+                    },
+                ),
+                patch(
                     "zhiyun_light_control.devices.scan_zhiyun_devices_macos_app",
                     return_value=scan,
                 ) as scan_macos,
@@ -628,6 +636,10 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(devices["configured_transport"], "ble")
             self.assertEqual(devices["usb"]["selected_port"], "/dev/cu.usbmodem31301")
             self.assertTrue(devices["usb"]["ports"][1]["selected"])
+            self.assertEqual(
+                devices["usb"]["ports"][1]["metadata"]["product_name"],
+                "Zhiyun Virtual ComPort",
+            )
             self.assertEqual(devices["ble"]["backend"], "macos-app")
             self.assertEqual(devices["ble"]["scan"]["devices"][0]["name"], "PL103_EDFE")
             scan_macos.assert_called_once_with(timeout=1.25, name_contains="PL103")

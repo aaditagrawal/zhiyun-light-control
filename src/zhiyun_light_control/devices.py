@@ -14,7 +14,7 @@ from .transports.ble import (
     scan_zhiyun_devices_macos_app,
     scan_zhiyun_devices_safe,
 )
-from .transports.usb import list_usb_ports
+from .transports.usb import list_usb_port_metadata, list_usb_ports
 
 BLE_BACKENDS = ("worker", "macos-app", "direct")
 
@@ -23,9 +23,13 @@ BLE_BACKENDS = ("worker", "macos-app", "direct")
 class UsbPortInfo:
     path: str
     selected: bool
+    metadata: dict[str, object] | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {"path": self.path, "selected": self.selected}
+        data: dict[str, object] = {"path": self.path, "selected": self.selected}
+        if self.metadata:
+            data["metadata"] = self.metadata
+        return data
 
 
 def discover_transport_devices(
@@ -39,6 +43,7 @@ def discover_transport_devices(
     ble_python: str | None = None,
 ) -> dict[str, object]:
     ports = list_usb_ports()
+    metadata = list_usb_port_metadata(ports)
     selected_port = _selected_usb_port(ports, configured_usb_port)
     response: dict[str, object] = {
         "api": "zhiyun-light-control",
@@ -47,7 +52,11 @@ def discover_transport_devices(
             "available": bool(ports),
             "selected_port": selected_port,
             "ports": [
-                UsbPortInfo(path=port, selected=port == selected_port).to_dict()
+                UsbPortInfo(
+                    path=port,
+                    selected=port == selected_port,
+                    metadata=metadata.get(port),
+                ).to_dict()
                 for port in ports
             ],
         },
