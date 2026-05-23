@@ -1,20 +1,58 @@
-"""Worker process used for crash-isolated BLE scans."""
+"""Worker process used for crash-isolated BLE operations."""
 
 from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import sys
 
-from .transports.ble import scan_zhiyun_devices
+from .transports.ble import (
+    DIRECT_ZY_NOTIFY_UUID,
+    DIRECT_ZY_SERVICE_UUID,
+    DIRECT_ZY_WRITE_UUID,
+    BleTransport,
+    scan_zhiyun_devices,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
+    args_list = sys.argv[1:] if argv is None else argv
+    if not args_list or args_list[0].startswith("-"):
+        return _legacy_scan_main(args_list)
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    scan = sub.add_parser("scan", help="Scan for likely Zhiyun BLE devices.")
+    scan.add_argument("--timeout", type=float, default=5.0)
+
+    exchange = sub.add_parser("exchange-raw", help="Exchange one raw frame.")
+    exchange.add_argument("--tx-hex", required=True)
+    exchange.add_argument("--address")
+    exchange.add_argument("--name-contains")
+    exchange.add_argument("--timeout", type=float, default=1.5)
+    exchange.add_argument("--service-uuid", default=DIRECT_ZY_SERVICE_UUID)
+    exchange.add_argument("--write-uuid", default=DIRECT_ZY_WRITE_UUID)
+    exchange.add_argument("--notify-uuid", default=DIRECT_ZY_NOTIFY_UUID)
+
+    args = parser.parse_args(args_list)
+    if args.command == "scan":
+        return _scan_main(args.timeout)
+    if args.command == "exchange-raw":
+        return _exchange_main(args)
+    raise AssertionError(args.command)
+
+
+def _legacy_scan_main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--timeout", type=float, default=5.0)
     args = parser.parse_args(argv)
+    return _scan_main(args.timeout)
+
+
+def _scan_main(timeout: float) -> int:
     try:
-        devices = asyncio.run(scan_zhiyun_devices(timeout=args.timeout))
+        devices = asyncio.run(scan_zhiyun_devices(timeout=timeout))
     except Exception as exc:
         print(json.dumps({"devices": [], "error": str(exc)}, sort_keys=True))
         return 1
@@ -25,6 +63,36 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     return 0
+
+
+def _exchange_main(args: argparse.Namespace) -> int:
+    try:
+        payload = bytes.fromhex(args.tx_hex)
+        result = asyncio.run(_exchange_raw(payload, args))
+    except Exception as exc:
+        print(json.dumps({"address": args.address, "error": str(exc)}, sort_keys=True))
+        return 1
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+async def _exchange_raw(
+    payload: bytes,
+    args: argparse.Namespace,
+) -> dict[str, object]:
+    async with BleTransport(
+        address=args.address,
+        name_contains=args.name_contains,
+        service_uuid=args.service_uuid,
+        write_uuid=args.write_uuid,
+        notify_uuid=args.notify_uuid,
+        timeout=args.timeout,
+    ) as transport:
+        rx = await transport.exchange(payload, timeout=args.timeout)
+        return {
+            "address": transport.address,
+            "rx_hex": rx.hex() if rx else None,
+        }
 
 
 if __name__ == "__main__":

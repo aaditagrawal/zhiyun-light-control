@@ -212,6 +212,8 @@ Older direct ZY service observed in prior notes:
 
 `zlight scan-ble` runs BLE discovery in a worker process by default. This is deliberate: on the local macOS setup, bleak/CoreBluetooth aborts the interpreter during scanning. Isolating the scan keeps API users and long-running bridge processes alive and returns a JSON diagnostic instead.
 
+One-shot BLE command primitives (`probe`, `register`, `read`, `set`, and `apply`) also use worker-isolated raw exchanges by default. The worker connects, writes one frame to the direct ZY characteristic, waits for notification data, and returns `{address, rx_hex}` to the parent process. The parent then parses that response through the same `CommandResult` path used by USB, so ACKs, timeouts, and echo detection keep the same semantics. Use `--unsafe-in-process` only when you want the direct bleak transport in the parent process.
+
 `zlight validate --transport ble` is intentionally guarded by
 `--unsafe-in-process` because direct bleak validation runs in the main process.
 Use crash-isolated `scan-ble` first, then direct BLE validation only on a

@@ -12,7 +12,10 @@ from zhiyun_light_control.protocol import (
 )
 from zhiyun_light_control.transports.ble import (
     DIRECT_ZY_WRITE_UUID,
+    BleExchangeResult,
     BleTransport,
+    CrashIsolatedBleTransport,
+    exchange_zhiyun_ble_safe,
     scan_zhiyun_devices,
     scan_zhiyun_devices_safe,
 )
@@ -103,6 +106,51 @@ class SafeBleScanTests(unittest.TestCase):
         )
 
 
+class SafeBleExchangeTests(unittest.TestCase):
+    def test_safe_exchange_parses_worker_response(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
+        proc = types.SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps({"address": "AA:BB", "rx_hex": rx.hex()}),
+            stderr="",
+        )
+
+        with patch(
+            "zhiyun_light_control.transports.ble.subprocess.run", return_value=proc
+        ):
+            result = exchange_zhiyun_ble_safe(
+                tx,
+                address="AA:BB",
+                timeout=1.0,
+                python="python-test",
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.address, "AA:BB")
+        self.assertEqual(result.rx, rx)
+        self.assertEqual(result.worker_python, "python-test")
+        self.assertEqual(result.to_dict()["rx_hex"], rx.hex())
+
+    def test_safe_exchange_reports_worker_abort(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        proc = types.SimpleNamespace(
+            returncode=-6,
+            stdout="",
+            stderr="",
+        )
+
+        with patch(
+            "zhiyun_light_control.transports.ble.subprocess.run", return_value=proc
+        ):
+            result = exchange_zhiyun_ble_safe(tx, timeout=1.0)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.returncode, -6)
+        self.assertEqual(result.signal_name, "SIGABRT")
+        self.assertEqual(result.error, "worker terminated by signal 6 (SIGABRT)")
+
+
 class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
     async def test_scan_filters_likely_zhiyun_devices(self) -> None:
         class FakeScanner:
@@ -183,6 +231,26 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(FakeClient.writes[0][0], DIRECT_ZY_WRITE_UUID)
         self.assertFalse(FakeClient.writes[0][2])
         self.assertEqual(first_frame(rx).cmd, RuntimeCommand.DEVICE_INFO)
+
+    async def test_crash_isolated_transport_uses_safe_exchange(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
+
+        with patch(
+            "zhiyun_light_control.transports.ble.exchange_zhiyun_ble_safe",
+            return_value=BleExchangeResult(ok=True, tx=tx, rx=rx, address="AA"),
+        ) as exchange:
+            async with CrashIsolatedBleTransport(
+                address="AA",
+                timeout=1.0,
+                python="python-test",
+            ) as transport:
+                result = await transport.exchange(tx, timeout=1.0)
+
+        self.assertEqual(result, rx)
+        self.assertEqual(transport.address, "AA")
+        exchange.assert_called_once()
+        self.assertEqual(exchange.call_args.kwargs["python"], "python-test")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ from .protocol import (
     sleep_payload,
 )
 from .transitions import EasingName, scene_transition, transition_interval
-from .transports.ble import BleTransport
+from .transports.ble import BleTransport, CrashIsolatedBleTransport
 
 
 @dataclass(frozen=True)
@@ -67,6 +67,24 @@ class AsyncZhiyunLight:
     ) -> AsyncZhiyunLight:
         return cls(
             BleTransport(address=address, name_contains=name_contains, timeout=timeout)
+        )
+
+    @classmethod
+    def isolated_ble(
+        cls,
+        *,
+        address: str | None = None,
+        name_contains: str | None = None,
+        timeout: float = 1.5,
+        python: str | None = None,
+    ) -> AsyncZhiyunLight:
+        return cls(
+            CrashIsolatedBleTransport(
+                address=address,
+                name_contains=name_contains,
+                timeout=timeout,
+                python=python,
+            )
         )
 
     async def close(self) -> None:

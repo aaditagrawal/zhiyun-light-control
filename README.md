@@ -128,9 +128,14 @@ Scan BLE devices:
 uv run --extra ble zlight scan-ble --timeout 8
 ```
 
-BLE validation uses the direct bleak transport. Because the local macOS
-CoreBluetooth stack can abort the interpreter, the CLI requires an explicit
-opt-in for direct BLE validation:
+BLE `probe`, `register`, `read`, `set`, and `apply` run through a worker
+process by default. That keeps the parent CLI/API process alive if
+CoreBluetooth aborts below Python. Pass `--unsafe-in-process` only when you
+want direct bleak execution on a stable Bluetooth runtime.
+
+Full BLE validation still uses the direct bleak transport. Because the local
+macOS CoreBluetooth stack can abort the interpreter, the CLI requires an
+explicit opt-in for direct BLE validation:
 
 ```sh
 uv run --extra ble zlight validate --transport ble --address AA:BB:CC:DD:EE:FF --unsafe-in-process
@@ -325,14 +330,15 @@ with ZhiyunLight.usb() as light:
 print(report.to_dict()["unconfirmed"])
 ```
 
-BLE is async:
+BLE is async. Use `isolated_ble()` for the same worker-protected behavior as
+the CLI, or `ble()` when you explicitly want direct bleak execution:
 
 ```python
 import asyncio
 from zhiyun_light_control import AsyncZhiyunLight, Scene
 
 async def main():
-    async with AsyncZhiyunLight.ble(name_contains="MOLUS") as light:
+    async with AsyncZhiyunLight.isolated_ble(name_contains="MOLUS") as light:
         print(await light.probe())
         await light.transition_scene(
             Scene(obj=1, brightness=10),
@@ -368,6 +374,8 @@ deliberate: on this Mac, fresh Python `3.13` and `3.12` virtualenvs with
 `bleak 3.0.2` and PyObjC `12.1` both terminate CoreBluetooth scanning with
 `SIGABRT` before Python can raise an exception. The worker wrapper keeps the main
 process alive and reports `worker_python`, `returncode`, and `signal` fields.
+One-shot BLE probe/control commands use the same worker isolation by default;
+`--unsafe-in-process` is available for direct bleak runs on stable runtimes.
 
 USB control, bridge code paths, and BLE module imports are verified. BLE control
 still needs validation on a Python/macOS/Bluetooth stack where bleak scanning is

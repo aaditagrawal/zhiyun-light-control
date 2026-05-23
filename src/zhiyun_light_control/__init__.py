@@ -27,6 +27,7 @@ from .protocol import (
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 from .state import SceneState, SceneStateTracker
 from .transitions import SceneTransition, interpolate_scene, scene_transition
+from .transports.ble import BleExchangeResult, BleWorkerError, CrashIsolatedBleTransport
 from .validation import (
     HardwareValidationReport,
     PrimitiveCheck,
@@ -38,7 +39,10 @@ __all__ = [
     "AsyncZhiyunLight",
     "AsyncProbeResult",
     "ArtDmxPacket",
+    "BleExchangeResult",
+    "BleWorkerError",
     "CommandResult",
+    "CrashIsolatedBleTransport",
     "DmxMapping",
     "DiscoveryAttempt",
     "LightConnectionConfig",

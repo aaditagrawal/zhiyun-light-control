@@ -73,6 +73,19 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.acknowledged)
         self.assertEqual(first_frame(transport.sent[0]).first_word, 0x0301)
 
+    async def test_isolated_ble_uses_crash_isolated_transport(self) -> None:
+        light = AsyncZhiyunLight.isolated_ble(
+            address="AA",
+            name_contains="MOLUS",
+            timeout=1.0,
+            python="python-test",
+        )
+
+        self.assertEqual(light.transport.address, "AA")
+        self.assertEqual(light.transport.name_contains, "MOLUS")
+        self.assertEqual(light.transport.timeout, 1.0)
+        self.assertEqual(light.transport.python, "python-test")
+
     async def test_async_apply_scene_orders_media_workflow_commands(self) -> None:
         transport = AsyncEchoAckTransport()
         light = AsyncZhiyunLight(transport)

@@ -31,7 +31,11 @@ from .protocol import (
 )
 from .sacn import serve_sacn
 from .server import serve
-from .transports.ble import scan_zhiyun_devices, scan_zhiyun_devices_safe
+from .transports.ble import (
+    BleWorkerError,
+    scan_zhiyun_devices,
+    scan_zhiyun_devices_safe,
+)
 from .validation import validate_async_light, validate_sync_light
 
 
@@ -50,6 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     probe = sub.add_parser("probe", help="Probe a USB or BLE light.")
     add_transport_args(probe)
+    add_ble_execution_args(probe)
     probe.add_argument("--json", action="store_true", help="Print compact JSON.")
     probe.set_defaults(func=cmd_probe)
 
@@ -127,12 +132,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     register = sub.add_parser("register", help="Register to the default group.")
     add_transport_args(register)
+    add_ble_execution_args(register)
     register.add_argument("--device-id", type=parse_int, default=0)
     register.add_argument("--yes", action="store_true")
     register.set_defaults(func=cmd_register)
 
     read = sub.add_parser("read", help="Read an object-scoped command.")
     add_transport_args(read)
+    add_ble_execution_args(read)
     read.add_argument(
         "kind",
         choices=[
@@ -149,6 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     set_cmd = sub.add_parser("set", help="Send an experimental control command.")
     add_transport_args(set_cmd)
+    add_ble_execution_args(set_cmd)
     set_cmd.add_argument("kind", choices=["brightness", "cct", "sleep", "rgb"])
     set_cmd.add_argument("--obj", type=parse_int, default=1)
     set_cmd.add_argument("--value", type=float)
@@ -161,6 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     apply = sub.add_parser("apply", help="Apply a small lighting scene.")
     add_transport_args(apply)
+    add_ble_execution_args(apply)
     apply.add_argument("--obj", type=parse_int)
     apply.add_argument("--brightness", type=float)
     apply.add_argument("--kelvin", type=int)
@@ -245,6 +254,18 @@ def add_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--timeout", type=float, default=1.5)
 
 
+def add_ble_execution_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--python",
+        help="Python executable for the crash-isolated BLE worker.",
+    )
+    parser.add_argument(
+        "--unsafe-in-process",
+        action="store_true",
+        help="Run BLE commands in this process instead of the crash-isolated worker.",
+    )
+
+
 def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--transport", choices=["usb", "ble"], default="usb")
     parser.add_argument(
@@ -285,7 +306,10 @@ def parse_int_list(text: str) -> tuple[int, ...]:
 
 def cmd_probe(args: argparse.Namespace) -> int:
     if args.transport == "ble":
-        result = asyncio.run(_probe_ble(args)).to_dict()
+        try:
+            result = asyncio.run(_probe_ble(args)).to_dict()
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc, compact=args.json)
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             result = light.probe().to_dict()
@@ -380,11 +404,7 @@ async def _validate_ble(args: argparse.Namespace):
 
 
 async def _probe_ble(args: argparse.Namespace):
-    async with AsyncZhiyunLight.ble(
-        address=args.address,
-        name_contains=args.name_contains,
-        timeout=args.timeout,
-    ) as light:
+    async with async_ble_light_from_args(args) as light:
         return await light.probe()
 
 
@@ -401,7 +421,10 @@ def cmd_scan_ble(args: argparse.Namespace) -> int:
 def cmd_register(args: argparse.Namespace) -> int:
     require_yes(args, "register changes the light/group runtime state")
     if args.transport == "ble":
-        result = asyncio.run(_register_ble(args))
+        try:
+            result = asyncio.run(_register_ble(args))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc)
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             result = light.exchange_runtime(
@@ -413,11 +436,7 @@ def cmd_register(args: argparse.Namespace) -> int:
 
 
 async def _register_ble(args: argparse.Namespace):
-    async with AsyncZhiyunLight.ble(
-        address=args.address,
-        name_contains=args.name_contains,
-        timeout=args.timeout,
-    ) as light:
+    async with async_ble_light_from_args(args) as light:
         return await light.exchange_runtime(
             RuntimeCommand.REGISTER_DEFAULT_GROUP,
             register_payload(args.device_id),
@@ -426,7 +445,10 @@ async def _register_ble(args: argparse.Namespace):
 
 def cmd_read(args: argparse.Namespace) -> int:
     if args.transport == "ble":
-        result = asyncio.run(_read_ble(args))
+        try:
+            result = asyncio.run(_read_ble(args))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc)
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             result = _read_usb(light, args)
@@ -441,11 +463,7 @@ def _read_usb(light: ZhiyunLight, args: argparse.Namespace) -> CommandResult:
 
 async def _read_ble(args: argparse.Namespace) -> CommandResult:
     cmd, payload = object_read_request(args.kind, args.obj)
-    async with AsyncZhiyunLight.ble(
-        address=args.address,
-        name_contains=args.name_contains,
-        timeout=args.timeout,
-    ) as light:
+    async with async_ble_light_from_args(args) as light:
         return await light.exchange_runtime(cmd, payload)
 
 
@@ -468,7 +486,10 @@ def object_read_request(kind: str, obj: int) -> tuple[RuntimeCommand, bytes]:
 def cmd_set(args: argparse.Namespace) -> int:
     require_yes(args, "set sends a control command to the light")
     if args.transport == "ble":
-        result = asyncio.run(_set_ble(args))
+        try:
+            result = asyncio.run(_set_ble(args))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc)
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             result = _set_usb(light, args)
@@ -512,11 +533,7 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
 
 
 async def _set_ble(args: argparse.Namespace):
-    async with AsyncZhiyunLight.ble(
-        address=args.address,
-        name_contains=args.name_contains,
-        timeout=args.timeout,
-    ) as light:
+    async with async_ble_light_from_args(args) as light:
         if args.kind == "brightness":
             value = require_value(args.value, "--value is required for brightness")
             return await light.exchange_runtime(
@@ -558,7 +575,10 @@ def cmd_apply(args: argparse.Namespace) -> int:
         return 0
     require_yes(args, "apply sends one or more control commands to the light")
     if args.transport == "ble":
-        results = asyncio.run(_apply_ble(args, scene))
+        try:
+            results = asyncio.run(_apply_ble(args, scene))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc)
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             results = light.apply_scene(scene)
@@ -577,12 +597,23 @@ def command_results_exit_code(results: list[CommandResult]) -> int:
 
 
 async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResult]:
-    async with AsyncZhiyunLight.ble(
+    async with async_ble_light_from_args(args) as light:
+        return await light.apply_scene(scene)
+
+
+def async_ble_light_from_args(args: argparse.Namespace) -> AsyncZhiyunLight:
+    if getattr(args, "unsafe_in_process", False):
+        return AsyncZhiyunLight.ble(
+            address=args.address,
+            name_contains=args.name_contains,
+            timeout=args.timeout,
+        )
+    return AsyncZhiyunLight.isolated_ble(
         address=args.address,
         name_contains=args.name_contains,
         timeout=args.timeout,
-    ) as light:
-        return await light.apply_scene(scene)
+        python=getattr(args, "python", None),
+    )
 
 
 def scene_from_args(args: argparse.Namespace) -> Scene:
@@ -706,6 +737,18 @@ def require_value(value: float | None, message: str) -> float:
 def print_json(payload, *, compact: bool = False) -> None:
     kwargs = {"sort_keys": True} if compact else {"indent": 2, "sort_keys": True}
     print(json.dumps(payload, **kwargs))
+
+
+def print_ble_runtime_error(exc: RuntimeError, *, compact: bool = False) -> int:
+    payload: dict[str, object] = {
+        "ok": False,
+        "transport": "ble",
+        "error": str(exc),
+    }
+    if isinstance(exc, BleWorkerError):
+        payload["exchange"] = exc.result.to_dict()
+    print_json(payload, compact=compact)
+    return 2
 
 
 def build_object_read_frame(kind: str, obj: int, seq: int) -> bytes:
