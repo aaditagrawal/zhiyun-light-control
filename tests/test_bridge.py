@@ -3,7 +3,12 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from zhiyun_light_control import LightConnectionConfig, Scene, make_light_factory
+from zhiyun_light_control import (
+    LightConnectionConfig,
+    PersistentLightFactory,
+    Scene,
+    make_light_factory,
+)
 from zhiyun_light_control.client import ZhiyunLight
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.protocol import build_runtime_frame, first_frame
@@ -47,6 +52,20 @@ class FakeAsyncLight:
     async def apply_scene(self, scene: Scene):
         self.scenes.append(scene)
         return []
+
+
+class FakeSyncContext:
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.enter_count = 0
+        self.exit_count = 0
+
+    def __enter__(self) -> "FakeSyncContext":
+        self.enter_count += 1
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        self.exit_count += 1
 
 
 class BridgeFactoryTests(unittest.TestCase):
@@ -98,6 +117,58 @@ class BridgeFactoryTests(unittest.TestCase):
         self.assertEqual(fake.commands, [(0x1001, b"\x01", 0.25)])
         self.assertEqual(fake.scenes, [scene])
         self.assertEqual(scene_results, [])
+
+    def test_persistent_factory_reuses_open_light_until_closed(self) -> None:
+        contexts: list[FakeSyncContext] = []
+
+        def factory() -> FakeSyncContext:
+            context = FakeSyncContext(f"light-{len(contexts)}")
+            contexts.append(context)
+            return context
+
+        persistent = PersistentLightFactory(factory)
+        with persistent() as first:
+            self.assertEqual(first.name, "light-0")
+        with persistent() as second:
+            self.assertIs(second, first)
+
+        self.assertEqual(len(contexts), 1)
+        self.assertEqual(contexts[0].enter_count, 1)
+        self.assertEqual(contexts[0].exit_count, 0)
+
+        persistent.close()
+
+        self.assertEqual(contexts[0].exit_count, 1)
+
+    def test_persistent_factory_resets_connection_after_exception(self) -> None:
+        contexts: list[FakeSyncContext] = []
+
+        def factory() -> FakeSyncContext:
+            context = FakeSyncContext(f"light-{len(contexts)}")
+            contexts.append(context)
+            return context
+
+        persistent = PersistentLightFactory(factory)
+        with self.assertRaisesRegex(RuntimeError, "boom"):
+            with persistent():
+                raise RuntimeError("boom")
+        with persistent() as light:
+            self.assertEqual(light.name, "light-1")
+
+        self.assertEqual(len(contexts), 2)
+        self.assertEqual(contexts[0].exit_count, 1)
+        persistent.close()
+
+    def test_config_can_request_persistent_factory(self) -> None:
+        factory = make_light_factory(
+            LightConnectionConfig(
+                transport="usb",
+                port="/dev/cu.test",
+                persistent=True,
+            )
+        )
+
+        self.assertIsInstance(factory, PersistentLightFactory)
 
 
 if __name__ == "__main__":

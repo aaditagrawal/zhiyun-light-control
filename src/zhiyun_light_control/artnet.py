@@ -7,6 +7,7 @@ import struct
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
 
@@ -177,16 +178,19 @@ def serve_artnet(
         mapping=mapping,
         allow_control=allow_control,
     )
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind((host, port))
-        while True:
-            data, _addr = sock.recvfrom(1024)
-            try:
-                dispatcher.dispatch(decode_artdmx(data))
-            except ArtNetError:
-                pass
-            if once:
-                return
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind((host, port))
+            while True:
+                data, _addr = sock.recvfrom(1024)
+                try:
+                    dispatcher.dispatch(decode_artdmx(data))
+                except ArtNetError:
+                    pass
+                if once:
+                    return
+    finally:
+        close_light_factory(dispatcher.light_factory)
 
 
 def _channel(data: bytes, channel: int) -> int:

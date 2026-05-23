@@ -11,6 +11,7 @@ import struct
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
 from .protocol import (
@@ -216,27 +217,30 @@ def serve_osc(
         light_factory=light_factory or (lambda: ZhiyunLight.usb(port=light_port)),
         allow_control=allow_control,
     )
-    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
-        sock.bind((host, port))
-        while True:
-            data, addr = sock.recvfrom(65535)
-            try:
-                result = dispatcher.dispatch(decode_message(data))
-            except OscDecodeError as exc:
-                result = OscDispatchResult(
-                    message=OscMessage("/decode-error"),
-                    action="error",
-                    error=str(exc),
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.bind((host, port))
+            while True:
+                data, addr = sock.recvfrom(65535)
+                try:
+                    result = dispatcher.dispatch(decode_message(data))
+                except OscDecodeError as exc:
+                    result = OscDispatchResult(
+                        message=OscMessage("/decode-error"),
+                        action="error",
+                        error=str(exc),
+                    )
+                response = encode_message(
+                    "/zhiyun/result",
+                    1 if result.error is None else 0,
+                    result.action,
+                    result.error or "",
                 )
-            response = encode_message(
-                "/zhiyun/result",
-                1 if result.error is None else 0,
-                result.action,
-                result.error or "",
-            )
-            sock.sendto(response, addr)
-            if once:
-                return
+                sock.sendto(response, addr)
+                if once:
+                    return
+    finally:
+        close_light_factory(dispatcher.light_factory)
 
 
 def _pack_string(value: str) -> bytes:

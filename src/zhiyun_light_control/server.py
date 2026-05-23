@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 from typing import Any
 
+from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
 from .protocol import (
@@ -186,7 +187,10 @@ def serve(
         allow_control=allow_control,
         light_factory=light_factory,
     )
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    finally:
+        close_light_factory(httpd.light_factory)
 
 
 def _optional_int(body: dict[str, Any], key: str) -> int | None:

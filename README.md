@@ -95,6 +95,10 @@ zlight osc-serve --transport ble --name-contains MOLUS --allow-control
 zlight artnet-serve --transport ble --name-contains MOLUS --allow-control
 ```
 
+Bridge commands keep one light connection open by default for live control
+traffic. Use `--no-persistent-light` if you need a new USB/BLE connection per
+request while debugging.
+
 Example HTTP calls:
 
 ```sh
@@ -176,7 +180,7 @@ from zhiyun_light_control import DmxMapping, LightConnectionConfig, make_light_f
 scene = scene_from_dmx(bytes([128, 255]), DmxMapping(obj=1))
 print(scene)
 
-with make_light_factory(LightConnectionConfig(transport="usb"))() as light:
+with make_light_factory(LightConnectionConfig(transport="usb", persistent=True))() as light:
     light.apply_scene(scene)
 ```
 

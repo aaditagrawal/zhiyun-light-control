@@ -148,6 +148,11 @@ def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--address", help="BLE address/identifier.")
     parser.add_argument("--name-contains", help="BLE name substring used for discovery.")
     parser.add_argument("--light-timeout", type=float, default=1.5)
+    parser.add_argument(
+        "--no-persistent-light",
+        action="store_true",
+        help="Open and close the light for each bridge request instead of reusing one connection.",
+    )
 
 
 def parse_int(text: str) -> int:
@@ -433,6 +438,7 @@ def bridge_light_factory(args: argparse.Namespace):
             address=args.address,
             name_contains=args.name_contains,
             timeout=args.light_timeout,
+            persistent=not args.no_persistent_light,
         )
     )
 

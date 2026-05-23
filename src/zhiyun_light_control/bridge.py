@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -18,17 +19,84 @@ class LightConnectionConfig:
     address: str | None = None
     name_contains: str | None = None
     timeout: float = 1.5
+    persistent: bool = False
 
 
 LightFactory = Callable[[], Any]
 
 
 def make_light_factory(config: LightConnectionConfig) -> LightFactory:
+    factory = make_one_shot_light_factory(config)
+    if config.persistent:
+        return PersistentLightFactory(factory)
+    return factory
+
+
+def make_one_shot_light_factory(config: LightConnectionConfig) -> LightFactory:
     if config.transport == "usb":
         return lambda: ZhiyunLight.usb(port=config.port, timeout=config.timeout)
     if config.transport == "ble":
         return lambda: SyncBleLight(config)
     raise ValueError(f"unsupported light transport: {config.transport}")
+
+
+class PersistentLightFactory:
+    """Keep a light connection open between bridge dispatches."""
+
+    def __init__(self, factory: LightFactory):
+        self.factory = factory
+        self._lock = threading.RLock()
+        self._context: Any | None = None
+        self._light: Any | None = None
+
+    def __call__(self) -> "_PersistentLightBorrow":
+        return _PersistentLightBorrow(self)
+
+    def close(self) -> None:
+        with self._lock:
+            self._close_locked(None, None, None)
+
+    def _borrow(self):
+        self._lock.acquire()
+        try:
+            if self._light is None:
+                self._context = self.factory()
+                self._light = self._context.__enter__()
+            return self._light
+        except Exception:
+            self._lock.release()
+            raise
+
+    def _release(self, exc_type, exc, tb) -> None:
+        try:
+            if exc_type is not None:
+                self._close_locked(exc_type, exc, tb)
+        finally:
+            self._lock.release()
+
+    def _close_locked(self, exc_type, exc, tb) -> None:
+        context = self._context
+        self._context = None
+        self._light = None
+        if context is not None:
+            context.__exit__(exc_type, exc, tb)
+
+
+class _PersistentLightBorrow:
+    def __init__(self, owner: PersistentLightFactory):
+        self.owner = owner
+
+    def __enter__(self):
+        return self.owner._borrow()
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.owner._release(exc_type, exc, tb)
+
+
+def close_light_factory(factory: LightFactory) -> None:
+    close = getattr(factory, "close", None)
+    if close is not None:
+        close()
 
 
 class SyncBleLight:
