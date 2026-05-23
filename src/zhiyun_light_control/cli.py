@@ -48,7 +48,7 @@ from .protocol import (
     sleep_payload,
 )
 from .sacn import serve_sacn
-from .server import serve
+from .server import readiness_response, serve
 from .status import read_async_status, read_sync_status
 from .transports.ble import (
     BLE_PROFILE_NAMES,
@@ -90,6 +90,20 @@ def build_parser() -> argparse.ArgumentParser:
     add_ble_execution_args(status)
     status.add_argument("--json", action="store_true", help="Print compact JSON.")
     status.set_defaults(func=cmd_status)
+
+    ready = sub.add_parser(
+        "ready",
+        help="Run a local read-only setup preflight for controllers.",
+    )
+    add_transport_args(ready)
+    add_ble_execution_args(ready)
+    ready.add_argument(
+        "--allow-control",
+        action="store_true",
+        help="Report control-request readiness as enabled for this preflight.",
+    )
+    ready.add_argument("--json", action="store_true", help="Print compact JSON.")
+    ready.set_defaults(func=cmd_ready)
 
     validate = sub.add_parser(
         "validate",
@@ -730,6 +744,63 @@ def cmd_status(args: argparse.Namespace) -> int:
             )
     print_json(report.to_dict(), compact=args.json)
     return 0 if report.connection_confirmed else 1
+
+
+def cmd_ready(args: argparse.Namespace) -> int:
+    status, connection_confirmed, error = local_status_snapshot(args)
+    ble_backend = "direct" if args.unsafe_in_process else args.ble_backend
+    devices = discover_transport_devices(
+        configured_transport=args.transport,
+        configured_usb_port=args.port,
+        include_ble=False,
+        include_ble_status=args.transport == "ble" and ble_backend == "macos-app",
+        ble_backend=ble_backend,
+        ble_timeout=args.timeout,
+        ble_name_contains=args.name_contains,
+        ble_python=args.python,
+    )
+    payload = readiness_response(
+        allow_control=args.allow_control,
+        transport=args.transport,
+        ble_backend=ble_backend,
+        ble_profile=args.ble_profile,
+        ble_address=args.address,
+        ble_name_contains=args.name_contains,
+        connection_confirmed=connection_confirmed,
+        status=status,
+        error=error,
+        devices=devices,
+        state_version=0,
+        state=None,
+    )
+    print_json(payload, compact=args.json)
+    return 0 if connection_confirmed else 2
+
+
+def local_status_snapshot(
+    args: argparse.Namespace,
+) -> tuple[dict[str, object], bool, str | None]:
+    try:
+        if args.transport == "ble":
+            report = asyncio.run(_status_ble(args))
+        else:
+            with sync_usb_light_from_args(args) as light:
+                report = read_sync_status(
+                    light,
+                    transport=args.transport,
+                    timeout=args.timeout,
+                )
+    except Exception as exc:
+        return local_error_status(exc), False, str(exc)
+    return report.to_dict(), report.connection_confirmed, None
+
+
+def local_error_status(exc: Exception) -> dict[str, object]:
+    status: dict[str, object] = {"ok": False, "error": str(exc)}
+    if isinstance(exc, BleWorkerError):
+        status["transport"] = "ble"
+        status["exchange"] = exc.result.to_dict()
+    return status
 
 
 async def _status_ble(args: argparse.Namespace):

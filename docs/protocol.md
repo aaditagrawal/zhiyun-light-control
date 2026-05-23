@@ -111,6 +111,11 @@ bench checks; it requires `--yes` and exits non-zero unless the light returns a
 matching ACK.
 `zlight status` exposes the same ACK-backed global reads as HTTP `/status` and
 is read-only on both USB and BLE transports.
+`zlight ready` is the local CLI equivalent of HTTP `/ready`: it performs the
+same read-only transport preflight, returns `ready_for`, `requirements`,
+`warnings`, and `actions`, and includes the macOS helper authorization state when
+run with `--transport ble --ble-backend macos-app`. It does not start the HTTP
+bridge, run a BLE scan, or send control writes.
 
 USB transports take an advisory file lock before opening the serial device and
 hold it until close. This serializes independent CLI or bridge processes that

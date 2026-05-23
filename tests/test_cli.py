@@ -316,6 +316,166 @@ class CliTests(unittest.TestCase):
         )
         self.assertTrue(payload["commands"]["device_info"]["acknowledged"])
 
+    def test_ready_cli_reports_usb_preflight(self) -> None:
+        class FakeLight:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=1.5):
+                del payload, timeout
+                payload_by_cmd = {
+                    RuntimeCommand.DEVICE_INFO: b"device-test\x00pl103\x00",
+                    RuntimeCommand.FIRMWARE: b"1.6.4\x00",
+                    RuntimeCommand.VOLTAGE: b"\x65",
+                    RuntimeCommand.DEVICE_ID: b"\x00\x00",
+                }
+                tx = build_runtime_frame(1, cmd)
+                rx = build_runtime_frame(1, cmd, payload_by_cmd[cmd])
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        devices = {
+            "api": "zhiyun-light-control",
+            "configured_transport": "usb",
+            "usb": {
+                "available": True,
+                "selected_port": "/dev/cu.usbmodem-test",
+                "ports": [
+                    {
+                        "path": "/dev/cu.usbmodem-test",
+                        "selected": True,
+                    }
+                ],
+            },
+            "ble": {"macos_status": None, "scan": None},
+        }
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            patch(
+                "zhiyun_light_control.cli.discover_transport_devices",
+                return_value=devices,
+            ) as discover,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "ready",
+                    "--transport",
+                    "usb",
+                    "--port",
+                    "/dev/cu.usbmodem-test",
+                    "--allow-control",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["ready_for"]["read_status"])
+        self.assertTrue(payload["ready_for"]["control_requests"])
+        self.assertFalse(payload["ready_for"]["confirmed_control"])
+        self.assertEqual(payload["status"]["firmware"], "1.6.4")
+        self.assertEqual(
+            payload["devices"]["usb"]["selected_port"],
+            "/dev/cu.usbmodem-test",
+        )
+        self.assertIn(
+            "confirm-control",
+            payload["requirements"]["confirmed_control"]["pending_actions"],
+        )
+        discover.assert_called_once_with(
+            configured_transport="usb",
+            configured_usb_port="/dev/cu.usbmodem-test",
+            include_ble=False,
+            include_ble_status=False,
+            ble_backend="worker",
+            ble_timeout=1.5,
+            ble_name_contains=None,
+            ble_python=None,
+        )
+
+    def test_ready_cli_reports_ble_authorization_error(self) -> None:
+        async def fake_status(_args):
+            raise RuntimeError("Bluetooth state unauthorized: 3")
+
+        devices = {
+            "api": "zhiyun-light-control",
+            "configured_transport": "ble",
+            "usb": {"available": False, "selected_port": None, "ports": []},
+            "ble": {
+                "backend": "macos-app",
+                "macos_status": {
+                    "ok": False,
+                    "authorization": "not_determined",
+                    "state": "unauthorized",
+                    "error": "Bluetooth state unauthorized: 3",
+                },
+                "scan": None,
+            },
+        }
+
+        stdout = io.StringIO()
+        with (
+            patch("zhiyun_light_control.cli._status_ble", new=fake_status),
+            patch(
+                "zhiyun_light_control.cli.discover_transport_devices",
+                return_value=devices,
+            ) as discover,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "ready",
+                    "--transport",
+                    "ble",
+                    "--ble-backend",
+                    "macos-app",
+                    "--name-contains",
+                    "PL103",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 2)
+        self.assertFalse(payload["ok"])
+        self.assertFalse(payload["ready_for"]["read_status"])
+        self.assertEqual(payload["bridge"]["ble_backend"], "macos-app")
+        self.assertEqual(payload["status"]["error"], "Bluetooth state unauthorized: 3")
+        self.assertEqual(
+            payload["devices"]["ble"]["macos_status"]["authorization"],
+            "not_determined",
+        )
+        self.assertEqual(
+            payload["requirements"]["read_status"]["pending_actions"],
+            ["authorize-bluetooth", "read-status"],
+        )
+        discover.assert_called_once_with(
+            configured_transport="ble",
+            configured_usb_port=None,
+            include_ble=False,
+            include_ble_status=True,
+            ble_backend="macos-app",
+            ble_timeout=1.5,
+            ble_name_contains="PL103",
+            ble_python=None,
+        )
+
     def test_set_returns_nonzero_when_command_is_unacknowledged(self) -> None:
         class FakeLight:
             def __init__(self) -> None:

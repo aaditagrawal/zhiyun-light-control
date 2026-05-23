@@ -171,9 +171,16 @@ uv run zlight probe --transport ble --name-contains MOLUS
 Read ACK-backed status with raw command evidence:
 
 ```sh
+uv run zlight ready --transport usb --json
+uv run zlight ready --transport ble --ble-backend macos-app --name-contains PL103 --json
 uv run zlight status --transport usb
 uv run --extra ble zlight status --transport ble --name-contains MOLUS
 ```
+
+`ready` is a read-only one-call preflight for shell scripts and setup tools. It
+returns the same `ready_for`, `requirements`, `warnings`, and `actions` model as
+HTTP `GET /ready` without starting the bridge. It does not run a BLE scan or send
+control writes; in macOS BLE helper mode it includes `devices.ble.macos_status`.
 
 Scan BLE devices:
 
