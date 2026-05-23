@@ -10,6 +10,7 @@ from .artnet import (
 from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .bridge import LightConnectionConfig, PersistentLightFactory, make_light_factory
 from .client import ProbeResult, ZhiyunLight
+from .cues import CueError, CueLibrary, cue_from_mapping
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_MODES,
@@ -64,6 +65,8 @@ __all__ = [
     "BleProfile",
     "BleWorkerError",
     "CommandResult",
+    "CueError",
+    "CueLibrary",
     "CrashIsolatedBleTransport",
     "DEFAULT_BLE_PROFILE",
     "DEFAULT_CONTROL_MODE",
@@ -96,6 +99,7 @@ __all__ = [
     "build_frame",
     "build_runtime_frame",
     "build_updater_frame",
+    "cue_from_mapping",
     "decode_artdmx",
     "decode_sacn",
     "encode_artdmx",

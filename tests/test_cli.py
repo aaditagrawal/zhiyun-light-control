@@ -50,6 +50,93 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["scene"]["brightness"], 42.0)
         self.assertEqual(payload["scene"]["kelvin"], 5600)
 
+    def test_cue_dry_run_resolves_named_cue_without_bridge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cues.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "cues": {
+                            "intro": {
+                                "steps": [{"scene": {"brightness": 10}}],
+                                "stop_on_unconfirmed": True,
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = main(
+                    [
+                        "cue",
+                        "--cue-file",
+                        str(path),
+                        "--cue",
+                        "intro",
+                        "--dry-run",
+                    ]
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["dry_run"])
+        self.assertEqual(payload["cue"], "intro")
+        self.assertEqual(payload["request"]["steps"][0]["scene"]["brightness"], 10)
+        self.assertEqual(payload["request"]["control_mode"], 0x33)
+
+    def test_cue_command_posts_named_cue_to_bridge_client(self) -> None:
+        class FakeBridgeClient:
+            instances: list[FakeBridgeClient] = []
+
+            def __init__(self, base_url: str, *, timeout: float = 3.0):
+                self.base_url = base_url
+                self.timeout = timeout
+                self.calls: list[tuple[dict[str, object], int | None]] = []
+                self.instances.append(self)
+
+            def run_cue(self, cue, *, control_mode=None):
+                self.calls.append((cue, control_mode))
+                return {"applied": True, "stopped": False, "steps": []}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cues.json"
+            path.write_text(
+                json.dumps({"cues": {"intro": {"steps": [{"scene": {}}]}}}),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with (
+                patch("zhiyun_light_control.cli.LightBridgeClient", FakeBridgeClient),
+                contextlib.redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "cue",
+                        "--cue-file",
+                        str(path),
+                        "--cue",
+                        "intro",
+                        "--base-url",
+                        "http://bridge.test",
+                        "--timeout",
+                        "5",
+                        "--control-mode",
+                        "0x01",
+                        "--yes",
+                    ]
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["applied"])
+        client = FakeBridgeClient.instances[0]
+        self.assertEqual(client.base_url, "http://bridge.test")
+        self.assertEqual(client.timeout, 5.0)
+        self.assertEqual(client.calls[0][0]["steps"], [{"scene": {}}])
+        self.assertEqual(client.calls[0][1], 0x01)
+
     def test_validate_strict_fails_when_control_is_unconfirmed(self) -> None:
         class FakeLight:
             def __init__(self) -> None:

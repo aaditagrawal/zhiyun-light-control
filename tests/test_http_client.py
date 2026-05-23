@@ -152,6 +152,18 @@ class HttpClientTests(unittest.TestCase):
                 ["scene", "preset"],
             )
 
+            cue = client.run_cue(
+                {
+                    "steps": [
+                        {"scene": {"brightness": 12}},
+                        {"preset": "key", "overrides": {"brightness": 35}},
+                    ],
+                    "stop_on_unconfirmed": True,
+                }
+            )
+            self.assertTrue(cue["applied"])
+            self.assertFalse(cue["stopped"])
+
             validation = client.validate(allow_control=True, values={"brightness": 32})
             self.assertTrue(validation["connection_confirmed"])
         finally:

@@ -221,6 +221,14 @@ class LightBridgeClient:
         }
         return self._post("/sequence", _with_control_mode(payload, control_mode))
 
+    def run_cue(
+        self,
+        cue: Mapping[str, object],
+        *,
+        control_mode: int | None = None,
+    ) -> dict[str, object]:
+        return self._post("/sequence", _with_control_mode(dict(cue), control_mode))
+
     def _get(self, path: str) -> dict[str, object]:
         return self._request("GET", path)
 

@@ -274,6 +274,14 @@ curl -X POST http://127.0.0.1:8765/sequence \
   -d '{"steps": [{"scene": {"brightness": 10}}, {"preset": "key", "overrides": {"brightness": 45}}, {"to": {"brightness": 60}, "steps": 4, "duration": 1.0}]}'
 ```
 
+Run a named cue from a JSON cue file against a running bridge:
+
+```sh
+uv run zlight cue --cue-file examples/cues.json --cue warm-key --base-url http://127.0.0.1:8765 --yes
+uv run zlight cue --cue-file examples/cues.json --cue warm-key --dry-run
+uv run zlight cue --cue-file examples/cues.json --list
+```
+
 For `/transition`, omit `from` to use the bridge's last requested state for the
 same object id.
 
@@ -302,6 +310,10 @@ accepts ordered `steps` containing scene steps, preset steps, or transition step
 with `to`, and returns per-step `applied`/`reason` evidence plus an aggregate
 sequence result. Add `stop_on_unconfirmed: true` when a cue should stop after
 the first unacknowledged write.
+
+`zlight cue` loads the same shape from a JSON file and posts it to a running
+HTTP bridge. Cue files can be top-level cue mappings or contain a `cues` object;
+see `examples/cues.json`.
 
 `GET /validate` returns the same hardware-evidence report as `zlight validate`
 without transmitting control writes. `POST /validate` accepts
@@ -392,6 +404,14 @@ cue = bridge.run_sequence(
     stop_on_unconfirmed=True,
 )
 print(cue["applied"], cue["reason"])
+
+named = bridge.run_cue(
+    {
+        "steps": [{"scene": {"brightness": 10}}],
+        "stop_on_unconfirmed": True,
+    }
+)
+print(named["stopped"])
 ```
 
 This wrapper preserves the bridge's JSON evidence fields, so callers should

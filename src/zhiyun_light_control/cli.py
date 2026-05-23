@@ -10,6 +10,7 @@ from .artnet import DmxMapping, serve_artnet
 from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
+from .cues import CueLibrary
 from .discovery import (
     DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_CONTROL_KINDS,
@@ -20,6 +21,7 @@ from .discovery import (
     DISCOVERY_CONTROL_KIND_NAMES,
     discover_usb_primitives,
 )
+from .http_client import LightBridgeClient, LightBridgeError
 from .models import CommandResult, Scene
 from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
@@ -284,6 +286,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     apply.add_argument("--yes", action="store_true")
     apply.set_defaults(func=cmd_apply)
+
+    cue = sub.add_parser("cue", help="Run a named cue against the HTTP bridge.")
+    cue.add_argument(
+        "--base-url",
+        default="http://127.0.0.1:8765",
+        help="Base URL for a running zlight serve process.",
+    )
+    cue.add_argument("--timeout", type=float, default=12.0)
+    cue.add_argument("--cue-file", required=True, help="JSON file containing cues.")
+    cue.add_argument("--cue", help="Named cue to run.")
+    cue.add_argument("--list", action="store_true", help="List cue names and exit.")
+    add_control_mode_arg(cue)
+    cue.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve the cue request without sending it to the bridge.",
+    )
+    cue.add_argument("--yes", action="store_true")
+    cue.set_defaults(func=cmd_cue)
 
     server = sub.add_parser("serve", help="Run a local JSON HTTP bridge.")
     server.add_argument("--host", default="127.0.0.1")
@@ -895,6 +916,38 @@ def cmd_apply(args: argparse.Namespace) -> int:
         {"scene": scene.to_dict(), "results": [result.to_dict() for result in results]}
     )
     return command_results_exit_code(results)
+
+
+def cmd_cue(args: argparse.Namespace) -> int:
+    library = CueLibrary.load(args.cue_file)
+    if args.list:
+        print_json({"cues": library.names()})
+        return 0
+    if not args.cue:
+        raise SystemExit("--cue is required unless --list is used")
+    cue = library.get(args.cue)
+    if args.dry_run:
+        request = dict(cue)
+        request["control_mode"] = args.control_mode
+        print_json({"dry_run": True, "cue": args.cue, "request": request})
+        return 0
+    require_yes(args, "cue sends one or more control commands through the bridge")
+    client = LightBridgeClient(args.base_url, timeout=args.timeout)
+    try:
+        result = client.run_cue(cue, control_mode=args.control_mode)
+    except LightBridgeError as exc:
+        print_json(
+            {
+                "ok": False,
+                "cue": args.cue,
+                "status": exc.status,
+                "payload": exc.payload,
+            }
+        )
+        return 1
+    output = {"cue": args.cue, **result}
+    print_json(output)
+    return 0 if output.get("applied") is True else 1
 
 
 def command_result_exit_code(result: CommandResult) -> int:

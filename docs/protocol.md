@@ -223,7 +223,8 @@ preset step (`{"preset": "key", "overrides": {...}}`), or a transition step
 (`{"to": {...}, "steps": 8, "duration": 2.0}`). The response includes
 per-step `applied` and `reason` fields plus an aggregate sequence result. Pass
 `stop_on_unconfirmed: true` to stop executing after the first unacknowledged
-step.
+step. `zlight cue --cue-file examples/cues.json --cue warm-key --yes` loads the
+same structure from a named JSON cue file and posts it to a running HTTP bridge.
 
 The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and maps DMX channels to a `Scene`:
 

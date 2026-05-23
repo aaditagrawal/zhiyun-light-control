@@ -1,0 +1,24 @@
+{
+  "cues": {
+    "warm-key": {
+      "stop_on_unconfirmed": true,
+      "steps": [
+        {"scene": {"brightness": 10, "kelvin": 3200}},
+        {"preset": "key", "overrides": {"brightness": 45}},
+        {"to": {"brightness": 60, "kelvin": 5600}, "steps": 4, "duration": 1.0}
+      ]
+    },
+    "brightness-smoke": {
+      "stop_on_unconfirmed": true,
+      "steps": [
+        {"scene": {"brightness": 35}}
+      ]
+    },
+    "blackout": {
+      "stop_on_unconfirmed": true,
+      "steps": [
+        {"scene": {"sleep": 1}}
+      ]
+    }
+  }
+}
