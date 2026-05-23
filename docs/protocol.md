@@ -66,6 +66,9 @@ should fail the run.
 The direct CLI commands `register`, `read`, `set`, and `apply` use the same ACK
 definition for their process exit status. They print the full `CommandResult`
 payload either way, but unacknowledged transmissions return exit code `1`.
+`zlight frame` exposes the lower-level `exchange_frame()` primitive for direct
+bench checks; it requires `--yes` and exits non-zero unless the light returns a
+matching ACK.
 
 USB transports take an advisory file lock before opening the serial device and
 hold it until close. This serializes independent CLI or bridge processes that
@@ -104,7 +107,12 @@ also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
 `POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
 it is deliberately behind the same control gate because arbitrary frames can be
-state-changing.
+state-changing. The matching CLI form is:
+
+```sh
+zlight frame --first-word 0x0100 --command 0x2001 --payload-hex "" --yes
+```
+
 On the attached G60, live HTTP bridge checks confirmed `/probe` and `/register`
 while `/sleep` and `/brightness` returned `sent_no_response`.
 The HTTP bridge sends CORS headers by default for browser-based local control

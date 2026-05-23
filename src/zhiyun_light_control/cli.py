@@ -155,6 +155,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan.set_defaults(func=cmd_scan_ble)
 
+    frame = sub.add_parser("frame", help="Exchange one raw frame.")
+    add_transport_args(frame)
+    add_ble_execution_args(frame)
+    frame.add_argument("--first-word", type=parse_int, required=True)
+    frame.add_argument("--command", dest="raw_command", type=parse_int, required=True)
+    frame.add_argument("--payload-hex", type=parse_hex_bytes, default=b"")
+    frame.add_argument("--yes", action="store_true")
+    frame.set_defaults(func=cmd_frame)
+
     register = sub.add_parser("register", help="Register to the default group.")
     add_transport_args(register)
     add_ble_execution_args(register)
@@ -391,6 +400,16 @@ def parse_int_list(text: str) -> tuple[int, ...]:
     return values
 
 
+def parse_hex_bytes(text: str) -> bytes:
+    normalized = text.strip()
+    if normalized.lower().startswith("0x"):
+        normalized = normalized[2:]
+    try:
+        return bytes.fromhex(normalized)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected hex bytes") from exc
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     if args.transport == "ble":
         try:
@@ -501,6 +520,35 @@ def cmd_scan_ble(args: argparse.Namespace) -> int:
     result = scan_zhiyun_devices_safe(timeout=args.timeout, python=args.python)
     print_json(result.to_dict())
     return 0 if result.ok else 2
+
+
+def cmd_frame(args: argparse.Namespace) -> int:
+    require_yes(args, "frame sends a raw frame to the light")
+    if args.transport == "ble":
+        try:
+            result = asyncio.run(_frame_ble(args))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc)
+    else:
+        with sync_usb_light_from_args(args) as light:
+            result = light.exchange_frame(
+                args.first_word,
+                args.raw_command,
+                args.payload_hex,
+                timeout=args.timeout,
+            )
+    print_json(result.to_dict())
+    return command_result_exit_code(result)
+
+
+async def _frame_ble(args: argparse.Namespace) -> CommandResult:
+    async with async_ble_light_from_args(args) as light:
+        return await light.exchange_frame(
+            args.first_word,
+            args.raw_command,
+            args.payload_hex,
+            timeout=args.timeout,
+        )
 
 
 def cmd_register(args: argparse.Namespace) -> int:

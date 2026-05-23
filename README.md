@@ -89,6 +89,8 @@ exit unless every attempted command was ACK-confirmed.
 Direct `register`, `read`, `set`, and `apply` commands also exit non-zero when
 the transmitted command does not receive an ACK, so shell scripts can distinguish
 working primitives from timeouts.
+The low-level `frame` command follows the same rule and exposes direct
+first-word/command/payload exchange for bench tooling.
 
 USB opens use an advisory process lock keyed by the serial device so parallel
 CLI or bridge processes do not interleave frames on the same light. The default
@@ -109,6 +111,12 @@ same ACK/timeout/echo evidence model used by validation.
 When `--allow-control` is set, control probes default to the same object ids as
 `--object-ids`; use `--control-object-ids` and `--control-first-words` to test a
 bounded control matrix without expanding read probes.
+
+Exchange one raw frame when you need to reproduce protocol evidence directly:
+
+```sh
+uv run zlight frame --transport usb --port /dev/cu.usbmodem21301 --first-word 0x0100 --command 0x2001 --payload-hex "" --timeout 0.35 --yes
+```
 
 Apply a simple scene:
 
@@ -162,6 +170,12 @@ Send direct controls:
 uv run zlight set brightness --obj 1 --value 35 --yes
 uv run zlight set cct --obj 1 --kelvin 5600 --yes
 uv run zlight set rgb --obj 1 --red 255 --green 180 --blue 120 --yes
+```
+
+Exchange a raw protocol frame:
+
+```sh
+uv run zlight frame --transport usb --first-word 0x0100 --command 0x2001 --payload-hex "" --yes
 ```
 
 Apply presets:

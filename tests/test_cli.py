@@ -232,6 +232,66 @@ class CliTests(unittest.TestCase):
             {attempt["name"] for attempt in payload["attempts"]},
         )
 
+    def test_frame_cli_exchanges_raw_usb_frame(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.call: tuple[int, int, bytes, float] | None = None
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_frame(self, first_word, cmd, payload=b"", *, timeout=0.5):
+                self.call = (first_word, cmd, payload, timeout)
+                tx = build_frame(first_word, 1, cmd, payload)
+                rx = build_frame(first_word, 1, cmd, b"\x65")
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        fake = FakeLight()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=fake,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "frame",
+                    "--first-word",
+                    "0x0100",
+                    "--command",
+                    "0x2001",
+                    "--payload-hex",
+                    "00 01",
+                    "--timeout",
+                    "0.35",
+                    "--yes",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.call, (0x0100, 0x2001, b"\x00\x01", 0.35))
+        self.assertTrue(payload["acknowledged"])
+        self.assertEqual(payload["transport_status"], "acknowledged")
+
+    def test_frame_cli_requires_yes(self) -> None:
+        with self.assertRaises(SystemExit) as raised:
+            main(["frame", "--first-word", "0x0100", "--command", "0x2001"])
+
+        self.assertIn("frame sends a raw frame", str(raised.exception))
+
     def test_ble_probe_uses_crash_isolated_client_by_default(self) -> None:
         class FakeProbe:
             def to_dict(self):
