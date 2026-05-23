@@ -82,6 +82,36 @@ class DiscoveryTests(unittest.TestCase):
         self.assertTrue(attempts["register_default_group_dev0_group0"]["confirmed"])
         self.assertIn("set_brightness_with_mode_obj1_mode1", attempts)
         self.assertEqual(payload["summary"]["confirmed"], 3)
+        self.assertEqual(payload["control_object_ids"], [1])
+        self.assertEqual(payload["control_first_words"], [0x0100])
+
+    def test_usb_discovery_can_probe_control_object_ids_and_first_words(self) -> None:
+        light = FakeDiscoveryLight()
+
+        report = discover_usb_primitives(
+            light,
+            object_ids=(1,),
+            first_words=(),
+            control_object_ids=(0, 1),
+            control_first_words=(0x0100, 0x0301),
+            allow_control=True,
+        )
+        payload = report.to_dict()
+        attempts = {attempt["name"]: attempt for attempt in payload["attempts"]}
+
+        self.assertEqual(payload["control_object_ids"], [0, 1])
+        self.assertEqual(payload["control_first_words"], [0x0100, 0x0301])
+        self.assertIn("set_brightness_obj0", attempts)
+        self.assertIn("set_brightness_obj0_fw0x0301", attempts)
+        self.assertEqual(
+            attempts["set_brightness_obj0_fw0x0301"]["category"],
+            "control_first_word_probe",
+        )
+        self.assertEqual(
+            attempts["set_brightness_obj0_fw0x0301"]["status"],
+            "echoed_write",
+        )
+        self.assertIn(0x0301, light.frame_first_words)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,9 @@ from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .bridge import LightConnectionConfig, PersistentLightFactory, make_light_factory
 from .client import ProbeResult, ZhiyunLight
 from .discovery import (
+    DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    DEFAULT_DISCOVERY_FIRST_WORDS,
+    DEFAULT_DISCOVERY_OBJECT_IDS,
     DiscoveryAttempt,
     UsbDiscoveryReport,
     discover_usb_primitives,
@@ -43,6 +46,9 @@ __all__ = [
     "BleWorkerError",
     "CommandResult",
     "CrashIsolatedBleTransport",
+    "DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS",
+    "DEFAULT_DISCOVERY_FIRST_WORDS",
+    "DEFAULT_DISCOVERY_OBJECT_IDS",
     "DmxMapping",
     "DiscoveryAttempt",
     "LightConnectionConfig",

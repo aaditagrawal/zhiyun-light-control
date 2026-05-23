@@ -100,11 +100,15 @@ Run the broader USB discovery matrix while working on unknown primitive shapes:
 ```sh
 uv run zlight discover-usb --object-ids 0,1,2,100,0x8001,0x8064,0xffff
 uv run zlight discover-usb --allow-control --timeout 0.5
+uv run zlight discover-usb --allow-control --control-object-ids 0,1 --control-first-words 0x0100,0x0301
 ```
 
 `discover-usb` is for bench work. It records global reads, object-read
 candidates, first-word probes, and optional safe control candidates with the
 same ACK/timeout/echo evidence model used by validation.
+When `--allow-control` is set, control probes default to the same object ids as
+`--object-ids`; use `--control-object-ids` and `--control-first-words` to test a
+bounded control matrix without expanding read probes.
 
 Apply a simple scene:
 
@@ -420,7 +424,12 @@ updater firmware: 1.64
 The latest local hardware pass, run against `/dev/cu.usbmodem21301`, confirmed
 probe, global firmware/voltage/device-id reads, register-default-group, and
 updater chip sync. It did not confirm USB brightness, CCT, sleep, RGB, HSI, or
-object reads; those returned `sent_no_response`.
+object reads; normal runtime writes returned `sent_no_response`. A bounded
+`discover-usb --control-first-words 0x0301` run produced exact echoed write
+frames for sleep, brightness, CCT, and brightness-plus-mode probes, but those
+are not ACKs and are not treated as applied control. Live HTTP bridge checks
+confirmed `/probe` and `/register`; `/sleep` and `/brightness` transmitted and
+returned `sent_no_response`.
 
 Zhiyun did not expose detailed release notes through the protocol data gathered
 here, so behavior claims in this project are based on observed commands rather

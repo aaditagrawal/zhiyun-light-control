@@ -11,6 +11,7 @@ from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .discovery import (
+    DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     DEFAULT_DISCOVERY_FIRST_WORDS,
     DEFAULT_DISCOVERY_OBJECT_IDS,
     discover_usb_primitives,
@@ -116,6 +117,20 @@ def build_parser() -> argparse.ArgumentParser:
         type=parse_int_list,
         default=DEFAULT_DISCOVERY_FIRST_WORDS,
         help="Comma-separated frame first-word values to probe.",
+    )
+    discover.add_argument(
+        "--control-object-ids",
+        type=parse_int_list,
+        help=(
+            "Comma-separated object ids for control probes. Defaults to "
+            "--object-ids when --allow-control is set."
+        ),
+    )
+    discover.add_argument(
+        "--control-first-words",
+        type=parse_int_list,
+        default=DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+        help="Comma-separated first-word values for gated control probes.",
     )
     discover.add_argument("--allow-control", action="store_true")
     discover.add_argument("--brightness", type=float, default=35.0)
@@ -413,6 +428,8 @@ def cmd_discover_usb(args: argparse.Namespace) -> int:
             light,
             object_ids=args.object_ids,
             first_words=args.first_words,
+            control_object_ids=args.control_object_ids,
+            control_first_words=args.control_first_words,
             timeout=args.timeout,
             allow_control=args.allow_control,
             brightness=args.brightness,

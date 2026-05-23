@@ -21,6 +21,7 @@ from .protocol import (
 
 DEFAULT_DISCOVERY_OBJECT_IDS = (0, 1)
 DEFAULT_DISCOVERY_FIRST_WORDS = (RUNTIME_TYPE, 0x0101, 0x0103, 0x0301)
+DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS = (RUNTIME_TYPE,)
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,8 @@ class UsbDiscoveryReport:
 
     object_ids: tuple[int, ...]
     first_words: tuple[int, ...]
+    control_object_ids: tuple[int, ...]
+    control_first_words: tuple[int, ...]
     control_enabled: bool
     attempts: tuple[DiscoveryAttempt, ...]
     notes: tuple[str, ...] = ()
@@ -90,6 +93,8 @@ class UsbDiscoveryReport:
             "transport": "usb",
             "object_ids": list(self.object_ids),
             "first_words": list(self.first_words),
+            "control_object_ids": list(self.control_object_ids),
+            "control_first_words": list(self.control_first_words),
             "control_enabled": self.control_enabled,
             "summary": {
                 "attempted": len(self.attempts),
@@ -109,6 +114,8 @@ def discover_usb_primitives(
     *,
     object_ids: Iterable[int] = DEFAULT_DISCOVERY_OBJECT_IDS,
     first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
+    control_object_ids: Iterable[int] | None = None,
+    control_first_words: Iterable[int] = DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
     timeout: float = 0.5,
     allow_control: bool = False,
     brightness: float = 35.0,
@@ -119,6 +126,10 @@ def discover_usb_primitives(
 
     object_ids_tuple = tuple(object_ids)
     first_words_tuple = tuple(first_words)
+    control_object_ids_tuple = (
+        object_ids_tuple if control_object_ids is None else tuple(control_object_ids)
+    )
+    control_first_words_tuple = tuple(control_first_words)
     attempts: list[DiscoveryAttempt] = []
 
     for name, cmd, payload in _global_read_candidates():
@@ -163,26 +174,41 @@ def discover_usb_primitives(
         )
 
     if allow_control:
-        for name, cmd, payload in _control_candidates(
-            brightness=brightness,
-            kelvin=kelvin,
-            sleep=sleep,
-        ):
-            attempts.append(
-                _attempt_runtime(
-                    light,
-                    name=name,
-                    category="control",
-                    cmd=cmd,
-                    payload=payload,
-                    timeout=timeout,
-                    object_id=1,
-                )
+        attempts.append(
+            _attempt_runtime(
+                light,
+                name="register_default_group_dev0_group0",
+                category="control",
+                cmd=RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                payload=register_payload(0, 0),
+                timeout=timeout,
             )
+        )
+        for obj in control_object_ids_tuple:
+            for first_word in control_first_words_tuple:
+                for name, cmd, payload in _control_candidates(
+                    obj=obj,
+                    brightness=brightness,
+                    kelvin=kelvin,
+                    sleep=sleep,
+                ):
+                    attempts.append(
+                        _attempt_control(
+                            light,
+                            name=name,
+                            first_word=first_word,
+                            cmd=cmd,
+                            payload=payload,
+                            timeout=timeout,
+                            object_id=obj,
+                        )
+                    )
 
     return UsbDiscoveryReport(
         object_ids=object_ids_tuple,
         first_words=first_words_tuple,
+        control_object_ids=control_object_ids_tuple if allow_control else (),
+        control_first_words=control_first_words_tuple if allow_control else (),
         control_enabled=allow_control,
         attempts=tuple(attempts),
         notes=_notes(allow_control=allow_control),
@@ -234,6 +260,38 @@ def _attempt_frame(
     )
 
 
+def _attempt_control(
+    light: object,
+    *,
+    name: str,
+    first_word: int,
+    cmd: int,
+    payload: bytes,
+    timeout: float,
+    object_id: int,
+) -> DiscoveryAttempt:
+    if first_word == RUNTIME_TYPE:
+        return _attempt_runtime(
+            light,
+            name=name,
+            category="control",
+            cmd=cmd,
+            payload=payload,
+            timeout=timeout,
+            object_id=object_id,
+        )
+    return _attempt_frame(
+        light,
+        name=f"{name}_fw0x{first_word:04x}",
+        category="control_first_word_probe",
+        first_word=first_word,
+        cmd=cmd,
+        payload=payload,
+        timeout=timeout,
+        object_id=object_id,
+    )
+
+
 def _global_read_candidates() -> tuple[tuple[str, int, bytes], ...]:
     return (
         ("global_voltage", RuntimeCommand.VOLTAGE, b""),
@@ -277,32 +335,28 @@ def _object_read_candidates(obj: int) -> tuple[tuple[str, int, bytes], ...]:
 
 def _control_candidates(
     *,
+    obj: int,
     brightness: float,
     kelvin: int,
     sleep: int,
 ) -> tuple[tuple[str, int, bytes], ...]:
     return (
+        (f"set_sleep_obj{obj}", RuntimeCommand.SLEEP, sleep_payload(obj, sleep)),
         (
-            "register_default_group_dev0_group0",
-            RuntimeCommand.REGISTER_DEFAULT_GROUP,
-            register_payload(0, 0),
-        ),
-        ("set_sleep_obj1", RuntimeCommand.SLEEP, sleep_payload(1, sleep, read=False)),
-        (
-            "set_brightness_obj1",
+            f"set_brightness_obj{obj}",
             RuntimeCommand.BRIGHTNESS,
-            brightness_payload(1, brightness, read=False),
+            brightness_payload(obj, brightness, read=False),
         ),
-        ("set_cct_obj1", RuntimeCommand.CCT, cct_payload(1, kelvin, read=False)),
+        (f"set_cct_obj{obj}", RuntimeCommand.CCT, cct_payload(obj, kelvin)),
         (
-            "set_brightness_with_mode_obj1_mode1",
+            f"set_brightness_with_mode_obj{obj}_mode1",
             RuntimeCommand.BRIGHTNESS_WITH_MODE,
-            brightness_with_mode_payload(1, brightness, 1),
+            brightness_with_mode_payload(obj, brightness, 1),
         ),
         (
-            "set_brightness_with_mode_obj1_mode0",
+            f"set_brightness_with_mode_obj{obj}_mode0",
             RuntimeCommand.BRIGHTNESS_WITH_MODE,
-            brightness_with_mode_payload(1, brightness, 0),
+            brightness_with_mode_payload(obj, brightness, 0),
         ),
     )
 

@@ -39,7 +39,12 @@ Known object commands:
 | `0x1202` | Firmware by object | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
 | `0x1203` | Device mode | `u16 obj` | `sent_no_response` on G60 `1.6.4` |
 
-Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0`, `1`, `2`, `100`, `0x8001`, `0x8064`, and `0xffff` did not respond. The `zlight discover-usb` matrix also tested first-word values `0x0100`, `0x0101`, `0x0103`, and `0x0301`; only `0x0301` produced an exact echo for `read_brightness_obj0`, not a device ACK. Optional safe control candidates for sleep, brightness, CCT, and brightness-plus-mode also timed out over USB.
+Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0`, `1`, `2`, `100`, `0x8001`, `0x8064`, and `0xffff` did not respond. The `zlight discover-usb` matrix also tested first-word values `0x0100`, `0x0101`, `0x0103`, and `0x0301`; only `0x0301` produced exact echoes for object read and control probes, not device ACKs. Optional runtime control candidates for sleep, brightness, CCT, and brightness-plus-mode still timed out over USB.
+
+`discover-usb --allow-control` can separately vary control object ids and
+control frame first words with `--control-object-ids` and
+`--control-first-words`. This keeps broad read discovery separate from the
+smaller write matrix needed to investigate object-control routing.
 
 The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
 For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,
@@ -96,6 +101,8 @@ Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
 also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
+On the attached G60, live HTTP bridge checks confirmed `/probe` and `/register`
+while `/sleep` and `/brightness` returned `sent_no_response`.
 The HTTP bridge sends CORS headers by default for browser-based local control
 surfaces; configure them with `--cors-origin`, or disable them with
 `--cors-origin none`.

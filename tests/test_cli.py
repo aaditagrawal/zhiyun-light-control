@@ -214,6 +214,10 @@ class CliTests(unittest.TestCase):
                     "1",
                     "--first-words",
                     "0x0301",
+                    "--control-object-ids",
+                    "0,1",
+                    "--control-first-words",
+                    "0x0100,0x0301",
                     "--json",
                 ]
             )
@@ -222,6 +226,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(payload["object_ids"], [1])
         self.assertEqual(payload["first_words"], [0x0301])
+        self.assertEqual(payload["control_object_ids"], [])
         self.assertIn(
             "first_word_0x0301_read_brightness_obj0",
             {attempt["name"] for attempt in payload["attempts"]},
