@@ -598,9 +598,12 @@ still check `acknowledged`, `transport_status`, and `/state` rather than assumin
 that a transmitted command was applied.
 It also includes `readiness_actions()`, `readiness_action(id)`, and
 `pending_readiness_actions()` helpers for setup dashboards that consume
-`GET /ready`. State-changing methods such as `set_brightness()`, `apply_scene()`,
-and `run_named_cue()` accept `require_ready=True` to check
-`control_requests` before posting the command. Call
+`GET /ready`. Create `LightBridgeClient(..., require_ready_for_controls=True)` to
+guard every state-changing helper by default, or pass
+`control_readiness=["confirmed_control"]` when your show workflow requires an
+ACK-proven control request before running cues. Individual methods such as
+`set_brightness()`, `apply_scene()`, and `run_named_cue()` also accept
+`require_ready=True` to check `control_requests` before posting the command. Call
 `require_readiness("control_requests")` directly for explicit preflights, or
 `wait_until_ready("read_status", timeout=5)` when a controller is starting
 alongside the bridge. These raise `LightBridgeNotReady` with

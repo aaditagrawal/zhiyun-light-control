@@ -57,9 +57,13 @@ class LightBridgeClient:
         base_url: str = "http://127.0.0.1:8765",
         *,
         timeout: float = 3.0,
+        require_ready_for_controls: bool = False,
+        control_readiness: Iterable[str] | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.require_ready_for_controls = require_ready_for_controls
+        self.control_readiness = _control_readiness_capabilities(control_readiness)
 
     def health(self) -> dict[str, object]:
         return self._get("/health")
@@ -564,10 +568,19 @@ class LightBridgeClient:
         require_ready: bool,
         required_readiness: Iterable[str] | None,
     ) -> None:
-        if require_ready or required_readiness is not None:
-            self.require_readiness(
-                *_control_readiness_capabilities(required_readiness)
-            )
+        if not (
+            require_ready
+            or required_readiness is not None
+            or self.require_ready_for_controls
+        ):
+            return
+        if required_readiness is not None:
+            capabilities = _control_readiness_capabilities(required_readiness)
+        elif self.require_ready_for_controls:
+            capabilities = self.control_readiness
+        else:
+            capabilities = _control_readiness_capabilities(None)
+        self.require_readiness(*capabilities)
 
     def _request(
         self,

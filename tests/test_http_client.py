@@ -496,6 +496,46 @@ class HttpClientTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_client_can_default_all_control_methods_to_readiness_gate(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=False,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(
+            f"http://127.0.0.1:{server.server_port}",
+            require_ready_for_controls=True,
+        )
+        strict_client = LightBridgeClient(
+            f"http://127.0.0.1:{server.server_port}",
+            require_ready_for_controls=True,
+            control_readiness=["confirmed_control"],
+        )
+        try:
+            with self.assertRaises(LightBridgeNotReady) as cue_error:
+                client.run_named_cue("intro")
+            self.assertEqual(
+                cue_error.exception.pending_action_ids,
+                {"control_requests": ["enable-control"]},
+            )
+
+            with self.assertRaises(LightBridgeNotReady) as strict_error:
+                strict_client.set_cct(5600)
+            self.assertEqual(
+                strict_error.exception.pending_action_ids,
+                {"confirmed_control": ["enable-control", "confirm-control"]},
+            )
+            self.assertNotIn(
+                RuntimeCommand.CCT,
+                [command for command, _payload in light.commands],
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_bridge_response_helpers_normalize_unconfirmed_payloads(self) -> None:
         command = {
             "acknowledged": False,
