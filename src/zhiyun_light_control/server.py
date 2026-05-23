@@ -1802,6 +1802,8 @@ def integration_manifest_response(
         "scene_fields": list(_SCENE_FIELD_ORDER),
         "presets": presets,
         "cues": cues,
+        "control_guard": control_guard_response(),
+        "request_templates": request_templates_response(),
         "evidence": {
             "statuses": [
                 "acknowledged",
@@ -2042,6 +2044,175 @@ def _integration_string_key_dict(payload: Mapping[object, object]) -> dict[str, 
     }
 
 
+def control_guard_response() -> dict[str, object]:
+    return {
+        "write_endpoints_require": [
+            "start bridge with --allow-control",
+            "check ready_for.control_requests before posting control requests",
+            "treat responses as applied only when acknowledged evidence is true",
+        ],
+        "default_required_readiness": ["control_requests"],
+        "strict_required_readiness": ["confirmed_control"],
+        "enable_command": "zlight serve --allow-control",
+        "validation_request": {
+            "method": "POST",
+            "path": "/validate",
+            "body": {"allow_control": True},
+            "ready_capability": "confirmed_control",
+        },
+        "python_client": {
+            "default_guard": (
+                "LightBridgeClient(base_url, require_ready_for_controls=True)"
+            ),
+            "strict_guard": (
+                "LightBridgeClient(base_url, require_ready_for_controls=True, "
+                "control_readiness=['confirmed_control'])"
+            ),
+        },
+    }
+
+
+def request_templates_response() -> dict[str, object]:
+    control_mode = f"0x{DEFAULT_CONTROL_MODE:02x}"
+    return {
+        "read": {
+            "status": {"method": "GET", "path": "/status"},
+            "state": {"method": "GET", "path": "/state"},
+            "history": {
+                "method": "GET",
+                "path": "/history",
+                "query": {"limit": 10},
+            },
+            "events": {
+                "method": "GET",
+                "path": "/events",
+                "query": {"limit": 1, "timeout": 30, "initial": True},
+            },
+        },
+        "setup": {
+            "ready": {"method": "GET", "path": "/ready"},
+            "integration": {
+                "method": "GET",
+                "path": "/integration",
+                "query": {"include_ble_status": True},
+            },
+            "devices_ble_status": {
+                "method": "GET",
+                "path": "/devices",
+                "query": {"include_ble_status": True},
+            },
+            "validate_control": {
+                "method": "POST",
+                "path": "/validate",
+                "body": {"allow_control": True},
+            },
+        },
+        "control": {
+            "brightness": {
+                "method": "POST",
+                "path": "/brightness",
+                "required_readiness": ["control_requests"],
+                "body": {"obj": 1, "value": 35, "control_mode": control_mode},
+            },
+            "cct": {
+                "method": "POST",
+                "path": "/cct",
+                "required_readiness": ["control_requests"],
+                "body": {"obj": 1, "kelvin": 5600, "control_mode": control_mode},
+            },
+            "sleep": {
+                "method": "POST",
+                "path": "/sleep",
+                "required_readiness": ["control_requests"],
+                "body": {"obj": 1, "value": 0, "control_mode": control_mode},
+            },
+            "rgb": {
+                "method": "POST",
+                "path": "/rgb",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "obj": 1,
+                    "red": 255,
+                    "green": 255,
+                    "blue": 255,
+                    "control_mode": control_mode,
+                },
+            },
+            "hsi": {
+                "method": "POST",
+                "path": "/hsi",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "obj": 1,
+                    "hue": 0,
+                    "saturation": 0,
+                    "intensity": 35,
+                    "control_mode": control_mode,
+                },
+            },
+            "scene": {
+                "method": "POST",
+                "path": "/scene",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "obj": 1,
+                    "sleep": 0,
+                    "brightness": 35,
+                    "kelvin": 5600,
+                    "control_mode": control_mode,
+                },
+            },
+            "transition": {
+                "method": "POST",
+                "path": "/transition",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "from": {"brightness": 10},
+                    "to": {"brightness": 60, "kelvin": 5600},
+                    "steps": 8,
+                    "duration": 2.0,
+                    "easing": "ease-in-out",
+                    "control_mode": control_mode,
+                },
+            },
+            "preset": {
+                "method": "POST",
+                "path": "/preset",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "name": "key",
+                    "brightness": 45,
+                    "control_mode": control_mode,
+                },
+            },
+            "sequence": {
+                "method": "POST",
+                "path": "/sequence",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "steps": [
+                        {"scene": {"brightness": 10}},
+                        {"preset": "key", "overrides": {"brightness": 45}},
+                        {"to": {"brightness": 60}, "steps": 4, "duration": 1.0},
+                    ],
+                    "stop_on_unconfirmed": True,
+                    "control_mode": control_mode,
+                },
+            },
+            "cue": {
+                "method": "POST",
+                "path": "/cue",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "name": "warm-key",
+                    "stop_on_unconfirmed": True,
+                    "control_mode": control_mode,
+                },
+            },
+        },
+    }
+
+
 def capabilities_response(
     *,
     allow_control: bool,
@@ -2054,6 +2225,8 @@ def capabilities_response(
         "scene_fields": list(_SCENE_FIELD_ORDER),
         "presets": presets,
         "cues": cues,
+        "control_guard": control_guard_response(),
+        "request_templates": request_templates_response(),
         "evidence_statuses": [
             "acknowledged",
             "sent_no_response",

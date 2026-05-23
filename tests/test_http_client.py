@@ -629,6 +629,24 @@ class HttpClientTests(unittest.TestCase):
                 snapshot["payloads"]["manifest"]["setup"]["preflight"]["path"],
                 "/ready",
             )
+            self.assertEqual(
+                snapshot["payloads"]["manifest"]["control_guard"][
+                    "default_required_readiness"
+                ],
+                ["control_requests"],
+            )
+            self.assertEqual(
+                snapshot["payloads"]["capabilities"]["request_templates"]["control"][
+                    "scene"
+                ]["body"]["brightness"],
+                35,
+            )
+            self.assertEqual(
+                snapshot["payloads"]["capabilities"]["request_templates"]["setup"][
+                    "validate_control"
+                ]["body"],
+                {"allow_control": True},
+            )
             self.assertEqual(snapshot["payloads"]["devices"], devices)
         finally:
             server.shutdown()

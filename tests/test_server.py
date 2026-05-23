@@ -576,6 +576,26 @@ class ServerTests(unittest.TestCase):
             self.assertIn("sent_no_response", capabilities["evidence_statuses"])
             self.assertIn("brightness", capabilities["scene_fields"])
             self.assertEqual(capabilities["cues"], [])
+            self.assertEqual(
+                capabilities["control_guard"]["default_required_readiness"],
+                ["control_requests"],
+            )
+            self.assertEqual(
+                capabilities["control_guard"]["validation_request"]["path"],
+                "/validate",
+            )
+            self.assertEqual(
+                capabilities["request_templates"]["control"]["brightness"]["body"][
+                    "control_mode"
+                ],
+                "0x33",
+            )
+            self.assertEqual(
+                capabilities["request_templates"]["control"]["cue"]["body"][
+                    "stop_on_unconfirmed"
+                ],
+                True,
+            )
             primitives = {
                 primitive["name"]: primitive for primitive in capabilities["primitives"]
             }
@@ -637,6 +657,14 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/zhiyun/cue", manifest["osc"]["addresses"])
             self.assertEqual(manifest["dmx"]["artnet"]["default_universe"], 0)
             self.assertIn("sent_no_response", manifest["evidence"]["statuses"])
+            self.assertEqual(
+                manifest["control_guard"]["strict_required_readiness"],
+                ["confirmed_control"],
+            )
+            self.assertEqual(
+                manifest["request_templates"]["setup"]["integration"]["path"],
+                "/integration",
+            )
 
             diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
             self.assertTrue(diagnostics["ok"])
