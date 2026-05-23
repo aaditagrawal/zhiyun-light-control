@@ -426,7 +426,8 @@ by each `ready_for` capability for deterministic setup dashboards.
 
 `POST /plan` resolves a scene, preset, transition, or sequence without opening
 the light or requiring `--allow-control`. Use it for show-control previews and
-setup UIs that need to inspect the exact target scene before arming writes.
+setup UIs that need to inspect the exact target scene, ordered command payloads,
+frame hex, and sequence numbers before arming writes.
 
 `POST /inspect-ble` is the BLE endpoint-discovery surface. It connects through
 the selected backend and returns GATT services, characteristics, and properties
@@ -769,8 +770,10 @@ from zhiyun_light_control import (
     LightConnectionConfig,
     Scene,
     open_light,
+    scene_command_plan,
     scene_command_specs,
     scene_frame_specs,
+    transition_command_plans,
 )
 
 config = LightConnectionConfig(transport="usb", port="/dev/cu.usbmodem21301")
@@ -778,6 +781,18 @@ scene = Scene(obj=1, sleep=0, brightness=35, kelvin=5600)
 
 print([command.to_dict() for command in scene_command_specs(scene)])
 print([frame.to_dict() for frame in scene_frame_specs(scene, start_seq=1)])
+print(scene_command_plan(scene, start_seq=1).to_dict())
+print(
+    [
+        plan.to_dict()
+        for plan in transition_command_plans(
+            Scene(obj=1, brightness=10),
+            scene,
+            steps=4,
+            start_seq=10,
+        )
+    ]
+)
 
 with open_light(config) as light:
     print(light.probe())
@@ -796,10 +811,12 @@ BLE, isolated BLE, and custom transports, and they raise
 `CommandResult` objects. `open_light(LightConnectionConfig(...))` returns a
 context manager with the same sync SDK methods for USB and for BLE via the sync
 adapter, so host scripts can switch transports from configuration.
-`scene_command_specs()` and `scene_frame_specs()` expose the exact ordered
-runtime commands and serialized frame bytes before any transport is opened, so
-host applications can preview, audit, log, or route commands through their own
-media-control systems.
+`scene_command_specs()`, `scene_frame_specs()`, `scene_command_plan()`, and
+`transition_command_plans()` expose the exact ordered runtime commands and
+serialized frame bytes before any transport is opened, so host applications can
+preview, audit, log, or route commands through their own media-control systems.
+The plan objects are plain Python data with `to_dict()` serializers, which keeps
+them useful in CLI tools, daemons, timeline renderers, and custom transports.
 
 For media-control code that wants presets and cues without running the HTTP
 bridge, use the in-process controller:
@@ -825,7 +842,7 @@ controller = LightController(
     cue_library=cues,
 )
 
-print(controller.plan_sequence(cues.get("intro")["steps"]))
+print(controller.plan_sequence(cues.get("intro")["steps"], start_seq=1))
 result = controller.run_named_cue("intro", require_acknowledged=True)
 print(result["applied"], result["reason"])
 print(controller.state_snapshot())

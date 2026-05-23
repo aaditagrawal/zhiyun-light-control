@@ -12,6 +12,7 @@ from .bridge import (
     close_light_factory,
     make_light_factory,
 )
+from .commands import scene_command_plan, transition_command_plans
 from .cues import CueLibrary
 from .models import (
     CommandResult,
@@ -26,7 +27,7 @@ from .presets import (
     scene_from_mapping,
     scene_from_optional_mapping,
 )
-from .protocol import DEFAULT_CONTROL_MODE
+from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .state import (
     SceneState,
     SceneStateTracker,
@@ -223,12 +224,18 @@ class LightController:
         *,
         obj: int = 1,
         stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
     ) -> dict[str, object]:
         return _plan_sequence(
             steps,
             obj=obj,
             stop_on_unconfirmed=stop_on_unconfirmed,
             preset_library=self.preset_library,
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
         )
 
     def _run_sequence_on_light(
@@ -606,12 +613,18 @@ class AsyncLightController:
         *,
         obj: int = 1,
         stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
     ) -> dict[str, object]:
         return _plan_sequence(
             steps,
             obj=obj,
             stop_on_unconfirmed=stop_on_unconfirmed,
             preset_library=self._preset_library_or_none(),
+            control_mode=self._control_mode(control_mode),
+            first_word=first_word,
+            start_seq=start_seq,
         )
 
     async def _run_sequence_on_light(
@@ -864,19 +877,26 @@ def _plan_sequence(
     obj: int,
     stop_on_unconfirmed: bool,
     preset_library: ScenePresetLibrary | None,
+    control_mode: int,
+    first_word: int,
+    start_seq: int,
 ) -> dict[str, object]:
     step_items = [dict(step) for step in steps]
     if not step_items:
         raise ValueError("sequence steps must be a non-empty iterable")
     current_scene: Scene | None = None
     planned_steps: list[dict[str, object]] = []
+    next_seq = start_seq
     for index, step in enumerate(step_items):
-        response, current_scene = _plan_step(
+        response, current_scene, next_seq = _plan_step(
             step,
             index=index,
             obj=obj,
             current_scene=current_scene,
             preset_library=preset_library,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=next_seq,
         )
         planned_steps.append(response)
     return {
@@ -884,6 +904,10 @@ def _plan_sequence(
         "steps": planned_steps,
         "scene": None if current_scene is None else current_scene.to_dict(),
         "stop_on_unconfirmed": stop_on_unconfirmed,
+        "first_word": first_word,
+        "first_word_hex": f"0x{first_word:04x}",
+        "start_seq": start_seq,
+        "next_seq": next_seq,
     }
 
 
@@ -894,20 +918,38 @@ def _plan_step(
     obj: int,
     current_scene: Scene | None,
     preset_library: ScenePresetLibrary | None,
-) -> tuple[dict[str, object], Scene]:
+    control_mode: int,
+    first_word: int,
+    start_seq: int,
+) -> tuple[dict[str, object], Scene, int]:
     if "to" in step:
         target = step.get("to")
         if not isinstance(target, Mapping):
             raise ValueError("transition step requires a 'to' object")
         scene = scene_from_optional_mapping(target, obj=obj)
         start = _transition_start(step, current_scene, obj=scene.obj)
+        steps = int(step.get("steps", 10))
+        easing = str(step.get("easing", "linear"))
+        command_plans = transition_command_plans(
+            start,
+            scene,
+            steps=steps,
+            easing=easing,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        next_seq = command_plans[-1].next_seq if command_plans else start_seq
         response = {
             "action": "transition",
             "from": start.to_dict(),
             "scene": scene.to_dict(),
-            "steps": int(step.get("steps", 10)),
+            "steps": steps,
             "duration": float(step.get("duration", 1.0)),
-            "easing": str(step.get("easing", "linear")),
+            "easing": easing,
+            "command_batches": [plan.to_dict() for plan in command_plans],
+            "start_seq": start_seq,
+            "next_seq": next_seq,
         }
     elif "preset" in step:
         if preset_library is None:
@@ -919,16 +961,39 @@ def _plan_step(
             overrides=_step_preset_overrides(step),
             obj=obj,
         )
+        command_plan = scene_command_plan(
+            scene,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        next_seq = command_plan.next_seq
         response = {
             "action": "preset",
             "preset": name,
             "scene": scene.to_dict(),
+            "command_plan": command_plan.to_dict(),
+            "start_seq": start_seq,
+            "next_seq": next_seq,
         }
     else:
         scene = _step_scene(step, obj=obj)
-        response = {"action": "scene", "scene": scene.to_dict()}
+        command_plan = scene_command_plan(
+            scene,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        next_seq = command_plan.next_seq
+        response = {
+            "action": "scene",
+            "scene": scene.to_dict(),
+            "command_plan": command_plan.to_dict(),
+            "start_seq": start_seq,
+            "next_seq": next_seq,
+        }
     response["index"] = index
-    return response, scene
+    return response, scene, next_seq
 
 
 def _state_payload(version: int, state: SceneState | None) -> dict[str, object]:

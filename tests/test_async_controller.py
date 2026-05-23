@@ -154,14 +154,33 @@ class AsyncControllerTests(unittest.IsolatedAsyncioTestCase):
         )
 
         response = await controller.run_named_cue("intro")
-        plan = controller.plan_sequence(cues.get("intro")["steps"])
+        plan = controller.plan_sequence(
+            cues.get("intro")["steps"],
+            control_mode=0x01,
+            first_word=0x0301,
+            start_seq=9,
+        )
 
         self.assertEqual(response["cue"], "intro")
         self.assertEqual(response["action"], "cue")
         self.assertTrue(response["applied"])
         self.assertEqual(response["steps"][1]["action"], "transition")
         self.assertEqual(light.transitions[0][2], 2)
+        self.assertEqual(plan["start_seq"], 9)
+        self.assertEqual(plan["next_seq"], 12)
+        self.assertEqual(plan["steps"][0]["command_plan"]["start_seq"], 9)
+        self.assertEqual(
+            plan["steps"][0]["command_plan"]["frames"][0]["first_word_hex"],
+            "0x0301",
+        )
         self.assertEqual(plan["steps"][1]["from"]["brightness"], 10.0)
+        self.assertEqual(
+            [
+                batch["scene"]["brightness"]
+                for batch in plan["steps"][1]["command_batches"]
+            ],
+            [20.0, 30.0],
+        )
         self.assertEqual(plan["scene"]["brightness"], 30.0)
         self.assertEqual(controller.state()["action"], "cue")
         self.assertEqual(controller.state()["scene"]["brightness"], 30.0)

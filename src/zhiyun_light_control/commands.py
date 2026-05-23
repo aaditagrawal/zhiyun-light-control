@@ -16,6 +16,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
+from .transitions import EasingName, scene_transition
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,29 @@ class RuntimeFrameSpec:
             "first_word": self.first_word,
             "first_word_hex": f"0x{self.first_word:04x}",
             "frame_hex": self.frame_hex,
+        }
+
+
+@dataclass(frozen=True)
+class SceneCommandPlan:
+    """A scene plus ordered runtime commands and optional serialized frames."""
+
+    scene: Scene
+    commands: tuple[RuntimeCommandSpec, ...]
+    frames: tuple[RuntimeFrameSpec, ...]
+    start_seq: int
+
+    @property
+    def next_seq(self) -> int:
+        return self.start_seq + len(self.frames)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "scene": self.scene.to_dict(),
+            "start_seq": self.start_seq,
+            "next_seq": self.next_seq,
+            "commands": [command.to_dict() for command in self.commands],
+            "frames": [frame.to_dict() for frame in self.frames],
         }
 
 
@@ -176,6 +200,31 @@ def scene_command_specs(
     return tuple(specs)
 
 
+def scene_command_plan(
+    scene: Scene,
+    *,
+    control_mode: int = DEFAULT_CONTROL_MODE,
+    first_word: int = RUNTIME_TYPE,
+    start_seq: int = 1,
+) -> SceneCommandPlan:
+    commands = scene_command_specs(scene, control_mode=control_mode)
+    frames = tuple(
+        RuntimeFrameSpec(
+            command=command,
+            seq=seq,
+            first_word=first_word,
+            frame=command.frame(seq=seq, first_word=first_word),
+        )
+        for seq, command in enumerate(commands, start=start_seq)
+    )
+    return SceneCommandPlan(
+        scene=scene,
+        commands=commands,
+        frames=frames,
+        start_seq=start_seq,
+    )
+
+
 def scene_frame_specs(
     scene: Scene,
     *,
@@ -185,15 +234,35 @@ def scene_frame_specs(
 ) -> tuple[RuntimeFrameSpec, ...]:
     """Return ordered serialized runtime frames for a scene."""
 
-    return tuple(
-        RuntimeFrameSpec(
-            command=command,
-            seq=seq,
+    return scene_command_plan(
+        scene,
+        control_mode=control_mode,
+        first_word=first_word,
+        start_seq=start_seq,
+    ).frames
+
+
+def transition_command_plans(
+    start: Scene,
+    end: Scene,
+    *,
+    steps: int = 10,
+    easing: EasingName = "linear",
+    control_mode: int = DEFAULT_CONTROL_MODE,
+    first_word: int = RUNTIME_TYPE,
+    start_seq: int = 1,
+) -> tuple[SceneCommandPlan, ...]:
+    """Return per-scene command plans for a transition."""
+
+    plans: list[SceneCommandPlan] = []
+    next_seq = start_seq
+    for scene in scene_transition(start, end, steps=steps, easing=easing):
+        plan = scene_command_plan(
+            scene,
+            control_mode=control_mode,
             first_word=first_word,
-            frame=command.frame(seq=seq, first_word=first_word),
+            start_seq=next_seq,
         )
-        for seq, command in enumerate(
-            scene_command_specs(scene, control_mode=control_mode),
-            start=start_seq,
-        )
-    )
+        plans.append(plan)
+        next_seq = plan.next_seq
+    return tuple(plans)

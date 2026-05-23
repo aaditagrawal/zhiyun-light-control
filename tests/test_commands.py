@@ -6,8 +6,11 @@ from zhiyun_light_control import (
     RuntimeCommandSpec,
     RuntimeFrameSpec,
     Scene,
+    SceneCommandPlan,
+    scene_command_plan,
     scene_command_specs,
     scene_frame_specs,
+    transition_command_plans,
 )
 from zhiyun_light_control.protocol import RuntimeCommand, first_frame
 
@@ -68,6 +71,54 @@ class CommandPlanningTests(unittest.TestCase):
         )
         self.assertEqual(frames[0].to_dict()["first_word_hex"], "0x0301")
         self.assertEqual(frames[0].to_dict()["frame_hex"], frames[0].frame.hex())
+
+    def test_scene_command_plan_groups_commands_and_frames(self) -> None:
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25, kelvin=5600),
+            first_word=0x0301,
+            start_seq=12,
+        )
+
+        self.assertIsInstance(plan, SceneCommandPlan)
+        self.assertEqual(plan.start_seq, 12)
+        self.assertEqual(plan.next_seq, 14)
+        self.assertEqual(
+            [command.name for command in plan.commands],
+            ["brightness", "cct"],
+        )
+        self.assertEqual([frame.seq for frame in plan.frames], [12, 13])
+
+        payload = plan.to_dict()
+        self.assertEqual(payload["scene"]["brightness"], 25.0)
+        self.assertEqual(payload["start_seq"], 12)
+        self.assertEqual(payload["next_seq"], 14)
+        self.assertEqual(
+            [command["command_hex"] for command in payload["commands"]],
+            ["0x1001", "0x1002"],
+        )
+        self.assertEqual(
+            [frame["command_hex"] for frame in payload["frames"]],
+            ["0x1001", "0x1002"],
+        )
+
+    def test_transition_command_plans_carry_sequence_numbers(self) -> None:
+        plans = transition_command_plans(
+            Scene(obj=1, brightness=10),
+            Scene(obj=1, brightness=30, kelvin=5600),
+            steps=2,
+            first_word=0x0301,
+            start_seq=21,
+        )
+
+        self.assertEqual(len(plans), 2)
+        self.assertEqual([plan.start_seq for plan in plans], [21, 22])
+        self.assertEqual([plan.next_seq for plan in plans], [22, 24])
+        self.assertEqual(plans[-1].scene.brightness, 30.0)
+        self.assertEqual(plans[-1].scene.kelvin, 5600)
+        self.assertEqual(
+            [frame.command.command_hex for plan in plans for frame in plan.frames],
+            ["0x1001", "0x1001", "0x1002"],
+        )
 
     def test_scene_command_specs_reject_partial_color_tuples(self) -> None:
         with self.assertRaisesRegex(ValueError, "RGB"):

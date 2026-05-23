@@ -19,8 +19,11 @@ from .client import ProbeResult, ZhiyunLight
 from .commands import (
     RuntimeCommandSpec,
     RuntimeFrameSpec,
+    SceneCommandPlan,
+    scene_command_plan,
     scene_command_specs,
     scene_frame_specs,
+    transition_command_plans,
 )
 from .controller import (
     AsyncLightController,
@@ -253,6 +256,7 @@ __all__ = [
     "RuntimeCommandSpec",
     "RuntimeFrameSpec",
     "Scene",
+    "SceneCommandPlan",
     "SceneState",
     "SceneStateTracker",
     "SceneTransition",
@@ -355,7 +359,9 @@ __all__ = [
     "macos_ble_app_status",
     "sacn_multicast_address",
     "scene_command_specs",
+    "scene_command_plan",
     "scene_frame_specs",
+    "transition_command_plans",
     "read_async_status",
     "read_sync_status",
     "readiness_actions_by_id",

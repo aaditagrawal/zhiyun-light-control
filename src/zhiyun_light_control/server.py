@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
+from .commands import scene_command_plan, transition_command_plans
 from .cues import CueLibrary
 from .devices import (
     BLE_BACKENDS,
@@ -459,17 +460,45 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         action = _plan_action(body)
         obj = int(body.get("obj", 1))
         control_mode = _control_mode(body)
+        first_word = _body_int(body, "first_word", RUNTIME_TYPE)
+        start_seq = _body_int(body, "start_seq", 1)
         if action == "sequence":
-            response = self._plan_sequence(body, obj=obj)
+            response = self._plan_sequence(
+                body,
+                obj=obj,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
         elif action == "preset":
-            response = self._plan_preset(body, obj=obj)
+            response = self._plan_preset(
+                body,
+                obj=obj,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
         elif action == "transition":
-            response = self._plan_transition(body, obj=obj)
+            response = self._plan_transition(
+                body,
+                obj=obj,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
         else:
-            response = self._plan_scene(body, obj=obj)
+            response = self._plan_scene(
+                body,
+                obj=obj,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
         return {
             "dry_run": True,
             "control_mode": control_mode,
+            "first_word": first_word,
+            "first_word_hex": f"0x{first_word:04x}",
             **response,
         }
 
@@ -515,14 +544,42 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             max_candidates=max_candidates,
         ).to_dict()
 
-    def _plan_scene(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
+    def _plan_scene(
+        self,
+        body: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+        first_word: int,
+        start_seq: int,
+    ) -> dict[str, object]:
         scene_data = body.get("scene", _scene_fields_from_body(body))
         if not isinstance(scene_data, dict):
             raise ValueError("plan scene must be an object")
         scene = _scene_from_body(scene_data, obj=obj)
-        return {"action": "scene", "scene": scene.to_dict()}
+        plan = scene_command_plan(
+            scene,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return {
+            "action": "scene",
+            "scene": scene.to_dict(),
+            "command_plan": plan.to_dict(),
+            "start_seq": start_seq,
+            "next_seq": plan.next_seq,
+        }
 
-    def _plan_preset(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
+    def _plan_preset(
+        self,
+        body: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+        first_word: int,
+        start_seq: int,
+    ) -> dict[str, object]:
         library = self.server.preset_library
         if library is None:
             raise ValueError("no preset file loaded")
@@ -536,13 +593,29 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             scene_from_optional_mapping(overrides, obj=obj),
             override_obj="obj" in overrides,
         )
-        return {"action": "preset", "preset": name, "scene": scene.to_dict()}
+        plan = scene_command_plan(
+            scene,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return {
+            "action": "preset",
+            "preset": name,
+            "scene": scene.to_dict(),
+            "command_plan": plan.to_dict(),
+            "start_seq": start_seq,
+            "next_seq": plan.next_seq,
+        }
 
     def _plan_transition(
         self,
         body: dict[str, object],
         *,
         obj: int,
+        control_mode: int,
+        first_word: int,
+        start_seq: int,
     ) -> dict[str, object]:
         target_data = body.get("to")
         if target_data is None:
@@ -551,29 +624,56 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("plan transition 'to' must be an object")
         end = _scene_from_body(target_data, obj=obj)
         start = self._transition_start(body, obj=end.obj)
+        steps = int(body.get("steps", 10))
+        easing = str(body.get("easing", "linear"))
+        plans = transition_command_plans(
+            start,
+            end,
+            steps=steps,
+            easing=easing,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        next_seq = plans[-1].next_seq if plans else start_seq
         return {
             "action": "transition",
             "from": start.to_dict(),
             "scene": end.to_dict(),
-            "steps": int(body.get("steps", 10)),
+            "steps": steps,
             "duration": float(body.get("duration", 1.0)),
-            "easing": str(body.get("easing", "linear")),
+            "easing": easing,
+            "command_batches": [plan.to_dict() for plan in plans],
+            "start_seq": start_seq,
+            "next_seq": next_seq,
         }
 
-    def _plan_sequence(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
+    def _plan_sequence(
+        self,
+        body: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+        first_word: int,
+        start_seq: int,
+    ) -> dict[str, object]:
         raw_steps = body.get("steps")
         if not isinstance(raw_steps, list) or not raw_steps:
             raise ValueError("plan sequence steps must be a non-empty array")
         current_scene: Scene | None = None
         planned_steps: list[dict[str, object]] = []
+        next_seq = start_seq
         for index, raw_step in enumerate(raw_steps):
             if not isinstance(raw_step, dict):
                 raise ValueError("plan sequence steps must be objects")
-            step_response, current_scene = self._plan_sequence_step(
+            step_response, current_scene, next_seq = self._plan_sequence_step(
                 raw_step,
                 index=index,
                 obj=obj,
                 current_scene=current_scene,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=next_seq,
             )
             planned_steps.append(step_response)
         return {
@@ -581,6 +681,8 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             "steps": planned_steps,
             "scene": None if current_scene is None else current_scene.to_dict(),
             "stop_on_unconfirmed": _body_bool(body, "stop_on_unconfirmed"),
+            "start_seq": start_seq,
+            "next_seq": next_seq,
         }
 
     def _plan_sequence_step(
@@ -590,23 +692,41 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         index: int,
         obj: int,
         current_scene: Scene | None,
-    ) -> tuple[dict[str, object], Scene]:
+        control_mode: int,
+        first_word: int,
+        start_seq: int,
+    ) -> tuple[dict[str, object], Scene, int]:
         if "to" in step:
             response = self._plan_sequence_transition(
                 step,
                 obj=obj,
                 current_scene=current_scene,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
             )
         elif "preset" in step:
-            response = self._plan_preset(step, obj=obj)
+            response = self._plan_preset(
+                step,
+                obj=obj,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
         else:
-            response = self._plan_scene(step, obj=obj)
+            response = self._plan_scene(
+                step,
+                obj=obj,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
         scene_payload = response.get("scene")
         if not isinstance(scene_payload, dict):
             raise ValueError("planned step did not produce a scene")
         scene = _scene_from_body(scene_payload, obj=obj)
         response["index"] = index
-        return response, scene
+        return response, scene, _planned_next_seq(response, start_seq)
 
     def _plan_sequence_transition(
         self,
@@ -614,19 +734,37 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         *,
         obj: int,
         current_scene: Scene | None,
+        control_mode: int,
+        first_word: int,
+        start_seq: int,
     ) -> dict[str, object]:
         target_data = step["to"]
         if not isinstance(target_data, dict):
             raise ValueError("plan sequence transition 'to' must be an object")
         end = _scene_from_body(target_data, obj=obj)
         start = _sequence_transition_start(self, step, current_scene, obj=end.obj)
+        steps = int(step.get("steps", 10))
+        easing = str(step.get("easing", "linear"))
+        plans = transition_command_plans(
+            start,
+            end,
+            steps=steps,
+            easing=easing,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        next_seq = plans[-1].next_seq if plans else start_seq
         return {
             "action": "transition",
             "from": start.to_dict(),
             "scene": end.to_dict(),
-            "steps": int(step.get("steps", 10)),
+            "steps": steps,
             "duration": float(step.get("duration", 1.0)),
-            "easing": str(step.get("easing", "linear")),
+            "easing": easing,
+            "command_batches": [plan.to_dict() for plan in plans],
+            "start_seq": start_seq,
+            "next_seq": next_seq,
         }
 
     def _handle_sequence(
@@ -2898,6 +3036,13 @@ def _sequence_transition_start(
     if current_scene is not None and current_scene.obj == obj:
         return current_scene
     return handler._transition_start(step, obj=obj)
+
+
+def _planned_next_seq(response: Mapping[str, object], default: int) -> int:
+    value = response.get("next_seq", default)
+    if isinstance(value, int):
+        return value
+    return default
 
 
 def serve(

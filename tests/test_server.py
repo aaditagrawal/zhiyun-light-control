@@ -497,6 +497,8 @@ class ServerTests(unittest.TestCase):
                             },
                         ],
                         "control_mode": "0x01",
+                        "first_word": "0x0301",
+                        "start_seq": 5,
                         "stop_on_unconfirmed": True,
                     }
                 ).encode(),
@@ -508,10 +510,28 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(response["dry_run"])
             self.assertEqual(response["action"], "sequence")
             self.assertEqual(response["control_mode"], 1)
+            self.assertEqual(response["first_word_hex"], "0x0301")
+            self.assertEqual(response["start_seq"], 5)
+            self.assertEqual(response["next_seq"], 10)
             self.assertTrue(response["stop_on_unconfirmed"])
             self.assertEqual(
                 [step["action"] for step in response["steps"]],
                 ["scene", "preset", "transition"],
+            )
+            self.assertEqual(
+                response["steps"][0]["command_plan"]["frames"][0]["seq"],
+                5,
+            )
+            self.assertEqual(
+                response["steps"][1]["command_plan"]["commands"][0]["command_hex"],
+                "0x1001",
+            )
+            self.assertEqual(
+                [
+                    batch["scene"]["brightness"]
+                    for batch in response["steps"][2]["command_batches"]
+                ],
+                [37.5, 20.0],
             )
             self.assertEqual(response["steps"][1]["scene"]["brightness"], 55.0)
             self.assertEqual(response["steps"][2]["from"]["brightness"], 55.0)
@@ -533,6 +553,15 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(transition["action"], "transition")
             self.assertEqual(transition["steps"], 3)
             self.assertEqual(transition["duration"], 0.5)
+            self.assertEqual(transition["next_seq"], 3)
+            self.assertEqual(len(transition["command_batches"]), 1)
+            self.assertEqual(
+                [
+                    command["command_hex"]
+                    for command in transition["command_batches"][0]["commands"]
+                ],
+                ["0x1001", "0x1002"],
+            )
             self.assertEqual(transition["scene"]["brightness"], 45.0)
 
             state = json.loads(urlopen(f"{base}/state", timeout=3).read())
