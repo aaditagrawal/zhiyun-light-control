@@ -69,6 +69,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Process health |
+| `GET` | `/openapi.json` | Machine-readable bridge schema |
 | `GET` | `/probe` | Global light probe |
 | `GET` | `/validate` | Read-only hardware validation report |
 | `GET` | `/commands` | List bridge commands |
@@ -89,6 +90,9 @@ Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
 also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
+The HTTP bridge sends CORS headers by default for browser-based local control
+surfaces; configure them with `--cors-origin`, or disable them with
+`--cors-origin none`.
 
 The local bridges default to USB, but `serve`, `osc-serve`, `artnet-serve`, and
 `sacn-serve` also accept `--transport ble` with `--address` or

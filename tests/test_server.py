@@ -257,6 +257,58 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_exposes_openapi_schema_and_configurable_cors(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            light_factory=lambda: light,
+            cors_origin="http://studio.local",
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            response = urlopen(f"{base}/openapi.json", timeout=3)
+            schema = json.loads(response.read())
+            self.assertEqual(
+                response.headers["access-control-allow-origin"],
+                "http://studio.local",
+            )
+            self.assertEqual(schema["openapi"], "3.1.0")
+            self.assertIn("/scene", schema["paths"])
+            self.assertIn("CommandResult", schema["components"]["schemas"])
+
+            commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
+            self.assertIn("/openapi.json", commands["get"])
+
+            options = Request(f"{base}/scene", method="OPTIONS")
+            options_response = urlopen(options, timeout=3)
+            self.assertEqual(options_response.status, 204)
+            self.assertEqual(
+                options_response.headers["access-control-allow-methods"],
+                "GET, POST, OPTIONS",
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_cors_can_be_disabled(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            light_factory=lambda: light,
+            cors_origin=None,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            response = urlopen(f"{base}/health", timeout=3)
+            self.assertIsNone(response.headers.get("access-control-allow-origin"))
+        finally:
+            server.shutdown()
+            server.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()

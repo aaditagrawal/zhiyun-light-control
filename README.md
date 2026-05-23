@@ -181,6 +181,10 @@ HTTP JSON bridge:
 uv run zlight serve --host 127.0.0.1 --port 8765 --preset-file examples/scenes.json --allow-control
 ```
 
+The HTTP bridge serves JSON CORS headers for browser dashboards by default.
+Use `--cors-origin http://studio.local` to restrict the allowed origin or
+`--cors-origin none` to disable CORS headers.
+
 BLE bridge example:
 
 ```sh
@@ -191,6 +195,7 @@ Useful HTTP calls:
 
 ```sh
 curl http://127.0.0.1:8765/probe
+curl http://127.0.0.1:8765/openapi.json
 curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/state

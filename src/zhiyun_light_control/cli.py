@@ -197,6 +197,12 @@ def build_parser() -> argparse.ArgumentParser:
     server.add_argument("--port", type=int, default=8765)
     add_bridge_transport_args(server)
     server.add_argument(
+        "--cors-origin",
+        type=parse_optional_text,
+        default="*",
+        help="Access-Control-Allow-Origin value. Use 'none' to disable CORS.",
+    )
+    server.add_argument(
         "--preset-file", help="JSON file containing named scene presets."
     )
     server.add_argument("--allow-control", action="store_true")
@@ -304,6 +310,12 @@ def parse_optional_int(text: str) -> int | None:
     if text.lower() in {"none", "off", "disabled"}:
         return None
     return int(text, 0)
+
+
+def parse_optional_text(text: str) -> str | None:
+    if text.lower() in {"none", "off", "disabled"}:
+        return None
+    return text
 
 
 def parse_int_list(text: str) -> tuple[int, ...]:
@@ -662,6 +674,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         allow_control=args.allow_control,
         light_factory=bridge_light_factory(args),
         preset_library=load_preset_library(args),
+        cors_origin=args.cors_origin,
     )
     return 0
 

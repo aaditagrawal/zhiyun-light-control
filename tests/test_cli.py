@@ -373,6 +373,8 @@ class CliTests(unittest.TestCase):
                     "--ble-python",
                     "python-test",
                     "--unsafe-in-process",
+                    "--cors-origin",
+                    "http://studio.local",
                 ]
             )
 
@@ -382,7 +384,19 @@ class CliTests(unittest.TestCase):
         self.assertEqual(config.address, "AA:BB")
         self.assertEqual(config.ble_python, "python-test")
         self.assertTrue(config.ble_in_process)
+        self.assertEqual(serve.call_args.kwargs["cors_origin"], "http://studio.local")
         serve.assert_called_once()
+
+    def test_bridge_cli_can_disable_cors(self) -> None:
+        with (
+            patch("zhiyun_light_control.cli.make_light_factory") as make_factory,
+            patch("zhiyun_light_control.cli.serve") as serve,
+        ):
+            make_factory.return_value = object()
+            code = main(["serve", "--cors-origin", "none"])
+
+        self.assertEqual(code, 0)
+        self.assertIsNone(serve.call_args.kwargs["cors_origin"])
 
 
 if __name__ == "__main__":

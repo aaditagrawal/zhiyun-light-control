@@ -36,6 +36,7 @@ class LightHttpServer(ThreadingHTTPServer):
         light_factory: Callable[[], object] | None = None,
         preset_library: ScenePresetLibrary | None = None,
         state_tracker: SceneStateTracker | None = None,
+        cors_origin: str | None = "*",
     ):
         super().__init__(server_address, LightRequestHandler)
         self.light_port = port
@@ -43,6 +44,7 @@ class LightHttpServer(ThreadingHTTPServer):
         self.light_factory = light_factory or (lambda: ZhiyunLight.usb(port=port))
         self.preset_library = preset_library
         self.state_tracker = state_tracker or SceneStateTracker()
+        self.cors_origin = cors_origin
 
 
 class LightRequestHandler(BaseHTTPRequestHandler):
@@ -58,6 +60,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 {
                     "get": [
                         "/health",
+                        "/openapi.json",
                         "/probe",
                         "/validate",
                         "/commands",
@@ -82,6 +85,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     else [],
                 }
             )
+            return
+        if path == "/openapi.json":
+            self._json(openapi_schema())
             return
         if path == "/presets":
             library = self.server.preset_library
@@ -352,9 +358,294 @@ class LightRequestHandler(BaseHTTPRequestHandler):
     def _send_common_headers(self, content_length: int) -> None:
         self.send_header("content-type", "application/json")
         self.send_header("content-length", str(content_length))
-        self.send_header("access-control-allow-origin", "*")
-        self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
-        self.send_header("access-control-allow-headers", "content-type")
+        if self.server.cors_origin:
+            self.send_header("access-control-allow-origin", self.server.cors_origin)
+            self.send_header("access-control-allow-methods", "GET, POST, OPTIONS")
+            self.send_header("access-control-allow-headers", "content-type")
+            self.send_header("access-control-max-age", "600")
+
+
+def openapi_schema() -> dict[str, object]:
+    """Return a compact OpenAPI schema for local bridge integrations."""
+
+    return {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Zhiyun Light Control Bridge",
+            "version": "0.1.0",
+            "description": (
+                "Local JSON API for probing and controlling Zhiyun MOLUS lights."
+            ),
+        },
+        "paths": {
+            "/health": {"get": _operation("Process health", "Health")},
+            "/openapi.json": {
+                "get": _operation("Machine-readable bridge schema", "OpenApiSchema")
+            },
+            "/commands": {
+                "get": _operation("List supported bridge endpoints", "Commands")
+            },
+            "/probe": {"get": _operation("Probe the connected light", "Probe")},
+            "/validate": {
+                "get": _operation("Run read-only hardware validation", "Validation"),
+                "post": _operation(
+                    "Run hardware validation with optional gated controls",
+                    "Validation",
+                    request_schema="ValidationRequest",
+                ),
+            },
+            "/presets": {"get": _operation("List loaded scene presets", "Presets")},
+            "/state": {"get": _operation("Read requested bridge state", "State")},
+            "/register": {
+                "post": _operation(
+                    "Register to the default group",
+                    "CommandResult",
+                    request_schema="RegisterRequest",
+                )
+            },
+            "/brightness": {
+                "post": _operation(
+                    "Set brightness",
+                    "CommandResult",
+                    request_schema="BrightnessRequest",
+                )
+            },
+            "/cct": {
+                "post": _operation(
+                    "Set color temperature",
+                    "CommandResult",
+                    request_schema="CctRequest",
+                )
+            },
+            "/sleep": {
+                "post": _operation(
+                    "Set sleep/power value",
+                    "CommandResult",
+                    request_schema="SleepRequest",
+                )
+            },
+            "/rgb": {
+                "post": _operation(
+                    "Set RGB values",
+                    "CommandResult",
+                    request_schema="RgbRequest",
+                )
+            },
+            "/hsi": {
+                "post": _operation(
+                    "Set HSI values",
+                    "CommandResult",
+                    request_schema="HsiRequest",
+                )
+            },
+            "/scene": {
+                "post": _operation(
+                    "Apply a scene",
+                    "SceneApplyResponse",
+                    request_schema="Scene",
+                )
+            },
+            "/transition": {
+                "post": _operation(
+                    "Apply a timed transition",
+                    "TransitionResponse",
+                    request_schema="TransitionRequest",
+                )
+            },
+            "/preset": {
+                "post": _operation(
+                    "Apply a loaded preset with optional overrides",
+                    "PresetResponse",
+                    request_schema="PresetRequest",
+                )
+            },
+        },
+        "components": {"schemas": _openapi_schemas()},
+    }
+
+
+def _operation(
+    summary: str,
+    response_schema: str,
+    *,
+    request_schema: str | None = None,
+) -> dict[str, object]:
+    operation: dict[str, object] = {
+        "summary": summary,
+        "responses": {
+            "200": {
+                "description": "JSON response",
+                "content": _json_schema_ref(response_schema),
+            }
+        },
+    }
+    if request_schema is not None:
+        operation["requestBody"] = {
+            "required": False,
+            "content": _json_schema_ref(request_schema),
+        }
+    return operation
+
+
+def _json_schema_ref(name: str) -> dict[str, object]:
+    return {
+        "application/json": {
+            "schema": {"$ref": f"#/components/schemas/{name}"}
+        }
+    }
+
+
+def _openapi_schemas() -> dict[str, object]:
+    number_or_null = {"oneOf": [{"type": "number"}, {"type": "null"}]}
+    integer_or_null = {"oneOf": [{"type": "integer"}, {"type": "null"}]}
+    return {
+        "Health": {
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+        },
+        "OpenApiSchema": {"type": "object"},
+        "Commands": {
+            "type": "object",
+            "properties": {
+                "get": {"type": "array", "items": {"type": "string"}},
+                "post": {"type": "array", "items": {"type": "string"}},
+                "control_enabled": {"type": "boolean"},
+                "presets": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["get", "post", "control_enabled", "presets"],
+        },
+        "Probe": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "device_identifier": {"type": ["string", "null"]},
+                "generation": {"type": ["string", "null"]},
+                "firmware": {"type": ["string", "null"]},
+                "device_id": {"type": ["integer", "null"]},
+                "voltage_status": {"type": ["integer", "null"]},
+            },
+        },
+        "CommandResult": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "command": {"type": "integer"},
+                "tx_hex": {"type": "string"},
+                "rx_hex": {"type": ["string", "null"]},
+                "sent": {"type": "boolean"},
+                "acknowledged": {"type": "boolean"},
+                "transport_status": {"type": "string"},
+            },
+            "required": [
+                "command",
+                "tx_hex",
+                "sent",
+                "acknowledged",
+                "transport_status",
+            ],
+        },
+        "Validation": {"type": "object", "additionalProperties": True},
+        "Presets": {"type": "object", "additionalProperties": True},
+        "State": {"type": "object", "additionalProperties": True},
+        "ValidationRequest": {
+            "type": "object",
+            "properties": {
+                "allow_control": {"type": "boolean"},
+                "include_object_reads": {"type": "boolean"},
+                "include_color": {"type": "boolean"},
+                "obj": {"type": "integer"},
+                "brightness": {"type": "number"},
+                "kelvin": {"type": "integer"},
+            },
+        },
+        "RegisterRequest": {
+            "type": "object",
+            "properties": {"device_id": {"type": "integer"}},
+        },
+        "BrightnessRequest": {
+            "type": "object",
+            "properties": {"obj": {"type": "integer"}, "value": {"type": "number"}},
+            "required": ["value"],
+        },
+        "CctRequest": {
+            "type": "object",
+            "properties": {"obj": {"type": "integer"}, "kelvin": {"type": "integer"}},
+            "required": ["kelvin"],
+        },
+        "SleepRequest": {
+            "type": "object",
+            "properties": {"obj": {"type": "integer"}, "value": {"type": "integer"}},
+            "required": ["value"],
+        },
+        "RgbRequest": {
+            "type": "object",
+            "properties": {
+                "obj": {"type": "integer"},
+                "red": {"type": "integer"},
+                "green": {"type": "integer"},
+                "blue": {"type": "integer"},
+            },
+            "required": ["red", "green", "blue"],
+        },
+        "HsiRequest": {
+            "type": "object",
+            "properties": {
+                "obj": {"type": "integer"},
+                "hue": {"type": "number"},
+                "saturation": {"type": "number"},
+                "intensity": {"type": "integer"},
+            },
+            "required": ["hue", "saturation", "intensity"],
+        },
+        "Scene": {
+            "type": "object",
+            "properties": {
+                "obj": {"type": "integer"},
+                "brightness": number_or_null,
+                "kelvin": integer_or_null,
+                "sleep": integer_or_null,
+                "red": integer_or_null,
+                "green": integer_or_null,
+                "blue": integer_or_null,
+                "hue": number_or_null,
+                "saturation": number_or_null,
+                "intensity": integer_or_null,
+            },
+        },
+        "SceneApplyResponse": {
+            "type": "object",
+            "properties": {
+                "scene": {"$ref": "#/components/schemas/Scene"},
+                "results": {
+                    "type": "array",
+                    "items": {"$ref": "#/components/schemas/CommandResult"},
+                },
+            },
+        },
+        "TransitionRequest": {
+            "type": "object",
+            "properties": {
+                "from": {"$ref": "#/components/schemas/Scene"},
+                "to": {"$ref": "#/components/schemas/Scene"},
+                "steps": {"type": "integer"},
+                "duration": {"type": "number"},
+                "easing": {"type": "string"},
+            },
+        },
+        "TransitionResponse": {"type": "object", "additionalProperties": True},
+        "PresetRequest": {
+            "allOf": [
+                {"$ref": "#/components/schemas/Scene"},
+                {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                    "required": ["name"],
+                },
+            ]
+        },
+        "PresetResponse": {"type": "object", "additionalProperties": True},
+    }
 
 
 def serve(
@@ -366,6 +657,7 @@ def serve(
     light_factory: Callable[[], object] | None = None,
     preset_library: ScenePresetLibrary | None = None,
     state_tracker: SceneStateTracker | None = None,
+    cors_origin: str | None = "*",
 ) -> None:
     httpd = LightHttpServer(
         (host, port),
@@ -374,6 +666,7 @@ def serve(
         light_factory=light_factory,
         preset_library=preset_library,
         state_tracker=state_tracker,
+        cors_origin=cors_origin,
     )
     try:
         httpd.serve_forever()
