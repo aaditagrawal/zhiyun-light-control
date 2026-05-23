@@ -279,6 +279,10 @@ uv run --extra ble zlight serve --transport ble --name-contains MOLUS --allow-co
 uv run zlight serve --transport ble --ble-backend macos-app --name-contains PL103 --allow-control
 ```
 
+When the HTTP bridge runs with `--transport ble --ble-backend macos-app`,
+`GET /ready` includes `devices.ble.macos_status` so a controller can show the
+current Bluetooth authorization/state blocker without starting a BLE scan.
+
 Useful HTTP calls:
 
 ```sh

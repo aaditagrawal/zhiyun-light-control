@@ -882,6 +882,10 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             configured_transport=self.server.transport,
             configured_usb_port=self.server.light_port,
             include_ble=False,
+            include_ble_status=(
+                self.server.transport == "ble"
+                and self.server.ble_backend == "macos-app"
+            ),
             ble_backend=self.server.ble_backend or "worker",
             ble_name_contains=self.server.ble_name_contains,
             ble_python=self.server.ble_python,

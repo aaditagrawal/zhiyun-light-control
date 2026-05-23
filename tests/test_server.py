@@ -886,22 +886,43 @@ class ServerTests(unittest.TestCase):
         thread.start()
         base = f"http://127.0.0.1:{server.server_port}"
         try:
-            diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
-            self.assertFalse(diagnostics["ok"])
-            self.assertFalse(diagnostics["connection_confirmed"])
-            self.assertEqual(diagnostics["bridge"]["transport"], "ble")
-            self.assertEqual(diagnostics["bridge"]["ble_backend"], "macos-app")
-            self.assertEqual(
-                diagnostics["status"]["error"], "Bluetooth state unauthorized: 3"
-            )
-            self.assertIn("Privacy & Security", diagnostics["next_steps"][0])
+            with patch(
+                "zhiyun_light_control.devices.macos_ble_app_status",
+                return_value={
+                    "ok": False,
+                    "state": "unauthorized",
+                    "authorization": "not_determined",
+                    "error": "Bluetooth state unauthorized: 3",
+                },
+            ) as ble_status:
+                diagnostics = json.loads(
+                    urlopen(f"{base}/diagnostics", timeout=3).read()
+                )
+                self.assertFalse(diagnostics["ok"])
+                self.assertFalse(diagnostics["connection_confirmed"])
+                self.assertEqual(diagnostics["bridge"]["transport"], "ble")
+                self.assertEqual(diagnostics["bridge"]["ble_backend"], "macos-app")
+                self.assertEqual(
+                    diagnostics["status"]["error"], "Bluetooth state unauthorized: 3"
+                )
+                self.assertIn("Privacy & Security", diagnostics["next_steps"][0])
 
-            ready = json.loads(urlopen(f"{base}/ready", timeout=3).read())
+                ready = json.loads(urlopen(f"{base}/ready", timeout=3).read())
+
+            ble_status.assert_called_once_with(timeout=5.0)
             self.assertFalse(ready["ok"])
             self.assertFalse(ready["ready_for"]["read_status"])
             self.assertEqual(ready["bridge"]["ble_backend"], "macos-app")
             self.assertEqual(
                 ready["status"]["error"], "Bluetooth state unauthorized: 3"
+            )
+            self.assertEqual(
+                ready["devices"]["ble"]["macos_status"]["authorization"],
+                "not_determined",
+            )
+            self.assertEqual(
+                ready["devices"]["ble"]["macos_status"]["state"],
+                "unauthorized",
             )
             self.assertEqual(
                 ready["requirements"]["read_status"]["pending_actions"],
