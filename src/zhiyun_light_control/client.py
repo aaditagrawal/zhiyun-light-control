@@ -15,7 +15,7 @@ from .protocol import (
     build_updater_frame,
     brightness_payload,
     cct_payload,
-    first_frame,
+    first_response_frame,
     iter_frames,
     hsi_payload,
     object_id_payload,
@@ -87,7 +87,7 @@ class ZhiyunLight:
             tx=tx,
             rx=rx,
             frames=frames,
-            ack=first_frame(rx, cmd=cmd),
+            ack=first_response_frame(rx, tx=tx, cmd=cmd),
         )
 
     def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
@@ -108,7 +108,7 @@ class ZhiyunLight:
             tx=tx,
             rx=rx,
             frames=frames,
-            ack=first_frame(rx, cmd=cmd),
+            ack=first_response_frame(rx, tx=tx, cmd=cmd),
         )
 
     def updater_command(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):

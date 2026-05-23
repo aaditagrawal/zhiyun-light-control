@@ -285,8 +285,9 @@ with make_light_factory(LightConnectionConfig(transport="usb", persistent=True))
 
 For integration debugging, use `exchange_runtime()` instead of the convenience
 methods. It returns a `CommandResult` with the transmitted frame, raw response
-bytes, parsed frames, matching ACK, and a transport status:
-`acknowledged`, `sent_no_response`, or `response_without_matching_ack`.
+bytes, parsed frames, echo detection, matching ACK, and a transport status:
+`acknowledged`, `sent_no_response`, `echoed_write`, or
+`response_without_matching_ack`.
 
 For bench testing and release checks, use the same evidence model through the
 validation API:

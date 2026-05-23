@@ -171,6 +171,40 @@ def first_frame(buf: bytes, *, cmd: int | None = None) -> ParsedFrame | None:
     return None
 
 
+def frame_bytes(buf: bytes, frame: ParsedFrame) -> bytes:
+    """Return the exact serialized frame bytes for a parsed frame."""
+
+    end = frame.offset + 4 + frame.length + 2
+    return buf[frame.offset : end]
+
+
+def is_echo_frame(buf: bytes, frame: ParsedFrame, tx: bytes) -> bool:
+    """Return true when a parsed response frame is just the transmitted frame."""
+
+    return bool(tx) and frame_bytes(buf, frame) == tx
+
+
+def has_echo_frame(buf: bytes, tx: bytes) -> bool:
+    return any(is_echo_frame(buf, frame, tx) for frame in iter_frames(buf))
+
+
+def first_response_frame(
+    buf: bytes,
+    *,
+    tx: bytes = b"",
+    cmd: int | None = None,
+) -> ParsedFrame | None:
+    """Return the first matching frame that is not an exact write echo."""
+
+    for frame in iter_frames(buf):
+        if cmd is not None and frame.cmd != (cmd & 0xFFFF):
+            continue
+        if is_echo_frame(buf, frame, tx):
+            continue
+        return frame
+    return None
+
+
 def require_frame(buf: bytes, *, cmd: int | None = None) -> ParsedFrame:
     frame = first_frame(buf, cmd=cmd)
     if frame is None:
@@ -286,4 +320,3 @@ def parse_chip_sync(frame: ParsedFrame) -> ChipSyncInfo:
         firmware_raw=firmware_raw,
         serial32=serial32,
     )
-

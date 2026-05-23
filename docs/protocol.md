@@ -40,12 +40,13 @@ Known object commands:
 
 Object reads still need more live validation. On the upgraded G60, registration ACKs over USB, but object reads tested for object ids `0` and `1` did not respond.
 
-The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, or `response_without_matching_ack`.
+The library exposes object-control commands through `CommandResult` objects so integrations can inspect `tx_hex`, `rx_hex`, parsed frames, echo detection, and timeout/ACK status. This is useful while the exact object-control behavior is still being validated across USB and BLE. `transport_status` is `acknowledged`, `sent_no_response`, `echoed_write`, or `response_without_matching_ack`.
 
 `zlight validate` and `validate_sync_light()` build on `CommandResult` to produce
 a hardware evidence report. A primitive is `confirmed` only when the device
 returns a matching ACK frame with a valid CRC. A transmitted object-control frame
-that receives no response remains `sent_no_response`, not confirmed. Use
+that receives no response remains `sent_no_response`, not confirmed. An exact
+write echo is reported as `echoed_write` and is also not confirmed. Use
 `zlight validate --strict` in automation when unconfirmed attempted primitives
 should fail the run.
 

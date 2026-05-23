@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from .protocol import ParsedFrame
+from .protocol import ParsedFrame, has_echo_frame, is_echo_frame
 
 
 @dataclass(frozen=True)
@@ -14,7 +14,9 @@ class CommandResult:
 
     ``ack`` is the frame matching the command id, when the device sends one.
     For some currently experimental object-control commands the light may not
-    reply even when the frame was transmitted.
+    reply even when the frame was transmitted. Some low-level probes can also
+    produce an exact write echo; that is surfaced separately and is not counted
+    as an acknowledgement.
     """
 
     command: int
@@ -25,7 +27,11 @@ class CommandResult:
 
     @property
     def acknowledged(self) -> bool:
-        return self.ack is not None and self.ack.crc_ok
+        return (
+            self.ack is not None
+            and self.ack.crc_ok
+            and not is_echo_frame(self.rx, self.ack, self.tx)
+        )
 
     @property
     def sent(self) -> bool:
@@ -36,9 +42,15 @@ class CommandResult:
         return not self.rx
 
     @property
+    def echoed(self) -> bool:
+        return has_echo_frame(self.rx, self.tx)
+
+    @property
     def transport_status(self) -> str:
         if self.acknowledged:
             return "acknowledged"
+        if self.echoed:
+            return "echoed_write"
         if self.timed_out:
             return "sent_no_response"
         return "response_without_matching_ack"
@@ -50,6 +62,7 @@ class CommandResult:
             "rx_hex": self.rx.hex() if self.rx else None,
             "sent": self.sent,
             "acknowledged": self.acknowledged,
+            "echoed": self.echoed,
             "timed_out": self.timed_out,
             "transport_status": self.transport_status,
             "ack": self.ack.to_dict() if self.ack else None,

@@ -25,6 +25,26 @@ class EchoAckTransport:
         return
 
 
+class ExactEchoTransport:
+    def exchange(self, tx: bytes, timeout: float = 0.8) -> bytes:
+        del timeout
+        return tx
+
+    def close(self) -> None:
+        return
+
+
+class EchoThenAckTransport:
+    def exchange(self, tx: bytes, timeout: float = 0.8) -> bytes:
+        del timeout
+        frame = first_frame(tx)
+        assert frame is not None
+        return tx + build_runtime_frame(frame.seq, frame.cmd, b"\x00")
+
+    def close(self) -> None:
+        return
+
+
 class ClientTests(unittest.TestCase):
     def test_exchange_runtime_exposes_raw_bytes_and_ack(self) -> None:
         transport = EchoAckTransport()
@@ -39,6 +59,26 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(result.command, RuntimeCommand.REGISTER_DEFAULT_GROUP)
         self.assertEqual(result.tx, transport.sent[0])
         self.assertEqual(result.ack.cmd, RuntimeCommand.REGISTER_DEFAULT_GROUP)
+        self.assertFalse(result.echoed)
+
+    def test_exchange_runtime_does_not_count_exact_echo_as_ack(self) -> None:
+        light = ZhiyunLight(ExactEchoTransport())
+
+        result = light.exchange_runtime(RuntimeCommand.BRIGHTNESS, b"\x01")
+
+        self.assertFalse(result.acknowledged)
+        self.assertTrue(result.echoed)
+        self.assertEqual(result.transport_status, "echoed_write")
+
+    def test_exchange_runtime_skips_echo_before_real_ack(self) -> None:
+        light = ZhiyunLight(EchoThenAckTransport())
+
+        result = light.exchange_runtime(RuntimeCommand.DEVICE_INFO)
+
+        self.assertTrue(result.acknowledged)
+        self.assertTrue(result.echoed)
+        self.assertEqual(result.transport_status, "acknowledged")
+        self.assertEqual(result.ack.payload, b"\x00")
 
     def test_apply_scene_orders_media_workflow_commands(self) -> None:
         transport = EchoAckTransport()

@@ -8,6 +8,8 @@ from zhiyun_light_control.protocol import (
     build_runtime_frame,
     build_updater_frame,
     first_frame,
+    first_response_frame,
+    has_echo_frame,
     parse_chip_sync,
     parse_device_info,
     parse_device_id,
@@ -32,6 +34,24 @@ class ProtocolTests(unittest.TestCase):
             register_payload(0),
         )
         self.assertEqual(frame.hex(), "243c0a00000101000600000000001121")
+
+    def test_response_frame_skips_exact_write_echo(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        ack = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
+        rx = tx + ack
+
+        self.assertTrue(has_echo_frame(rx, tx))
+        frame = first_response_frame(rx, tx=tx, cmd=RuntimeCommand.DEVICE_INFO)
+
+        self.assertIsNotNone(frame)
+        self.assertEqual(frame.payload, b"\x00")
+
+    def test_response_frame_returns_none_for_only_echo(self) -> None:
+        tx = build_runtime_frame(1, RuntimeCommand.BRIGHTNESS, b"\x00\x00\x00")
+
+        self.assertIsNone(
+            first_response_frame(tx, tx=tx, cmd=RuntimeCommand.BRIGHTNESS)
+        )
 
     def test_parse_device_info_after_upgrade(self) -> None:
         rx = bytes.fromhex(
@@ -70,4 +90,3 @@ class ProtocolTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

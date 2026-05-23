@@ -458,6 +458,7 @@ def _notes(
     notes = [
         "confirmed means the device returned a matching ACK frame with valid CRC",
         "sent_no_response means the frame was written but the device did not ACK it",
+        "echoed_write means the transport echoed the frame without a device ACK",
     ]
     if not allow_control:
         notes.append("control checks skipped; pass --allow-control to transmit writes")

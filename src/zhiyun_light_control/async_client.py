@@ -13,7 +13,7 @@ from .protocol import (
     build_runtime_frame,
     brightness_payload,
     cct_payload,
-    first_frame,
+    first_response_frame,
     iter_frames,
     hsi_payload,
     object_id_payload,
@@ -88,7 +88,7 @@ class AsyncZhiyunLight:
             tx=tx,
             rx=rx,
             frames=frames,
-            ack=first_frame(rx, cmd=cmd),
+            ack=first_response_frame(rx, tx=tx, cmd=cmd),
         )
 
     async def command(self, cmd: int, payload: bytes = b"", *, timeout: float = 1.5):
