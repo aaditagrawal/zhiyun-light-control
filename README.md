@@ -680,6 +680,10 @@ validation = integration.validate(include_object_reads=True)
 print(ready["ready_for"])
 print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
+
+with integration.controller(require_acknowledged=True) as controller:
+    result = controller.apply_scene({"obj": 1, "brightness": 35, "kelvin": 5600})
+    print(result["applied"], result["reason"])
 ```
 
 Async host applications can use the same setup/preflight model for native BLE
@@ -705,6 +709,10 @@ async def main() -> None:
 
     print(ready["ready_for"])
     print(validation["summary"]["ready_for"])
+
+    async with integration.controller(require_acknowledged=True) as controller:
+        result = await controller.apply_scene({"obj": 1, "brightness": 35})
+        print(result["applied"], result["reason"])
 
 
 asyncio.run(main())

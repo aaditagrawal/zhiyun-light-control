@@ -7,6 +7,7 @@ from zhiyun_light_control import (
     AsyncLightIntegration,
     LightConnectionConfig,
     LightIntegration,
+    Scene,
     local_async_integration_snapshot,
     local_async_readiness,
     local_async_status_snapshot,
@@ -161,6 +162,28 @@ class FakeValidationLight:
         return _result(UPDATER_DEVICE, cmd, b"\x00")
 
 
+class FakeSceneLight:
+    def __init__(self) -> None:
+        self.scenes: list[Scene] = []
+        self.control_modes: list[int] = []
+
+    def __enter__(self) -> FakeSceneLight:
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        return
+
+    def apply_scene(
+        self,
+        scene: Scene,
+        *,
+        control_mode: int = 0x33,
+    ) -> list[CommandResult]:
+        self.scenes.append(scene)
+        self.control_modes.append(control_mode)
+        return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
+
+
 class AsyncFakeValidationLight:
     def __init__(self, *, acknowledged: bool = True) -> None:
         self.acknowledged = acknowledged
@@ -188,6 +211,28 @@ class AsyncFakeValidationLight:
             tx = build_frame(RUNTIME_TYPE, len(self.payloads), cmd, payload)
             return CommandResult(cmd, tx, b"", (), None)
         return _result(RUNTIME_TYPE, cmd, b"\x00")
+
+
+class AsyncFakeSceneLight:
+    def __init__(self) -> None:
+        self.scenes: list[Scene] = []
+        self.control_modes: list[int] = []
+
+    async def __aenter__(self) -> AsyncFakeSceneLight:
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+        return
+
+    async def apply_scene(
+        self,
+        scene: Scene,
+        *,
+        control_mode: int = 0x33,
+    ) -> list[CommandResult]:
+        self.scenes.append(scene)
+        self.control_modes.append(control_mode)
+        return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
 
 
 class FailingLight:
@@ -361,6 +406,24 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(payloads[RuntimeCommand.SLEEP][2], 0x01)
         self.assertEqual(payloads[RuntimeCommand.BRIGHTNESS][2], 0x01)
 
+    def test_light_integration_controller_reuses_configured_transport(self) -> None:
+        light = FakeSceneLight()
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            light_factory=FakeFactory(light),
+        )
+
+        controller = integration.controller(
+            control_mode=0x01,
+            require_acknowledged=True,
+        )
+        payload = controller.apply_scene({"obj": 1, "brightness": 45})
+
+        self.assertTrue(controller.require_acknowledged)
+        self.assertEqual(payload["action"], "scene")
+        self.assertEqual(light.control_modes, [0x01])
+        self.assertEqual(light.scenes[0].brightness, 45)
+
     def test_local_validation_reports_open_errors_without_raising(self) -> None:
         payload = local_validation(light_factory=FakeFactory(FailingLight()))
 
@@ -523,6 +586,24 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         payloads = dict(light.payloads)
         self.assertEqual(payloads[RuntimeCommand.SLEEP][2], 0x01)
         self.assertEqual(payloads[RuntimeCommand.BRIGHTNESS][2], 0x01)
+
+    async def test_async_light_integration_controller_reuses_config(self) -> None:
+        light = AsyncFakeSceneLight()
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            light_factory=AsyncFakeFactory(light),
+        )
+
+        controller = integration.controller(
+            control_mode=0x01,
+            require_acknowledged=True,
+        )
+        payload = await controller.apply_scene({"obj": 1, "brightness": 45})
+
+        self.assertTrue(controller.require_acknowledged)
+        self.assertEqual(payload["action"], "scene")
+        self.assertEqual(light.control_modes, [0x01])
+        self.assertEqual(light.scenes[0].brightness, 45)
 
     async def test_local_async_validation_reports_open_errors(self) -> None:
         payload = await local_async_validation(

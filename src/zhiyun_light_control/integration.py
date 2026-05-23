@@ -10,8 +10,15 @@ from .bridge import (
     LightFactory,
     make_light_factory,
 )
-from .controller import AsyncLightFactory, open_async_light
+from .controller import (
+    AsyncLightController,
+    AsyncLightFactory,
+    LightController,
+    open_async_light,
+)
+from .cues import CueLibrary
 from .devices import discover_transport_devices
+from .presets import ScenePresetLibrary
 from .protocol import DEFAULT_CONTROL_MODE
 from .server import (
     capabilities_response,
@@ -19,6 +26,7 @@ from .server import (
     integration_snapshot_response,
     readiness_response,
 )
+from .state import SceneStateTracker
 from .status import read_async_status, read_sync_status
 from .transports.ble import BleWorkerError
 from .validation import validate_async_light, validate_sync_light
@@ -73,6 +81,25 @@ class LightIntegration:
             allow_control=self.allow_control,
             presets=self.preset_names,
             cues=self.cue_names,
+        )
+
+    def controller(
+        self,
+        *,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        state_tracker: SceneStateTracker | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+    ) -> LightController:
+        return LightController(
+            self.config,
+            light_factory=self.light_factory,
+            preset_library=preset_library,
+            cue_library=cue_library,
+            state_tracker=state_tracker,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
         )
 
     def snapshot(
@@ -187,6 +214,25 @@ class AsyncLightIntegration:
             allow_control=self.allow_control,
             presets=self.preset_names,
             cues=self.cue_names,
+        )
+
+    def controller(
+        self,
+        *,
+        preset_library: ScenePresetLibrary | None = None,
+        cue_library: CueLibrary | None = None,
+        state_tracker: SceneStateTracker | None = None,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+        require_acknowledged: bool = False,
+    ) -> AsyncLightController:
+        return AsyncLightController(
+            self.config,
+            light_factory=self.light_factory,
+            preset_library=preset_library,
+            cue_library=cue_library,
+            state_tracker=state_tracker,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
         )
 
     async def snapshot(
