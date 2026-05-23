@@ -14,6 +14,7 @@ from typing import Any, Callable
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
+from .presets import ScenePresetLibrary
 from .protocol import (
     RuntimeCommand,
     brightness_payload,
@@ -113,9 +114,16 @@ def decode_message(data: bytes) -> OscMessage:
 class OscLightDispatcher:
     """Map OSC messages to light API calls."""
 
-    def __init__(self, light_factory: Callable[[], Any], *, allow_control: bool):
+    def __init__(
+        self,
+        light_factory: Callable[[], Any],
+        *,
+        allow_control: bool,
+        preset_library: ScenePresetLibrary | None = None,
+    ):
         self.light_factory = light_factory
         self.allow_control = allow_control
+        self.preset_library = preset_library
 
     def dispatch(self, message: OscMessage) -> OscDispatchResult:
         try:
@@ -197,6 +205,20 @@ class OscLightDispatcher:
                 action="scene",
                 result={"scene": scene.to_dict(), "results": results},
             )
+        if address in {"/zhiyun/preset", "/light/preset"}:
+            if self.preset_library is None:
+                raise ValueError("no preset file loaded")
+            name = _string_arg(args, 0)
+            preset_obj = int(args[1]) if len(args) >= 2 and isinstance(args[1], int) else None
+            scene = self.preset_library.get(name)
+            if preset_obj is not None:
+                scene = Scene(**{**scene.to_dict(), "obj": preset_obj})
+            results = [result.to_dict() for result in light.apply_scene(scene)]
+            return OscDispatchResult(
+                message=message,
+                action="preset",
+                result={"preset": name, "scene": scene.to_dict(), "results": results},
+            )
         return OscDispatchResult(
             message=message,
             action="unknown",
@@ -212,10 +234,12 @@ def serve_osc(
     allow_control: bool = False,
     once: bool = False,
     light_factory: Callable[[], Any] | None = None,
+    preset_library: ScenePresetLibrary | None = None,
 ) -> None:
     dispatcher = OscLightDispatcher(
         light_factory=light_factory or (lambda: ZhiyunLight.usb(port=light_port)),
         allow_control=allow_control,
+        preset_library=preset_library,
     )
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -274,6 +298,16 @@ def _number_arg(args: tuple[OscArg, ...], index: int) -> float:
     if not isinstance(value, (int, float)):
         raise ValueError(f"OSC argument {index} must be numeric")
     return float(value)
+
+
+def _string_arg(args: tuple[OscArg, ...], index: int) -> str:
+    try:
+        value = args[index]
+    except IndexError as exc:
+        raise ValueError(f"missing string OSC argument {index}") from exc
+    if not isinstance(value, str):
+        raise ValueError(f"OSC argument {index} must be a string")
+    return value
 
 
 def _obj_arg(args: tuple[OscArg, ...], *, default: int) -> int:

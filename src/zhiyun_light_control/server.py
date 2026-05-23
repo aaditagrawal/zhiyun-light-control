@@ -11,6 +11,7 @@ from typing import Any
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
+from .presets import ScenePresetLibrary, merge_scene, scene_from_optional_mapping
 from .protocol import (
     RuntimeCommand,
     brightness_payload,
@@ -30,11 +31,13 @@ class LightHttpServer(ThreadingHTTPServer):
         port: str | None = None,
         allow_control: bool = False,
         light_factory: Any | None = None,
+        preset_library: ScenePresetLibrary | None = None,
     ):
         super().__init__(server_address, LightRequestHandler)
         self.light_port = port
         self.allow_control = allow_control
         self.light_factory = light_factory or (lambda: ZhiyunLight.usb(port=port))
+        self.preset_library = preset_library
 
 
 class LightRequestHandler(BaseHTTPRequestHandler):
@@ -48,11 +51,27 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         if path == "/commands":
             self._json(
                 {
-                    "get": ["/health", "/probe", "/commands"],
-                    "post": ["/register", "/brightness", "/cct", "/sleep", "/rgb", "/hsi", "/scene"],
+                    "get": ["/health", "/probe", "/commands", "/presets"],
+                    "post": [
+                        "/register",
+                        "/brightness",
+                        "/cct",
+                        "/sleep",
+                        "/rgb",
+                        "/hsi",
+                        "/scene",
+                        "/preset",
+                    ],
                     "control_enabled": self.server.allow_control,
+                    "presets": self.server.preset_library.names()
+                    if self.server.preset_library
+                    else [],
                 }
             )
+            return
+        if path == "/presets":
+            library = self.server.preset_library
+            self._json(library.to_dict() if library else {"scenes": {}})
             return
         if path == "/probe":
             with self.server.light_factory() as light:
@@ -150,6 +169,26 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     "scene": scene.to_dict(),
                     "results": [result.to_dict() for result in light.apply_scene(scene)],
                 }
+            if path == "/preset":
+                library = self.server.preset_library
+                if library is None:
+                    raise ValueError("no preset file loaded")
+                name = str(body["name"])
+                overrides = {
+                    key: value
+                    for key, value in body.items()
+                    if key != "name" and value is not None
+                }
+                scene = merge_scene(
+                    library.get(name),
+                    scene_from_optional_mapping(overrides, obj=obj),
+                    override_obj="obj" in body,
+                )
+                return {
+                    "preset": name,
+                    "scene": scene.to_dict(),
+                    "results": [result.to_dict() for result in light.apply_scene(scene)],
+                }
         raise ValueError("unknown endpoint")
 
     def _read_json(self) -> dict[str, Any]:
@@ -180,12 +219,14 @@ def serve(
     light_port: str | None = None,
     allow_control: bool = False,
     light_factory: Any | None = None,
+    preset_library: ScenePresetLibrary | None = None,
 ) -> None:
     httpd = LightHttpServer(
         (host, port),
         port=light_port,
         allow_control=allow_control,
         light_factory=light_factory,
+        preset_library=preset_library,
     )
     try:
         httpd.serve_forever()

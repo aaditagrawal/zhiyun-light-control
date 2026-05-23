@@ -51,6 +51,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/health` | Process health |
 | `GET` | `/probe` | Global light probe |
 | `GET` | `/commands` | List bridge commands |
+| `GET` | `/presets` | List loaded named scene presets |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
 | `POST` | `/cct` | Set color temperature |
@@ -58,6 +59,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/rgb` | Set RGB values |
 | `POST` | `/hsi` | Set HSI values |
 | `POST` | `/scene` | Apply several properties in order |
+| `POST` | `/preset` | Apply a loaded named preset with optional overrides |
 
 Control endpoints require `zlight serve --allow-control`. Responses include command result details instead of hiding timeouts, because some endpoints are still experimental on the current G60.
 
@@ -81,8 +83,25 @@ The OSC bridge is UDP-based and dependency-free:
 | `/zhiyun/rgb` | `i red, i green, i blue`, optional trailing `i obj` |
 | `/zhiyun/hsi` | `f hue, f saturation, i intensity`, optional trailing `i obj` |
 | `/zhiyun/scene` | `f brightness, i kelvin, i sleep`, optional trailing `i obj` |
+| `/zhiyun/preset` | `s name`, optional trailing `i obj` |
 
 The `/light/...` prefix is an alias. Control endpoints require `zlight osc-serve --allow-control`. The server replies to each datagram with `/zhiyun/result` containing success flag, action, and error text.
+
+Named presets are loaded from JSON with `--preset-file`. Files can either be a
+top-level mapping of names to scene objects or an object with a `scenes` mapping:
+
+```json
+{
+  "scenes": {
+    "key": {"brightness": 35, "kelvin": 5600},
+    "blackout": {"sleep": 1}
+  }
+}
+```
+
+CLI scene fields override preset values when supplied, and HTTP `/preset`
+accepts the same scene fields plus `name`. Use `zlight apply --dry-run` to
+resolve a preset and override set without opening a USB/BLE connection.
 
 The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and maps DMX channels to a `Scene`:
 

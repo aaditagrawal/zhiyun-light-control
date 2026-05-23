@@ -12,6 +12,7 @@ from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .models import CommandResult, Scene
 from .osc import serve_osc
+from .presets import ScenePresetLibrary, merge_scene
 from .protocol import (
     RuntimeCommand,
     build_runtime_frame,
@@ -88,7 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     apply = sub.add_parser("apply", help="Apply a small lighting scene.")
     add_transport_args(apply)
-    apply.add_argument("--obj", type=parse_int, default=1)
+    apply.add_argument("--obj", type=parse_int)
     apply.add_argument("--brightness", type=float)
     apply.add_argument("--kelvin", type=int)
     apply.add_argument("--sleep", type=int)
@@ -98,6 +99,9 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--hue", type=float)
     apply.add_argument("--saturation", type=float)
     apply.add_argument("--intensity", type=int)
+    apply.add_argument("--preset-file", help="JSON file containing named scene presets.")
+    apply.add_argument("--preset", help="Named preset to apply before CLI overrides.")
+    apply.add_argument("--dry-run", action="store_true", help="Resolve the scene without sending commands.")
     apply.add_argument("--yes", action="store_true")
     apply.set_defaults(func=cmd_apply)
 
@@ -105,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8765)
     add_bridge_transport_args(server)
+    server.add_argument("--preset-file", help="JSON file containing named scene presets.")
     server.add_argument("--allow-control", action="store_true")
     server.set_defaults(func=cmd_serve)
 
@@ -112,6 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     osc.add_argument("--host", default="127.0.0.1")
     osc.add_argument("--port", type=int, default=9000)
     add_bridge_transport_args(osc)
+    osc.add_argument("--preset-file", help="JSON file containing named scene presets.")
     osc.add_argument("--allow-control", action="store_true")
     osc.set_defaults(func=cmd_osc_serve)
 
@@ -369,8 +375,11 @@ async def _set_ble(args: argparse.Namespace):
 
 
 def cmd_apply(args: argparse.Namespace) -> int:
-    require_yes(args, "apply sends one or more control commands to the light")
     scene = scene_from_args(args)
+    if args.dry_run:
+        print_json({"dry_run": True, "scene": scene.to_dict(), "results": []})
+        return 0
+    require_yes(args, "apply sends one or more control commands to the light")
     if args.transport == "ble":
         results = asyncio.run(_apply_ble(args, scene))
     else:
@@ -390,8 +399,8 @@ async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResu
 
 
 def scene_from_args(args: argparse.Namespace) -> Scene:
-    return Scene(
-        obj=args.obj,
+    scene = Scene(
+        obj=args.obj if args.obj is not None else 1,
         brightness=args.brightness,
         kelvin=args.kelvin,
         sleep=args.sleep,
@@ -402,6 +411,18 @@ def scene_from_args(args: argparse.Namespace) -> Scene:
         saturation=args.saturation,
         intensity=args.intensity,
     )
+    preset_name = getattr(args, "preset", None)
+    if preset_name:
+        library = load_preset_library(args)
+        if library is None:
+            raise SystemExit("--preset-file is required with --preset")
+        return merge_scene(library.get(preset_name), scene, override_obj=args.obj is not None)
+    return scene
+
+
+def load_preset_library(args: argparse.Namespace) -> ScenePresetLibrary | None:
+    path = getattr(args, "preset_file", None)
+    return ScenePresetLibrary.load(path) if path else None
 
 
 def cmd_serve(args: argparse.Namespace) -> int:
@@ -411,6 +432,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         light_port=args.light_port,
         allow_control=args.allow_control,
         light_factory=bridge_light_factory(args),
+        preset_library=load_preset_library(args),
     )
     return 0
 
@@ -422,6 +444,7 @@ def cmd_osc_serve(args: argparse.Namespace) -> int:
         light_port=args.light_port,
         allow_control=args.allow_control,
         light_factory=bridge_light_factory(args),
+        preset_library=load_preset_library(args),
     )
     return 0
 

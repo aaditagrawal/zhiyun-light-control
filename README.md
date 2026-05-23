@@ -24,6 +24,7 @@ Implemented but still experimental:
 - Local Art-Net/DMX bridge for lighting desks and media servers.
 - Local sACN/E1.31 DMX bridge for lighting desks and media servers.
 - Scene application for media workflows that need to set several light properties together.
+- Named scene presets for repeatable looks across CLI, HTTP, and OSC.
 
 Firmware flashing is intentionally not part of this package. Use Zhiyun's official updater for firmware writes.
 
@@ -87,10 +88,17 @@ Apply a simple scene:
 zlight apply --obj 1 --sleep 0 --brightness 35 --kelvin 5600 --yes
 ```
 
+Apply a named preset:
+
+```sh
+zlight apply --preset-file examples/scenes.json --preset key --yes
+zlight apply --preset-file examples/scenes.json --preset key --brightness 42 --dry-run
+```
+
 Start the local HTTP bridge:
 
 ```sh
-zlight serve --host 127.0.0.1 --port 8765 --allow-control
+zlight serve --host 127.0.0.1 --port 8765 --preset-file examples/scenes.json --allow-control
 ```
 
 HTTP, OSC, and Art-Net bridges default to USB. They can target BLE with the
@@ -118,6 +126,10 @@ curl -X POST http://127.0.0.1:8765/brightness \
 curl -X POST http://127.0.0.1:8765/scene \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "sleep": 0, "brightness": 35, "kelvin": 5600}'
+curl http://127.0.0.1:8765/presets
+curl -X POST http://127.0.0.1:8765/preset \
+  -H 'content-type: application/json' \
+  -d '{"name": "key", "brightness": 45}'
 ```
 
 Start the local OSC bridge:
@@ -137,6 +149,7 @@ Supported OSC addresses:
 /zhiyun/rgb          i:red i:green i:blue [i:obj]
 /zhiyun/hsi          f:hue f:saturation i:intensity [i:obj]
 /zhiyun/scene        f:brightness i:kelvin i:sleep [i:obj]
+/zhiyun/preset       s:name [i:obj]
 ```
 
 The `/light/...` prefix is accepted as an alias for the same OSC commands.

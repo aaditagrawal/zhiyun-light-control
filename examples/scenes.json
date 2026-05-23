@@ -1,0 +1,15 @@
+{
+  "scenes": {
+    "key": {
+      "brightness": 35,
+      "kelvin": 5600
+    },
+    "warm-fill": {
+      "brightness": 18,
+      "kelvin": 3200
+    },
+    "blackout": {
+      "sleep": 1
+    }
+  }
+}

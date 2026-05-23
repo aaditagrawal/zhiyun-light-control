@@ -8,6 +8,7 @@ from zhiyun_light_control.osc import (
     decode_message,
     encode_message,
 )
+from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import build_runtime_frame, first_frame
 
 
@@ -85,7 +86,24 @@ class OscTests(unittest.TestCase):
         self.assertEqual([item["command"] for item in result.result["results"]], [0x1001, 0x1002, 0x1008])
         self.assertEqual(light.commands, [0x1001, 0x1002, 0x1008])
 
+    def test_dispatch_preset_maps_named_scene(self) -> None:
+        light = FakeLight()
+        library = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 30, "kelvin": 5000}}}
+        )
+        dispatcher = OscLightDispatcher(
+            lambda: light,
+            allow_control=True,
+            preset_library=library,
+        )
+
+        result = dispatcher.dispatch(decode_message(encode_message("/zhiyun/preset", "key", 2)))
+
+        self.assertEqual(result.action, "preset")
+        self.assertEqual(result.result["preset"], "key")
+        self.assertEqual(result.result["scene"]["obj"], 2)
+        self.assertEqual([item["command"] for item in result.result["results"]], [0x1001, 0x1002])
+
 
 if __name__ == "__main__":
     unittest.main()
-

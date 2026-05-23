@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from urllib.request import Request, urlopen
 
 from zhiyun_light_control.models import CommandResult, Scene
+from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import build_runtime_frame, first_frame
 from zhiyun_light_control.server import LightHttpServer
 
@@ -75,7 +76,39 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_lists_and_applies_preset(self) -> None:
+        light = FakeLight()
+        library = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 40, "kelvin": 5200}}}
+        )
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+            preset_library=library,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            presets = json.loads(urlopen(f"{base}/presets", timeout=3).read())
+            self.assertEqual(sorted(presets["scenes"]), ["key"])
+
+            request = Request(
+                f"{base}/preset",
+                data=json.dumps({"name": "key", "brightness": 55}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            response = json.loads(urlopen(request, timeout=3).read())
+            self.assertEqual(response["preset"], "key")
+            self.assertEqual(response["scene"]["brightness"], 55.0)
+            self.assertEqual(response["scene"]["kelvin"], 5200)
+            self.assertEqual([result["command"] for result in response["results"]], [0x1001, 0x1002])
+        finally:
+            server.shutdown()
+            server.server_close()
+
 
 if __name__ == "__main__":
     unittest.main()
-
