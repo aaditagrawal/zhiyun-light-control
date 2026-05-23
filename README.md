@@ -616,6 +616,10 @@ that a transmitted command was applied.
 Use `integration()` when a controller needs one setup payload containing the
 bridge manifest, capabilities, readiness, device discovery, and the client-side
 control guard configuration.
+Use `control_guard()`, `request_templates()`, `request_template(category, name)`,
+`request_template_body(category, name)`, `request_template_query(category, name)`,
+and `request_template_required_readiness(category, name)` to consume the
+machine-readable request metadata without hand-parsing nested JSON.
 It also includes `readiness_actions()`, `readiness_action(id)`, and
 `pending_readiness_actions()` helpers for setup dashboards that consume
 `GET /ready`. Create `LightBridgeClient(..., require_ready_for_controls=True)` to

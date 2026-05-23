@@ -77,6 +77,32 @@ class LightBridgeClient:
     def capabilities(self) -> dict[str, object]:
         return self._get("/capabilities")
 
+    def control_guard(self) -> dict[str, object]:
+        return control_guard(self.capabilities())
+
+    def request_templates(self) -> dict[str, dict[str, object]]:
+        return request_templates(self.capabilities())
+
+    def request_template(self, category: str, name: str) -> dict[str, object]:
+        return request_template(self.capabilities(), category, name)
+
+    def request_template_body(self, category: str, name: str) -> dict[str, object]:
+        return request_template_body(self.capabilities(), category, name)
+
+    def request_template_query(self, category: str, name: str) -> dict[str, object]:
+        return request_template_query(self.capabilities(), category, name)
+
+    def request_template_required_readiness(
+        self,
+        category: str,
+        name: str,
+    ) -> list[str]:
+        return request_template_required_readiness(
+            self.capabilities(),
+            category,
+            name,
+        )
+
     def diagnostics(self) -> dict[str, object]:
         return self._get("/diagnostics")
 
@@ -743,6 +769,74 @@ def validation_unconfirmed_names(
     return [str(item) for item in raw_names if item is not None]
 
 
+def control_guard(payload: Mapping[str, object]) -> dict[str, object]:
+    guard = _metadata_payload(payload).get("control_guard")
+    if not isinstance(guard, Mapping):
+        return {}
+    return _string_key_dict(guard)
+
+
+def request_templates(payload: Mapping[str, object]) -> dict[str, dict[str, object]]:
+    raw_templates = _metadata_payload(payload).get("request_templates")
+    if not isinstance(raw_templates, Mapping):
+        return {}
+    templates: dict[str, dict[str, object]] = {}
+    for raw_category, raw_category_templates in raw_templates.items():
+        if not isinstance(raw_category, str):
+            continue
+        if not isinstance(raw_category_templates, Mapping):
+            continue
+        templates[raw_category] = _string_key_dict(raw_category_templates)
+    return templates
+
+
+def request_template(
+    payload: Mapping[str, object],
+    category: str,
+    name: str,
+) -> dict[str, object]:
+    category_templates = request_templates(payload).get(category)
+    if not isinstance(category_templates, Mapping):
+        return {}
+    template = category_templates.get(name)
+    if not isinstance(template, Mapping):
+        return {}
+    return _string_key_dict(template)
+
+
+def request_template_body(
+    payload: Mapping[str, object],
+    category: str,
+    name: str,
+) -> dict[str, object]:
+    body = request_template(payload, category, name).get("body")
+    if not isinstance(body, Mapping):
+        return {}
+    return _string_key_dict(body)
+
+
+def request_template_query(
+    payload: Mapping[str, object],
+    category: str,
+    name: str,
+) -> dict[str, object]:
+    query = request_template(payload, category, name).get("query")
+    if not isinstance(query, Mapping):
+        return {}
+    return _string_key_dict(query)
+
+
+def request_template_required_readiness(
+    payload: Mapping[str, object],
+    category: str,
+    name: str,
+) -> list[str]:
+    required = request_template(payload, category, name).get("required_readiness")
+    if not isinstance(required, list):
+        return []
+    return [str(item) for item in required if item is not None]
+
+
 def readiness_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:
     ready_for = payload.get("ready_for")
     if not isinstance(ready_for, Mapping):
@@ -1017,6 +1111,20 @@ def _devices_payload(payload: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(devices, Mapping):
         return {}
     return _string_key_dict(devices)
+
+
+def _metadata_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    if "control_guard" in payload or "request_templates" in payload:
+        return _string_key_dict(payload)
+    raw_payloads = payload.get("payloads")
+    if isinstance(raw_payloads, Mapping):
+        capabilities = raw_payloads.get("capabilities")
+        if isinstance(capabilities, Mapping):
+            return _string_key_dict(capabilities)
+        manifest = raw_payloads.get("manifest")
+        if isinstance(manifest, Mapping):
+            return _string_key_dict(manifest)
+    return {}
 
 
 def _string_key_dict(payload: Mapping[object, object]) -> dict[str, object]:

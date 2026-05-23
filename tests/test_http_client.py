@@ -14,6 +14,7 @@ from zhiyun_light_control import (
     bridge_response_statuses,
     command_result_acknowledged,
     command_result_status,
+    control_guard,
     devices_ble_authorization,
     devices_ble_blocker,
     devices_ble_scan_devices,
@@ -33,6 +34,11 @@ from zhiyun_light_control import (
     readiness_requirements,
     readiness_unready_capabilities,
     readiness_warnings,
+    request_template,
+    request_template_body,
+    request_template_query,
+    request_template_required_readiness,
+    request_templates,
     validation_category,
     validation_ready,
     validation_ready_for,
@@ -646,6 +652,51 @@ class HttpClientTests(unittest.TestCase):
                     "validate_control"
                 ]["body"],
                 {"allow_control": True},
+            )
+            capabilities = snapshot["payloads"]["capabilities"]
+            self.assertEqual(
+                control_guard(snapshot)["strict_required_readiness"],
+                ["confirmed_control"],
+            )
+            self.assertIn("control", request_templates(capabilities))
+            self.assertEqual(
+                request_template(capabilities, "control", "brightness")["path"],
+                "/brightness",
+            )
+            self.assertEqual(
+                request_template_body(snapshot, "control", "brightness"),
+                {"obj": 1, "value": 35, "control_mode": "0x33"},
+            )
+            self.assertEqual(
+                request_template_query(capabilities, "setup", "integration"),
+                {"include_ble_status": True},
+            )
+            self.assertEqual(
+                request_template_required_readiness(
+                    capabilities,
+                    "control",
+                    "brightness",
+                ),
+                ["control_requests"],
+            )
+            self.assertEqual(
+                client.control_guard()["default_required_readiness"],
+                ["control_requests"],
+            )
+            self.assertEqual(
+                client.request_template_body("control", "scene")["brightness"],
+                35,
+            )
+            self.assertEqual(
+                client.request_template_query("setup", "integration"),
+                {"include_ble_status": True},
+            )
+            self.assertEqual(
+                client.request_template_required_readiness(
+                    "control",
+                    "brightness",
+                ),
+                ["control_requests"],
             )
             self.assertEqual(snapshot["payloads"]["devices"], devices)
         finally:
