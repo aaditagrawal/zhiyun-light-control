@@ -178,8 +178,14 @@ def serve(
     port: int = 8765,
     light_port: str | None = None,
     allow_control: bool = False,
+    light_factory: Any | None = None,
 ) -> None:
-    httpd = LightHttpServer((host, port), port=light_port, allow_control=allow_control)
+    httpd = LightHttpServer(
+        (host, port),
+        port=light_port,
+        allow_control=allow_control,
+        light_factory=light_factory,
+    )
     httpd.serve_forever()
 
 

@@ -63,6 +63,25 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertEqual(result.returncode, -6)
         self.assertIn("Aborted", result.error)
 
+    def test_safe_scan_uses_worker_json_error(self) -> None:
+        proc = types.SimpleNamespace(
+            returncode=1,
+            stdout=json.dumps(
+                {
+                    "devices": [],
+                    "error": "BLE support requires installing the 'ble' extra",
+                }
+            ),
+            stderr="",
+        )
+
+        with patch("zhiyun_light_control.transports.ble.subprocess.run", return_value=proc):
+            result = scan_zhiyun_devices_safe(timeout=1.0)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.error, "BLE support requires installing the 'ble' extra")
+
 
 class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
     async def test_scan_filters_likely_zhiyun_devices(self) -> None:

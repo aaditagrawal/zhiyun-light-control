@@ -3,6 +3,7 @@
 from .client import ProbeResult, ZhiyunLight
 from .async_client import AsyncProbeResult, AsyncZhiyunLight
 from .artnet import ArtDmxPacket, DmxMapping, decode_artdmx, encode_artdmx, scene_from_dmx
+from .bridge import LightConnectionConfig, make_light_factory
 from .models import CommandResult, Scene
 from .protocol import (
     ParsedFrame,
@@ -17,6 +18,7 @@ __all__ = [
     "ArtDmxPacket",
     "CommandResult",
     "DmxMapping",
+    "LightConnectionConfig",
     "ParsedFrame",
     "ProbeResult",
     "Scene",
@@ -26,5 +28,6 @@ __all__ = [
     "decode_artdmx",
     "encode_artdmx",
     "iter_frames",
+    "make_light_factory",
     "scene_from_dmx",
 ]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import socket
 import struct
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from .client import ZhiyunLight
 from .models import Scene
@@ -120,7 +120,7 @@ def decode_artdmx(packet: bytes) -> ArtDmxPacket:
 class ArtNetLightDispatcher:
     def __init__(
         self,
-        light_factory: Callable[[], ZhiyunLight],
+        light_factory: Callable[[], Any],
         *,
         universe: int = 0,
         mapping: DmxMapping = DmxMapping(),
@@ -169,9 +169,10 @@ def serve_artnet(
     mapping: DmxMapping = DmxMapping(),
     allow_control: bool = False,
     once: bool = False,
+    light_factory: Callable[[], Any] | None = None,
 ) -> None:
     dispatcher = ArtNetLightDispatcher(
-        light_factory=lambda: ZhiyunLight.usb(port=light_port),
+        light_factory=light_factory or (lambda: ZhiyunLight.usb(port=light_port)),
         universe=universe,
         mapping=mapping,
         allow_control=allow_control,
@@ -193,4 +194,3 @@ def _channel(data: bytes, channel: int) -> int:
         raise ValueError("DMX channels are one-based")
     index = channel - 1
     return data[index] if index < len(data) else 0
-

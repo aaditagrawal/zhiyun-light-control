@@ -112,7 +112,7 @@ def decode_message(data: bytes) -> OscMessage:
 class OscLightDispatcher:
     """Map OSC messages to light API calls."""
 
-    def __init__(self, light_factory: Callable[[], ZhiyunLight], *, allow_control: bool):
+    def __init__(self, light_factory: Callable[[], Any], *, allow_control: bool):
         self.light_factory = light_factory
         self.allow_control = allow_control
 
@@ -210,9 +210,10 @@ def serve_osc(
     light_port: str | None = None,
     allow_control: bool = False,
     once: bool = False,
+    light_factory: Callable[[], Any] | None = None,
 ) -> None:
     dispatcher = OscLightDispatcher(
-        light_factory=lambda: ZhiyunLight.usb(port=light_port),
+        light_factory=light_factory or (lambda: ZhiyunLight.usb(port=light_port)),
         allow_control=allow_control,
     )
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -301,4 +302,3 @@ def _command_result(
     result: dict[str, Any],
 ) -> OscDispatchResult:
     return OscDispatchResult(message=message, action=action, result=result)
-

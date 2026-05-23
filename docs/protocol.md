@@ -61,6 +61,11 @@ The local HTTP bridge is intentionally small and JSON-only:
 
 Control endpoints require `zlight serve --allow-control`. Responses include command result details instead of hiding timeouts, because some endpoints are still experimental on the current G60.
 
+The local bridges default to USB, but `serve`, `osc-serve`, and `artnet-serve`
+also accept `--transport ble` with `--address` or `--name-contains`. BLE bridge
+mode uses the same command payload builders as USB and adapts the async BLE
+client behind the synchronous stdlib bridge servers.
+
 The OSC bridge is UDP-based and dependency-free:
 
 | Address | Arguments |

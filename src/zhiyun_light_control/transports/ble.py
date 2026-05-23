@@ -197,7 +197,12 @@ def scan_zhiyun_devices_safe(
     )
     stdout = proc.stdout.strip()
     if proc.returncode != 0:
-        detail = proc.stderr.strip() or stdout or f"worker exited {proc.returncode}"
+        detail = (
+            _worker_error(stdout)
+            or proc.stderr.strip()
+            or stdout
+            or f"worker exited {proc.returncode}"
+        )
         return BleScanResult(
             ok=False,
             devices=(),
@@ -222,6 +227,15 @@ def scan_zhiyun_devices_safe(
         for item in payload.get("devices", [])
     )
     return BleScanResult(ok=True, devices=devices, returncode=proc.returncode)
+
+
+def _worker_error(stdout: str) -> str | None:
+    try:
+        payload = json.loads(stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+    error = payload.get("error")
+    return str(error) if error else None
 
 
 def _load_bleak() -> tuple[Any, Any]:

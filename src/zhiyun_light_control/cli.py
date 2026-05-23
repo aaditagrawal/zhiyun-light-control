@@ -8,6 +8,7 @@ import json
 
 from .async_client import AsyncZhiyunLight
 from .artnet import DmxMapping, serve_artnet
+from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .models import CommandResult, Scene
 from .osc import serve_osc
@@ -102,14 +103,14 @@ def build_parser() -> argparse.ArgumentParser:
     server = sub.add_parser("serve", help="Run a local JSON HTTP bridge.")
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8765)
-    server.add_argument("--light-port")
+    add_bridge_transport_args(server)
     server.add_argument("--allow-control", action="store_true")
     server.set_defaults(func=cmd_serve)
 
     osc = sub.add_parser("osc-serve", help="Run a local OSC UDP bridge.")
     osc.add_argument("--host", default="127.0.0.1")
     osc.add_argument("--port", type=int, default=9000)
-    osc.add_argument("--light-port")
+    add_bridge_transport_args(osc)
     osc.add_argument("--allow-control", action="store_true")
     osc.set_defaults(func=cmd_osc_serve)
 
@@ -117,7 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     artnet.add_argument("--host", default="0.0.0.0")
     artnet.add_argument("--port", type=int, default=6454)
     artnet.add_argument("--universe", type=parse_int, default=0)
-    artnet.add_argument("--light-port")
+    add_bridge_transport_args(artnet)
     artnet.add_argument("--obj", type=parse_int, default=1)
     artnet.add_argument("--brightness-channel", type=parse_optional_int, default=1)
     artnet.add_argument("--cct-channel", type=parse_optional_int, default=2)
@@ -136,6 +137,17 @@ def add_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--address", help="BLE address/identifier.")
     parser.add_argument("--name-contains", help="BLE name substring used for discovery.")
     parser.add_argument("--timeout", type=float, default=1.5)
+
+
+def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--transport", choices=["usb", "ble"], default="usb")
+    parser.add_argument(
+        "--light-port",
+        help="USB serial port. Defaults to first /dev/cu.usbmodem*.",
+    )
+    parser.add_argument("--address", help="BLE address/identifier.")
+    parser.add_argument("--name-contains", help="BLE name substring used for discovery.")
+    parser.add_argument("--light-timeout", type=float, default=1.5)
 
 
 def parse_int(text: str) -> int:
@@ -377,6 +389,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         port=args.port,
         light_port=args.light_port,
         allow_control=args.allow_control,
+        light_factory=bridge_light_factory(args),
     )
     return 0
 
@@ -387,6 +400,7 @@ def cmd_osc_serve(args: argparse.Namespace) -> int:
         port=args.port,
         light_port=args.light_port,
         allow_control=args.allow_control,
+        light_factory=bridge_light_factory(args),
     )
     return 0
 
@@ -397,6 +411,7 @@ def cmd_artnet_serve(args: argparse.Namespace) -> int:
         port=args.port,
         universe=args.universe,
         light_port=args.light_port,
+        light_factory=bridge_light_factory(args),
         mapping=DmxMapping(
             obj=args.obj,
             brightness_channel=args.brightness_channel,
@@ -408,6 +423,18 @@ def cmd_artnet_serve(args: argparse.Namespace) -> int:
         allow_control=args.allow_control,
     )
     return 0
+
+
+def bridge_light_factory(args: argparse.Namespace):
+    return make_light_factory(
+        LightConnectionConfig(
+            transport=args.transport,
+            port=args.light_port,
+            address=args.address,
+            name_contains=args.name_contains,
+            timeout=args.light_timeout,
+        )
+    )
 
 
 def require_yes(args: argparse.Namespace, reason: str) -> None:

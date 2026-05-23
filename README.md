@@ -86,6 +86,15 @@ Start the local HTTP bridge:
 zlight serve --host 127.0.0.1 --port 8765 --allow-control
 ```
 
+HTTP, OSC, and Art-Net bridges default to USB. They can target BLE with the
+same control surface:
+
+```sh
+zlight serve --transport ble --address AA:BB:CC:DD:EE:FF --allow-control
+zlight osc-serve --transport ble --name-contains MOLUS --allow-control
+zlight artnet-serve --transport ble --name-contains MOLUS --allow-control
+```
+
 Example HTTP calls:
 
 ```sh
@@ -162,10 +171,13 @@ with ZhiyunLight.usb() as light:
 Map a DMX frame to the same scene model:
 
 ```python
-from zhiyun_light_control import DmxMapping, scene_from_dmx
+from zhiyun_light_control import DmxMapping, LightConnectionConfig, make_light_factory, scene_from_dmx
 
 scene = scene_from_dmx(bytes([128, 255]), DmxMapping(obj=1))
 print(scene)
+
+with make_light_factory(LightConnectionConfig(transport="usb"))() as light:
+    light.apply_scene(scene)
 ```
 
 For integration debugging, use `exchange_runtime()` instead of the convenience methods. It returns a `CommandResult` with the transmitted frame, raw response bytes, parsed frames, and matching ACK if one arrived.
