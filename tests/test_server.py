@@ -126,6 +126,14 @@ class FakeUnconfirmedLight(FakeLight):
         return CommandResult(cmd, tx, b"", (), None)
 
 
+class BrokenLight:
+    def __enter__(self):
+        raise RuntimeError("Bluetooth state unauthorized: 3")
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        return
+
+
 class ServerTests(unittest.TestCase):
     def test_http_probe_and_scene(self) -> None:
         light = FakeLight()
@@ -305,6 +313,14 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
 
+            diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
+            self.assertTrue(diagnostics["ok"])
+            self.assertTrue(diagnostics["connection_confirmed"])
+            self.assertFalse(diagnostics["control_enabled"])
+            self.assertEqual(diagnostics["bridge"]["transport"], "usb")
+            self.assertEqual(diagnostics["status"]["firmware"], "1.6.4")
+            self.assertIn("allow-control", diagnostics["next_steps"][0])
+
             status = json.loads(urlopen(f"{base}/status", timeout=3).read())
             self.assertTrue(status["connection_confirmed"])
             self.assertEqual(status["device_identifier"], "device-test")
@@ -370,6 +386,32 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_diagnostics_reports_ble_authorization_error(self) -> None:
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            light_factory=lambda: BrokenLight(),
+            transport="ble",
+            ble_backend="macos-app",
+            ble_profile="direct",
+            ble_name_contains="PL103",
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
+            self.assertFalse(diagnostics["ok"])
+            self.assertFalse(diagnostics["connection_confirmed"])
+            self.assertEqual(diagnostics["bridge"]["transport"], "ble")
+            self.assertEqual(diagnostics["bridge"]["ble_backend"], "macos-app")
+            self.assertEqual(
+                diagnostics["status"]["error"], "Bluetooth state unauthorized: 3"
+            )
+            self.assertIn("Privacy & Security", diagnostics["next_steps"][0])
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_frame_exchange_uses_raw_frame_api(self) -> None:
         light = FakeLight()
         server = LightHttpServer(
@@ -427,11 +469,13 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/scene", schema["paths"])
             self.assertIn("/status", schema["paths"])
             self.assertIn("/capabilities", schema["paths"])
+            self.assertIn("/diagnostics", schema["paths"])
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
             self.assertIn("CommandResult", schema["components"]["schemas"])
             self.assertIn("Status", schema["components"]["schemas"])
             self.assertIn("Capabilities", schema["components"]["schemas"])
+            self.assertIn("Diagnostics", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])

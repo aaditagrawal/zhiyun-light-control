@@ -248,6 +248,7 @@ curl http://127.0.0.1:8765/openapi.json
 curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/capabilities
+curl http://127.0.0.1:8765/diagnostics
 curl http://127.0.0.1:8765/state
 curl http://127.0.0.1:8765/presets
 curl -X POST http://127.0.0.1:8765/validate \
@@ -283,6 +284,11 @@ such as `sent_no_response` or `echoed_write`.
 show-control clients. It lists every supported read/write primitive, required
 payload fields, whether the primitive requires `--allow-control`, scene fields,
 loaded preset names, and the transport evidence statuses a client should expect.
+
+`GET /diagnostics` is the readiness endpoint for integration dashboards. It
+opens the bridge's configured transport, returns ACK-backed status evidence when
+available, echoes the active BLE backend/profile/address filters, and includes
+next-step hints for cases such as macOS Bluetooth authorization failures.
 
 `GET /status` returns read-only identity/status fields plus the raw
 `CommandResult` evidence for global device info, firmware, voltage/status,

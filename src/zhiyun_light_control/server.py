@@ -40,6 +40,11 @@ class LightHttpServer(ThreadingHTTPServer):
         preset_library: ScenePresetLibrary | None = None,
         state_tracker: SceneStateTracker | None = None,
         cors_origin: str | None = "*",
+        transport: str = "usb",
+        ble_backend: str | None = None,
+        ble_profile: str | None = None,
+        ble_address: str | None = None,
+        ble_name_contains: str | None = None,
     ):
         super().__init__(server_address, LightRequestHandler)
         self.light_port = port
@@ -48,6 +53,11 @@ class LightHttpServer(ThreadingHTTPServer):
         self.preset_library = preset_library
         self.state_tracker = state_tracker or SceneStateTracker()
         self.cors_origin = cors_origin
+        self.transport = transport
+        self.ble_backend = ble_backend
+        self.ble_profile = ble_profile
+        self.ble_address = ble_address
+        self.ble_name_contains = ble_name_contains
 
 
 class LightRequestHandler(BaseHTTPRequestHandler):
@@ -69,6 +79,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/validate",
                         "/commands",
                         "/capabilities",
+                        "/diagnostics",
                         "/presets",
                         "/state",
                     ],
@@ -101,6 +112,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     else [],
                 )
             )
+            return
+        if path == "/diagnostics":
+            self._json(self._handle_diagnostics())
             return
         if path == "/openapi.json":
             self._json(openapi_schema())
@@ -351,6 +365,30 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             )
         return report.to_dict()
 
+    def _handle_diagnostics(self) -> dict[str, object]:
+        status: dict[str, object]
+        connection_confirmed = False
+        error: str | None = None
+        try:
+            with self.server.light_factory() as light:
+                report = read_sync_status(light, transport=self.server.transport)
+            status = report.to_dict()
+            connection_confirmed = report.connection_confirmed
+        except Exception as exc:  # pragma: no cover - endpoint keeps errors useful.
+            error = str(exc)
+            status = {"ok": False, "error": error}
+        return diagnostics_response(
+            allow_control=self.server.allow_control,
+            transport=self.server.transport,
+            ble_backend=self.server.ble_backend,
+            ble_profile=self.server.ble_profile,
+            ble_address=self.server.ble_address,
+            ble_name_contains=self.server.ble_name_contains,
+            connection_confirmed=connection_confirmed,
+            status=status,
+            error=error,
+        )
+
     def _transition_start(self, body: dict[str, object], *, obj: int) -> Scene:
         start_data = body.get("from")
         if start_data is not None:
@@ -428,6 +466,12 @@ def openapi_schema() -> dict[str, object]:
                 "get": _operation(
                     "Describe control primitives and confirmation semantics",
                     "Capabilities",
+                )
+            },
+            "/diagnostics": {
+                "get": _operation(
+                    "Check bridge transport readiness",
+                    "Diagnostics",
                 )
             },
             "/probe": {"get": _operation("Probe the connected light", "Probe")},
@@ -575,6 +619,7 @@ def _openapi_schemas() -> dict[str, object]:
             "required": ["get", "post", "control_enabled", "presets"],
         },
         "Capabilities": {"type": "object", "additionalProperties": True},
+        "Diagnostics": {"type": "object", "additionalProperties": True},
         "Probe": {
             "type": "object",
             "additionalProperties": True,
@@ -877,6 +922,67 @@ def capabilities_response(
     }
 
 
+def diagnostics_response(
+    *,
+    allow_control: bool,
+    transport: str,
+    ble_backend: str | None,
+    ble_profile: str | None,
+    ble_address: str | None,
+    ble_name_contains: str | None,
+    connection_confirmed: bool,
+    status: dict[str, object],
+    error: str | None,
+) -> dict[str, object]:
+    next_steps = _diagnostic_next_steps(
+        allow_control=allow_control,
+        transport=transport,
+        connection_confirmed=connection_confirmed,
+        error=error,
+    )
+    return {
+        "api": "zhiyun-light-control",
+        "ok": connection_confirmed,
+        "connection_confirmed": connection_confirmed,
+        "control_enabled": allow_control,
+        "bridge": {
+            "transport": transport,
+            "ble_backend": ble_backend,
+            "ble_profile": ble_profile,
+            "ble_address": ble_address,
+            "ble_name_contains": ble_name_contains,
+        },
+        "status": status,
+        "next_steps": next_steps,
+    }
+
+
+def _diagnostic_next_steps(
+    *,
+    allow_control: bool,
+    transport: str,
+    connection_confirmed: bool,
+    error: str | None,
+) -> list[str]:
+    steps: list[str] = []
+    error_text = error.lower() if error else ""
+    if transport == "ble" and "unauthorized" in error_text:
+        steps.append(
+            "Allow ZhiyunBleScan in macOS Privacy & Security > Bluetooth, then retry."
+        )
+    elif not connection_confirmed:
+        steps.append(
+            "Check the selected transport, cable/power state, and device identifier."
+        )
+    if connection_confirmed and not allow_control:
+        steps.append("Start the bridge with --allow-control before write endpoints.")
+    if connection_confirmed and allow_control:
+        steps.append(
+            "Use POST /validate with allow_control=true to prove write primitives."
+        )
+    return steps
+
+
 def serve(
     *,
     host: str = "127.0.0.1",
@@ -887,6 +993,11 @@ def serve(
     preset_library: ScenePresetLibrary | None = None,
     state_tracker: SceneStateTracker | None = None,
     cors_origin: str | None = "*",
+    transport: str = "usb",
+    ble_backend: str | None = None,
+    ble_profile: str | None = None,
+    ble_address: str | None = None,
+    ble_name_contains: str | None = None,
 ) -> None:
     httpd = LightHttpServer(
         (host, port),
@@ -896,6 +1007,11 @@ def serve(
         preset_library=preset_library,
         state_tracker=state_tracker,
         cors_origin=cors_origin,
+        transport=transport,
+        ble_backend=ble_backend,
+        ble_profile=ble_profile,
+        ble_address=ble_address,
+        ble_name_contains=ble_name_contains,
     )
     try:
         httpd.serve_forever()

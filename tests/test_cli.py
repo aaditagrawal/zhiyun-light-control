@@ -985,6 +985,10 @@ class CliTests(unittest.TestCase):
         self.assertEqual(config.ble_python, "python-test")
         self.assertTrue(config.ble_in_process)
         self.assertEqual(serve.call_args.kwargs["cors_origin"], "http://studio.local")
+        self.assertEqual(serve.call_args.kwargs["transport"], "ble")
+        self.assertEqual(serve.call_args.kwargs["ble_backend"], "direct")
+        self.assertEqual(serve.call_args.kwargs["ble_profile"], "direct")
+        self.assertEqual(serve.call_args.kwargs["ble_address"], "AA:BB")
         serve.assert_called_once()
 
     def test_bridge_cli_passes_ble_profile_options(self) -> None:

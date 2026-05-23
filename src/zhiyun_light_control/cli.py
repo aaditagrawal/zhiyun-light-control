@@ -994,6 +994,11 @@ def cmd_serve(args: argparse.Namespace) -> int:
         light_factory=bridge_light_factory(args),
         preset_library=load_preset_library(args),
         cors_origin=args.cors_origin,
+        transport=args.transport,
+        ble_backend="direct" if args.unsafe_in_process else args.ble_backend,
+        ble_profile=args.ble_profile,
+        ble_address=args.address,
+        ble_name_contains=args.name_contains,
     )
     return 0
 
