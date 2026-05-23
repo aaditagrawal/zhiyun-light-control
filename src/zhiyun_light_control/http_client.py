@@ -45,6 +45,19 @@ class LightBridgeClient:
     def ready(self) -> dict[str, object]:
         return self._get("/ready")
 
+    def readiness_actions(
+        self,
+        *,
+        include_ready: bool = True,
+    ) -> dict[str, dict[str, object]]:
+        return readiness_actions_by_id(self.ready(), include_ready=include_ready)
+
+    def pending_readiness_actions(self) -> list[dict[str, object]]:
+        return list(self.readiness_actions(include_ready=False).values())
+
+    def readiness_action(self, action_id: str) -> dict[str, object] | None:
+        return self.readiness_actions().get(action_id)
+
     def devices(
         self,
         *,
@@ -371,6 +384,32 @@ def _scene_payload(scene: Scene | Mapping[str, object]) -> dict[str, object]:
     if isinstance(scene, Scene):
         return scene.to_dict()
     return dict(scene)
+
+
+def readiness_actions_by_id(
+    payload: Mapping[str, object],
+    *,
+    include_ready: bool = True,
+) -> dict[str, dict[str, object]]:
+    actions: dict[str, dict[str, object]] = {}
+    raw_actions = payload.get("actions")
+    if not isinstance(raw_actions, list):
+        return actions
+    for raw_action in raw_actions:
+        if not isinstance(raw_action, dict):
+            continue
+        action = {
+            str(key): value
+            for key, value in raw_action.items()
+            if isinstance(key, str)
+        }
+        action_id = action.get("id")
+        if not isinstance(action_id, str):
+            continue
+        if not include_ready and action.get("ready") is True:
+            continue
+        actions[action_id] = action
+    return actions
 
 
 def _with_control_mode(

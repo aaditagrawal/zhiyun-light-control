@@ -21,7 +21,11 @@ from .discovery import (
     UsbDiscoveryReport,
     discover_usb_primitives,
 )
-from .http_client import LightBridgeClient, LightBridgeError
+from .http_client import (
+    LightBridgeClient,
+    LightBridgeError,
+    readiness_actions_by_id,
+)
 from .macos_ble_app import macos_ble_app_info, open_macos_bluetooth_settings
 from .models import CommandResult, Scene
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
@@ -114,6 +118,7 @@ __all__ = [
     "sacn_multicast_address",
     "read_async_status",
     "read_sync_status",
+    "readiness_actions_by_id",
     "resolve_ble_profile",
     "scan_zhiyun_devices_macos_app",
     "suggest_ble_profile",

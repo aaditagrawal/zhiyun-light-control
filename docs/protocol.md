@@ -159,7 +159,9 @@ ACK-backed status read with non-scanning device discovery, the current requested
 bridge state, and explicit booleans for `read_status`, `control_requests`, and
 `confirmed_control`. It does not run a BLE scan or send write commands. It also
 returns normalized `actions` with stable ids, readiness booleans, and endpoint or
-command hints for setup UIs.
+command hints for setup UIs. The Python `LightBridgeClient` exposes those as
+`readiness_actions()`, `readiness_action(id)`, and
+`pending_readiness_actions()`.
 
 `POST /frame` accepts `first_word`, `command`, `payload_hex`, and `timeout`;
 it is deliberately behind the same control gate because arbitrary frames can be

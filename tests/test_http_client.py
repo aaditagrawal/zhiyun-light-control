@@ -4,7 +4,11 @@ import threading
 import time
 import unittest
 
-from zhiyun_light_control import LightBridgeClient, LightBridgeError
+from zhiyun_light_control import (
+    LightBridgeClient,
+    LightBridgeError,
+    readiness_actions_by_id,
+)
 from zhiyun_light_control.models import CommandResult, Scene
 from zhiyun_light_control.presets import ScenePresetLibrary
 from zhiyun_light_control.protocol import (
@@ -135,6 +139,22 @@ class HttpClientTests(unittest.TestCase):
             self.assertTrue(ready["ready_for"]["read_status"])
             self.assertTrue(ready["ready_for"]["control_requests"])
             self.assertFalse(ready["ready_for"]["confirmed_control"])
+            actions = readiness_actions_by_id(ready)
+            self.assertTrue(actions["enable-control"]["ready"])
+            self.assertFalse(actions["confirm-control"]["ready"])
+            self.assertEqual(actions["confirm-control"]["blocked_by"], [])
+            self.assertEqual(
+                client.readiness_action("confirm-control")["path"],
+                "/validate",
+            )
+            pending = {
+                action["id"]: action for action in client.pending_readiness_actions()
+            }
+            self.assertEqual(list(pending), ["confirm-control"])
+            self.assertEqual(
+                client.readiness_actions(include_ready=False),
+                pending,
+            )
             self.assertIn("/brightness", client.commands()["post"])
             self.assertIn("brightness", client.capabilities()["scene_fields"])
             devices = client.devices()

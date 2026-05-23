@@ -439,6 +439,7 @@ bridge = LightBridgeClient("http://127.0.0.1:8765")
 
 print(bridge.diagnostics()["connection_confirmed"])
 print(bridge.ready()["ready_for"])
+print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
@@ -473,6 +474,9 @@ print(named["stopped"])
 This wrapper preserves the bridge's JSON evidence fields, so callers should
 still check `acknowledged`, `transport_status`, and `/state` rather than assuming
 that a transmitted command was applied.
+It also includes `readiness_actions()`, `readiness_action(id)`, and
+`pending_readiness_actions()` helpers for setup dashboards that consume
+`GET /ready`.
 
 ```python
 from zhiyun_light_control import Scene, ZhiyunLight
