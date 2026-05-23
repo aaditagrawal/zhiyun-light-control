@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterable, Iterator, Mapping
+from os import PathLike
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .bridge import LightConnectionConfig
 from .models import Scene
+from .profiles import LightSetupProfile, save_light_setup_profile
 
 
 class LightBridgeError(RuntimeError):
@@ -319,6 +322,59 @@ class LightBridgeClient:
         if values is not None:
             payload.update(values)
         return self._post("/validate", payload)
+
+    def setup_report(
+        self,
+        *,
+        include_ble: bool = False,
+        include_ble_status: bool = False,
+        ble_backend: str | None = None,
+        timeout: float | None = None,
+        name_contains: str | None = None,
+        persistent: bool = False,
+        config_timeout: float | None = None,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        values: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        snapshot = self.integration(
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            ble_backend=ble_backend,
+            timeout=timeout,
+            name_contains=name_contains,
+        )
+        validation = self.validate(
+            allow_control=allow_control,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            values=values,
+        )
+        return bridge_setup_report(
+            snapshot,
+            validation=validation,
+            persistent=persistent,
+            timeout=self.timeout if config_timeout is None else config_timeout,
+            include_object_reads=include_object_reads,
+        )
+
+    def setup_profile(
+        self,
+        **options: object,
+    ) -> LightSetupProfile:
+        return LightSetupProfile.from_setup_report(self.setup_report(**options))
+
+    def save_setup_profile(
+        self,
+        path: str | PathLike[str],
+        *,
+        indent: int | None = 2,
+        **options: object,
+    ) -> LightSetupProfile:
+        profile = self.setup_profile(**options)
+        save_light_setup_profile(profile, path, indent=indent)
+        return profile
 
     def plan(self, payload: Mapping[str, object]) -> dict[str, object]:
         return self._post("/plan", dict(payload))
@@ -908,6 +964,95 @@ def validation_unconfirmed_names(
     return [str(item) for item in raw_names if item is not None]
 
 
+def bridge_connection_config(
+    payload: Mapping[str, object],
+    *,
+    persistent: bool = False,
+    timeout: float = 1.5,
+) -> LightConnectionConfig:
+    summary = _bridge_setup_summary(payload)
+    transport = _optional_text(summary.get("transport")) or "usb"
+    if transport == "ble":
+        return LightConnectionConfig.ble(
+            address=_optional_text(summary.get("ble_address")),
+            name_contains=_optional_text(summary.get("ble_name_contains")),
+            timeout=timeout,
+            backend=_optional_text(summary.get("ble_backend")) or "worker",
+            profile=_optional_text(summary.get("ble_profile")) or "direct",
+            persistent=persistent,
+        )
+    if transport == "usb":
+        return LightConnectionConfig.usb(
+            port=_bridge_setup_selected_usb_port(payload),
+            timeout=timeout,
+            persistent=persistent,
+        )
+    return LightConnectionConfig(
+        transport=transport,
+        timeout=timeout,
+        persistent=persistent,
+    )
+
+
+def bridge_setup_report(
+    payload: Mapping[str, object],
+    *,
+    validation: Mapping[str, object] | None = None,
+    persistent: bool = False,
+    timeout: float = 1.5,
+    include_object_reads: bool = False,
+) -> dict[str, object]:
+    summary = _bridge_setup_summary(payload)
+    ready = _bridge_setup_ready(payload)
+    devices = _bridge_setup_devices(payload)
+    status = _bridge_setup_status(payload)
+    validation_payload = _string_key_dict(validation) if validation is not None else {}
+    ready_for = _bridge_setup_ready_for(summary, ready)
+    validation_ready = validation_ready_for(validation_payload)
+    validation_unconfirmed = validation_unconfirmed_names(validation_payload)
+    connection_confirmed = _bridge_setup_connection_confirmed(summary, ready, status)
+    control_enabled = summary.get("control_enabled") is True
+    errors = _bridge_setup_errors(ready, validation_payload)
+    report_summary = {
+        "ok": connection_confirmed,
+        "connection_confirmed": connection_confirmed,
+        "route_confirmed": connection_confirmed,
+        "ready_for": ready_for,
+        "validation_ready_for": validation_ready,
+        "validation_unconfirmed": validation_unconfirmed,
+        "pending_action_ids": _bridge_setup_pending_action_ids(summary, ready),
+        "warnings": _bridge_setup_warnings(summary, ready),
+        "errors": errors,
+    }
+    return {
+        "api": "zhiyun-light-control",
+        "ok": connection_confirmed,
+        "source": "http_bridge",
+        "config": bridge_connection_config(
+            payload,
+            persistent=persistent,
+            timeout=timeout,
+        ).to_dict(),
+        "selected_route": None,
+        "routes": [],
+        "route_confirmed": connection_confirmed,
+        "require_confirmed_route": True,
+        "control_enabled": control_enabled,
+        "include_object_reads": include_object_reads,
+        "status_ok": connection_confirmed,
+        "status_error": errors[0] if errors and not connection_confirmed else None,
+        "status": status,
+        "ready_for": ready_for,
+        "validation_ready_for": validation_ready,
+        "validation_unconfirmed": validation_unconfirmed,
+        "validation": validation_payload,
+        "ready": ready,
+        "devices": devices,
+        "integration": _string_key_dict(payload),
+        "summary": report_summary,
+    }
+
+
 def control_guard(payload: Mapping[str, object]) -> dict[str, object]:
     guard = _metadata_payload(payload).get("control_guard")
     if not isinstance(guard, Mapping):
@@ -1250,6 +1395,118 @@ def _devices_payload(payload: Mapping[str, object]) -> dict[str, object]:
     if not isinstance(devices, Mapping):
         return {}
     return _string_key_dict(devices)
+
+
+def _bridge_setup_summary(payload: Mapping[str, object]) -> dict[str, object]:
+    summary = payload.get("summary")
+    if isinstance(summary, Mapping):
+        return _string_key_dict(summary)
+    return {}
+
+
+def _bridge_setup_payloads(payload: Mapping[str, object]) -> dict[str, object]:
+    payloads = payload.get("payloads")
+    if isinstance(payloads, Mapping):
+        return _string_key_dict(payloads)
+    return {}
+
+
+def _bridge_setup_ready(payload: Mapping[str, object]) -> dict[str, object]:
+    ready = _bridge_setup_payloads(payload).get("ready")
+    if isinstance(ready, Mapping):
+        return _string_key_dict(ready)
+    if "ready_for" in payload:
+        return _string_key_dict(payload)
+    return {}
+
+
+def _bridge_setup_devices(payload: Mapping[str, object]) -> dict[str, object]:
+    devices = _bridge_setup_payloads(payload).get("devices")
+    if isinstance(devices, Mapping):
+        return _string_key_dict(devices)
+    return _devices_payload(payload)
+
+
+def _bridge_setup_status(payload: Mapping[str, object]) -> dict[str, object]:
+    ready_status = _bridge_setup_ready(payload).get("status")
+    if isinstance(ready_status, Mapping):
+        return _string_key_dict(ready_status)
+    status = payload.get("status")
+    if isinstance(status, Mapping):
+        return _string_key_dict(status)
+    return {}
+
+
+def _bridge_setup_selected_usb_port(payload: Mapping[str, object]) -> str | None:
+    summary_port = _bridge_setup_summary(payload).get("selected_usb_port")
+    if summary_port is not None:
+        return str(summary_port)
+    return devices_selected_usb_port(_bridge_setup_devices(payload))
+
+
+def _bridge_setup_ready_for(
+    summary: Mapping[str, object],
+    ready: Mapping[str, object],
+) -> dict[str, bool]:
+    ready_for = summary.get("ready_for")
+    if isinstance(ready_for, Mapping):
+        return {
+            str(key): value is True
+            for key, value in ready_for.items()
+        }
+    return readiness_ready_for(ready)
+
+
+def _bridge_setup_connection_confirmed(
+    summary: Mapping[str, object],
+    ready: Mapping[str, object],
+    status: Mapping[str, object],
+) -> bool:
+    if summary.get("connection_confirmed") is True:
+        return True
+    if ready.get("connection_confirmed") is True:
+        return True
+    return status.get("connection_confirmed") is True
+
+
+def _bridge_setup_pending_action_ids(
+    summary: Mapping[str, object],
+    ready: Mapping[str, object],
+) -> list[str]:
+    pending = summary.get("pending_action_ids")
+    if isinstance(pending, list):
+        return [str(item) for item in pending if item is not None]
+    return readiness_pending_action_ids(ready)
+
+
+def _bridge_setup_warnings(
+    summary: Mapping[str, object],
+    ready: Mapping[str, object],
+) -> list[str]:
+    warnings = summary.get("warnings")
+    if isinstance(warnings, list):
+        return [str(item) for item in warnings if item is not None]
+    return readiness_warnings(ready)
+
+
+def _bridge_setup_errors(
+    ready: Mapping[str, object],
+    validation: Mapping[str, object],
+) -> list[str]:
+    errors: list[str] = []
+    ready_status = ready.get("status")
+    if isinstance(ready_status, Mapping):
+        error = ready_status.get("error")
+        if error is not None:
+            errors.append(str(error))
+    validation_error = validation.get("error")
+    if validation_error is not None:
+        errors.append(str(validation_error))
+    return errors
+
+
+def _optional_text(value: object) -> str | None:
+    return str(value) if value is not None else None
 
 
 def _metadata_payload(payload: Mapping[str, object]) -> dict[str, object]:

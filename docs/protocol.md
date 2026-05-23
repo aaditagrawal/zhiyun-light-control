@@ -282,6 +282,12 @@ the same setup evidence between processes or operating systems. Profiles expose
 facades expose `from_setup_profile`, `from_setup_profile_file`, and
 `with_setup_profile` so host applications can rebuild SDK clients from saved
 evidence while failing fast on missing capabilities.
+When a host talks to a long-running HTTP bridge instead of embedding the
+transport directly, `LightBridgeClient.setup_report`,
+`LightBridgeClient.setup_profile`, and `LightBridgeClient.save_setup_profile`
+produce the same profile shape from bridge `/integration` and `/validate`
+evidence. `bridge_setup_report` and `bridge_connection_config` expose that
+normalization for non-Python clients that fetch the JSON themselves.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.

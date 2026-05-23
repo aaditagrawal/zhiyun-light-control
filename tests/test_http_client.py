@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 import time
 import unittest
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from zhiyun_light_control import (
@@ -10,9 +11,11 @@ from zhiyun_light_control import (
     LightBridgeError,
     LightBridgeNotReady,
     LightBridgeUnconfirmed,
+    bridge_connection_config,
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
+    bridge_setup_report,
     command_result_acknowledged,
     command_result_status,
     control_guard,
@@ -25,6 +28,7 @@ from zhiyun_light_control import (
     devices_selected_usb_port,
     devices_usb_available,
     devices_usb_ports,
+    load_light_setup_profile,
     readiness_actions_by_id,
     readiness_all_ready,
     readiness_pending_action_ids,
@@ -804,6 +808,59 @@ class HttpClientTests(unittest.TestCase):
                 ["control_requests"],
             )
             self.assertEqual(snapshot["payloads"]["devices"], devices)
+
+            setup = bridge_setup_report(
+                snapshot,
+                validation=client.validate(include_object_reads=True),
+                timeout=0.2,
+                include_object_reads=True,
+            )
+            self.assertEqual(setup["source"], "http_bridge")
+            self.assertTrue(setup["include_object_reads"])
+            self.assertTrue(setup["route_confirmed"])
+            self.assertEqual(
+                setup["config"]["port"],
+                "/dev/cu.usbmodem21301",
+            )
+            self.assertTrue(setup["ready_for"]["read_status"])
+            self.assertFalse(setup["ready_for"]["control_requests"])
+            self.assertEqual(
+                bridge_connection_config(snapshot).port,
+                "/dev/cu.usbmodem21301",
+            )
+
+            with patch(
+                "zhiyun_light_control.server.discover_transport_devices",
+                return_value=devices,
+            ):
+                profile = client.setup_profile(
+                    include_ble_status=True,
+                    ble_backend="macos-app",
+                    timeout=0.1,
+                    include_object_reads=True,
+                    config_timeout=0.2,
+                )
+            self.assertEqual(profile.config.port, "/dev/cu.usbmodem21301")
+            self.assertTrue(profile.ready("read_status"))
+            self.assertFalse(profile.ready("control_requests"))
+
+            with TemporaryDirectory() as temp_dir:
+                path = f"{temp_dir}/bridge-profile.json"
+                with patch(
+                    "zhiyun_light_control.server.discover_transport_devices",
+                    return_value=devices,
+                ):
+                    saved = client.save_setup_profile(
+                        path,
+                        include_ble_status=True,
+                        ble_backend="macos-app",
+                        timeout=0.1,
+                        include_object_reads=True,
+                        config_timeout=0.2,
+                    )
+                restored = load_light_setup_profile(path)
+            self.assertEqual(saved.config, restored.config)
+            self.assertTrue(restored.ready("read_status"))
         finally:
             server.shutdown()
             server.server_close()
@@ -828,6 +885,39 @@ class HttpClientTests(unittest.TestCase):
         echoed = {"results": [{"transport_status": "echoed_write"}]}
         self.assertFalse(bridge_response_applied(echoed))
         self.assertEqual(bridge_response_reason(echoed), "echoed_write")
+
+    def test_bridge_connection_config_supports_ble_snapshot(self) -> None:
+        snapshot = {
+            "summary": {
+                "transport": "ble",
+                "ble_backend": "direct",
+                "ble_profile": "yc",
+                "ble_address": "UUID-1",
+                "ble_name_contains": "PL103",
+                "connection_confirmed": True,
+                "ready_for": {"read_status": True},
+            },
+            "payloads": {
+                "ready": {
+                    "status": {"connection_confirmed": True},
+                    "ready_for": {"read_status": True},
+                },
+                "devices": {"ble": {"included": False}},
+            },
+        }
+
+        config = bridge_connection_config(snapshot, persistent=True, timeout=2.5)
+        self.assertEqual(config.transport, "ble")
+        self.assertEqual(config.address, "UUID-1")
+        self.assertEqual(config.name_contains, "PL103")
+        self.assertEqual(config.ble_backend, "direct")
+        self.assertEqual(config.ble_profile, "yc")
+        self.assertEqual(config.timeout, 2.5)
+        self.assertTrue(config.persistent)
+
+        report = bridge_setup_report(snapshot, persistent=True, timeout=2.5)
+        self.assertEqual(report["config"], config.to_dict())
+        self.assertTrue(report["ready_for"]["read_status"])
 
     def test_validation_helpers_normalize_summary_payloads(self) -> None:
         payload = {

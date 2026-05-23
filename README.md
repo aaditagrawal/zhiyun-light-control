@@ -579,13 +579,17 @@ from zhiyun_light_control import (
     best_connection_config,
     ble_config_from_endpoint_report,
     ble_config_from_scan,
+    bridge_connection_config,
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
+    bridge_setup_report,
     devices_ble_authorization,
     devices_ble_blocker,
     devices_selected_usb_port,
     connection_candidates_from_devices,
+    load_light_setup_profile,
+    save_light_setup_profile,
     usb_config_from_devices,
 )
 
@@ -598,17 +602,25 @@ print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.cues()["cues"])
+setup = bridge.setup_report(include_ble_status=True, include_object_reads=True)
+profile = bridge.setup_profile(include_ble_status=True, include_object_reads=True)
+save_light_setup_profile(profile, "./bridge-light-profile.json")
+restored_profile = load_light_setup_profile("./bridge-light-profile.json")
+print(setup["summary"])
+print(profile.ready("read_status"), restored_profile.config.to_dict())
 devices = bridge.devices(include_ble_status=True)
 print(devices_selected_usb_port(devices))
 print(devices_ble_authorization(devices), devices_ble_blocker(devices))
 route_candidates = connection_candidates_from_devices(devices)
 best_config = best_connection_config(route_candidates)
 usb_config = usb_config_from_devices(devices)
+bridge_config = bridge_connection_config(bridge.integration())
 ble_devices = bridge.devices(include_ble=True, ble_backend="macos-app")
 ble_scan_config = ble_config_from_scan(ble_devices)
 print([candidate.to_dict() for candidate in route_candidates])
 print(best_config.to_dict())
 print(usb_config.to_dict())
+print(bridge_config.to_dict())
 print(ble_scan_config.to_dict())
 ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
 print(ble["endpoint_candidates"])
@@ -620,6 +632,7 @@ ble_endpoint_config = ble_config_from_endpoint_report(ble_endpoint_report)
 print(ble_endpoint_config.to_dict())
 print(bridge.plan({"preset": "key", "overrides": {"brightness": 45}})["scene"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
+print(bridge_setup_report(bridge.integration(), validation=bridge.validate())["config"])
 print(next(bridge.state_events(limit=1))["state"])
 print(bridge.history(limit=10)["events"])
 
@@ -657,6 +670,11 @@ that a transmitted command was applied.
 Use `integration()` when a controller needs one setup payload containing the
 bridge manifest, capabilities, readiness, device discovery, and the client-side
 control guard configuration.
+Use `setup_report()`, `setup_profile()`, and `save_setup_profile()` when a host
+talks to a bridge process but still wants the same portable
+`LightSetupProfile` evidence used by direct `LightIntegration` SDK sessions.
+`bridge_setup_report()` and `bridge_connection_config()` provide the same
+normalization for hosts that already fetched bridge JSON themselves.
 Use `control_guard()`, `request_templates()`, `request_template(category, name)`,
 `request_template_body(category, name)`, `request_template_query(category, name)`,
 and `request_template_required_readiness(category, name)` to consume the
