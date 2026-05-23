@@ -503,6 +503,30 @@ class LightIntegration:
             require_acknowledged=require_acknowledged,
         )
 
+    def _call_controller(
+        self,
+        method: str,
+        *args: object,
+        controller_preset_library: ScenePresetLibrary | None = None,
+        controller_cue_library: CueLibrary | None = None,
+        controller_state_tracker: SceneStateTracker | None = None,
+        controller_control_mode: int = DEFAULT_CONTROL_MODE,
+        controller_require_acknowledged: bool = False,
+        **kwargs: object,
+    ) -> object:
+        controller = self.controller(
+            preset_library=controller_preset_library,
+            cue_library=controller_cue_library,
+            state_tracker=controller_state_tracker,
+            control_mode=controller_control_mode,
+            require_acknowledged=controller_require_acknowledged,
+        )
+        try:
+            return getattr(controller, method)(*args, **kwargs)
+        finally:
+            if self.light_factory is None:
+                controller.close()
+
     def register(
         self,
         device_id: int = 0,
@@ -510,9 +534,9 @@ class LightIntegration:
         *,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return self.controller(
-            require_acknowledged=require_acknowledged,
-        ).register(
+        return self._call_controller(
+            "register",
+            controller_require_acknowledged=require_acknowledged,
             device_id=device_id,
             group_id=group_id,
             require_acknowledged=require_acknowledged,
@@ -524,7 +548,8 @@ class LightIntegration:
         obj: int | None = None,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return self.controller().read_brightness(
+        return self._call_controller(
+            "read_brightness",
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -535,7 +560,8 @@ class LightIntegration:
         obj: int | None = None,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return self.controller().read_cct(
+        return self._call_controller(
+            "read_cct",
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -546,7 +572,8 @@ class LightIntegration:
         obj: int | None = None,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return self.controller().read_sleep(
+        return self._call_controller(
+            "read_sleep",
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -566,11 +593,11 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_brightness(
+        return self._call_controller(
+            "set_brightness",
             value,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -590,11 +617,11 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_cct(
+        return self._call_controller(
+            "set_cct",
             kelvin,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -614,11 +641,11 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_sleep(
+        return self._call_controller(
+            "set_sleep",
             value,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -640,13 +667,13 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_rgb(
+        return self._call_controller(
+            "set_rgb",
             red,
             green,
             blue,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -668,13 +695,13 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_hsi(
+        return self._call_controller(
+            "set_hsi",
             hue,
             saturation,
             intensity,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -694,11 +721,11 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).apply_scene(
+        return self._call_controller(
+            "apply_scene",
             _integration_scene_payload(scene, obj=self._obj(obj)),
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             require_acknowledged=require_acknowledged,
         )
 
@@ -719,12 +746,12 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).apply_preset(
+        return self._call_controller(
+            "apply_preset",
             name,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             overrides=overrides,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
@@ -747,12 +774,12 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).run_sequence(
+        return self._call_controller(
+            "run_sequence",
             steps,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             stop_on_unconfirmed=stop_on_unconfirmed,
             require_acknowledged=require_acknowledged,
@@ -774,12 +801,12 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).run_cue(
+        return self._call_controller(
+            "run_cue",
             cue,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -802,13 +829,13 @@ class LightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return self.controller(
-            preset_library=preset_library,
-            cue_library=cue_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).run_named_cue(
+        return self._call_controller(
+            "run_named_cue",
             name,
+            controller_preset_library=preset_library,
+            controller_cue_library=cue_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             stop_on_unconfirmed=stop_on_unconfirmed,
             require_acknowledged=require_acknowledged,
@@ -823,8 +850,10 @@ class LightIntegration:
         first_word: int = RUNTIME_TYPE,
         start_seq: int = 1,
     ) -> dict[str, object]:
-        return self.controller(control_mode=control_mode).plan_scene(
+        return self._call_controller(
+            "plan_scene",
             scene,
+            controller_control_mode=control_mode,
             obj=self._obj(obj),
             first_word=first_word,
             start_seq=start_seq,
@@ -841,11 +870,11 @@ class LightIntegration:
         first_word: int = RUNTIME_TYPE,
         start_seq: int = 1,
     ) -> dict[str, object]:
-        return self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-        ).plan_preset(
+        return self._call_controller(
+            "plan_preset",
             name,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
             overrides=overrides,
             obj=self._obj(obj),
             first_word=first_word,
@@ -865,8 +894,10 @@ class LightIntegration:
         first_word: int = RUNTIME_TYPE,
         start_seq: int = 1,
     ) -> dict[str, object]:
-        return self.controller(control_mode=control_mode).plan_transition(
+        return self._call_controller(
+            "plan_transition",
             to_scene,
+            controller_control_mode=control_mode,
             from_scene=from_scene,
             obj=self._obj(obj),
             steps=steps,
@@ -887,11 +918,11 @@ class LightIntegration:
         first_word: int = RUNTIME_TYPE,
         start_seq: int = 1,
     ) -> dict[str, object]:
-        return self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-        ).plan_sequence(
+        return self._call_controller(
+            "plan_sequence",
             steps,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
             obj=self._obj(obj),
             stop_on_unconfirmed=stop_on_unconfirmed,
             first_word=first_word,
@@ -909,11 +940,11 @@ class LightIntegration:
         first_word: int = RUNTIME_TYPE,
         start_seq: int = 1,
     ) -> dict[str, object]:
-        return self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-        ).plan_cue(
+        return self._call_controller(
+            "plan_cue",
             cue,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
             obj=self._obj(obj),
             stop_on_unconfirmed=stop_on_unconfirmed,
             first_word=first_word,
@@ -932,12 +963,12 @@ class LightIntegration:
         first_word: int = RUNTIME_TYPE,
         start_seq: int = 1,
     ) -> dict[str, object]:
-        return self.controller(
-            preset_library=preset_library,
-            cue_library=cue_library,
-            control_mode=control_mode,
-        ).plan_named_cue(
+        return self._call_controller(
+            "plan_named_cue",
             name,
+            controller_preset_library=preset_library,
+            controller_cue_library=cue_library,
+            controller_control_mode=control_mode,
             obj=self._obj(obj),
             stop_on_unconfirmed=stop_on_unconfirmed,
             first_word=first_word,
@@ -1490,6 +1521,30 @@ class AsyncLightIntegration:
             require_acknowledged=require_acknowledged,
         )
 
+    async def _call_controller(
+        self,
+        method: str,
+        *args: object,
+        controller_preset_library: ScenePresetLibrary | None = None,
+        controller_cue_library: CueLibrary | None = None,
+        controller_state_tracker: SceneStateTracker | None = None,
+        controller_control_mode: int = DEFAULT_CONTROL_MODE,
+        controller_require_acknowledged: bool = False,
+        **kwargs: object,
+    ) -> object:
+        controller = self.controller(
+            preset_library=controller_preset_library,
+            cue_library=controller_cue_library,
+            state_tracker=controller_state_tracker,
+            control_mode=controller_control_mode,
+            require_acknowledged=controller_require_acknowledged,
+        )
+        try:
+            return await getattr(controller, method)(*args, **kwargs)
+        finally:
+            if self.light_factory is None:
+                await controller.close()
+
     async def register(
         self,
         device_id: int = 0,
@@ -1497,9 +1552,9 @@ class AsyncLightIntegration:
         *,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return await self.controller(
-            require_acknowledged=require_acknowledged,
-        ).register(
+        return await self._call_controller(
+            "register",
+            controller_require_acknowledged=require_acknowledged,
             device_id=device_id,
             group_id=group_id,
             require_acknowledged=require_acknowledged,
@@ -1511,7 +1566,8 @@ class AsyncLightIntegration:
         obj: int | None = None,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return await self.controller().read_brightness(
+        return await self._call_controller(
+            "read_brightness",
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1522,7 +1578,8 @@ class AsyncLightIntegration:
         obj: int | None = None,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return await self.controller().read_cct(
+        return await self._call_controller(
+            "read_cct",
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1533,7 +1590,8 @@ class AsyncLightIntegration:
         obj: int | None = None,
         require_acknowledged: bool = False,
     ) -> dict[str, object]:
-        return await self.controller().read_sleep(
+        return await self._call_controller(
+            "read_sleep",
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1553,11 +1611,11 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_brightness(
+        return await self._call_controller(
+            "set_brightness",
             value,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1577,11 +1635,11 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_cct(
+        return await self._call_controller(
+            "set_cct",
             kelvin,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1601,11 +1659,11 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_sleep(
+        return await self._call_controller(
+            "set_sleep",
             value,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1627,13 +1685,13 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_rgb(
+        return await self._call_controller(
+            "set_rgb",
             red,
             green,
             blue,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1655,13 +1713,13 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).set_hsi(
+        return await self._call_controller(
+            "set_hsi",
             hue,
             saturation,
             intensity,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1681,11 +1739,11 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).apply_scene(
+        return await self._call_controller(
+            "apply_scene",
             _integration_scene_payload(scene, obj=self._obj(obj)),
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             require_acknowledged=require_acknowledged,
         )
 
@@ -1706,12 +1764,12 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).apply_preset(
+        return await self._call_controller(
+            "apply_preset",
             name,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             overrides=overrides,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
@@ -1734,12 +1792,12 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).run_sequence(
+        return await self._call_controller(
+            "run_sequence",
             steps,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             stop_on_unconfirmed=stop_on_unconfirmed,
             require_acknowledged=require_acknowledged,
@@ -1761,12 +1819,12 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            preset_library=preset_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).run_cue(
+        return await self._call_controller(
+            "run_cue",
             cue,
+            controller_preset_library=preset_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             require_acknowledged=require_acknowledged,
         )
@@ -1789,13 +1847,13 @@ class AsyncLightIntegration:
             required_readiness,
             require_acknowledged=require_acknowledged,
         )
-        return await self.controller(
-            preset_library=preset_library,
-            cue_library=cue_library,
-            control_mode=control_mode,
-            require_acknowledged=require_acknowledged,
-        ).run_named_cue(
+        return await self._call_controller(
+            "run_named_cue",
             name,
+            controller_preset_library=preset_library,
+            controller_cue_library=cue_library,
+            controller_control_mode=control_mode,
+            controller_require_acknowledged=require_acknowledged,
             obj=self._obj(obj),
             stop_on_unconfirmed=stop_on_unconfirmed,
             require_acknowledged=require_acknowledged,

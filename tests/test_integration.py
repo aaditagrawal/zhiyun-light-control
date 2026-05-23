@@ -277,6 +277,20 @@ class FakeControlStatusLight(FakeSceneLight, FakeStatusLight):
         return FakeStatusLight.exchange_runtime(self, cmd, payload, timeout=timeout)
 
 
+class CountingControlStatusLight(FakeControlStatusLight):
+    def __init__(self) -> None:
+        super().__init__()
+        self.enter_count = 0
+        self.exit_count = 0
+
+    def __enter__(self) -> CountingControlStatusLight:
+        self.enter_count += 1
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        self.exit_count += 1
+
+
 class AsyncFakeValidationLight:
     def __init__(self, *, acknowledged: bool = True) -> None:
         self.acknowledged = acknowledged
@@ -1045,6 +1059,40 @@ class IntegrationTests(unittest.TestCase):
         )
         self.assertEqual(integration.state_snapshot()["version"], 5)
         self.assertEqual(integration.state()["action"], "set_hsi")
+
+    def test_light_integration_closes_owned_persistent_controller_factory(self) -> None:
+        light = CountingControlStatusLight()
+        factory = PersistentLightFactory(lambda: light)
+
+        with patch(
+            "zhiyun_light_control.controller.make_light_factory",
+            return_value=factory,
+        ):
+            read = LightIntegration(
+                config=LightConnectionConfig(transport="usb", persistent=True),
+                obj=2,
+            ).read_brightness()
+
+        self.assertTrue(read["acknowledged"])
+        self.assertEqual(light.enter_count, 1)
+        self.assertEqual(light.exit_count, 1)
+
+    def test_light_integration_does_not_close_injected_factory(self) -> None:
+        light = CountingControlStatusLight()
+        factory = PersistentLightFactory(lambda: light)
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", persistent=True),
+            obj=2,
+            light_factory=factory,
+        )
+
+        read = integration.read_brightness()
+
+        self.assertTrue(read["acknowledged"])
+        self.assertEqual(light.enter_count, 1)
+        self.assertEqual(light.exit_count, 0)
+        factory.close()
+        self.assertEqual(light.exit_count, 1)
 
     def test_light_integration_runs_controls_directly(self) -> None:
         light = FakeControlStatusLight()

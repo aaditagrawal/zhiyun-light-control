@@ -252,6 +252,9 @@ add decoded functional payload fields when an ACK carries brightness, CCT, sleep
 RGB, or HSI values. Direct integration control records into the integration
 state tracker so subsequent `state_snapshot`, `state_history`, and
 readiness/snapshot payloads include the latest control evidence by default.
+One-shot integration helpers close internally owned light factories after each
+call; long-lived media hosts should keep an explicit controller or injected
+factory when they want connection persistence across commands.
 Low-level protocol callers can import `RuntimeCommand`, `UpdaterCommand`,
 `build_runtime_frame`, `first_frame`, payload builders, and functional payload
 parsers directly from `zhiyun_light_control` when building custom transports or

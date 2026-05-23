@@ -740,6 +740,10 @@ the raw `CommandResult` evidence remains available under `result`. Direct
 integration control updates the integration's own state tracker, so `state()`,
 `state_snapshot()`, `state_history()`, and
 `wait_for_state_update()` work without manually creating a controller.
+One-shot `LightIntegration` helpers close factories they create internally after
+each call, even when a discovered config has `persistent=True`; use
+`with integration.controller() as controller:` when a host process deliberately
+wants a long-lived USB/BLE connection.
 For lower-level hosts, protocol primitives such as `RuntimeCommand`,
 `UpdaterCommand`, `build_runtime_frame()`, `first_frame()`, and the
 brightness/CCT/sleep/RGB/HSI payload parsers are exported from the package root,
