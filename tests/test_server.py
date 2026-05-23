@@ -601,6 +601,11 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(primitives["cues"]["requires_control"])
             self.assertEqual(primitives["devices"]["path"], "/devices")
             self.assertFalse(primitives["ready"]["requires_control"])
+            self.assertEqual(
+                primitives["ready-cli"]["command"],
+                "zlight ready --transport usb --json",
+            )
+            self.assertFalse(primitives["ready-cli"]["requires_control"])
             self.assertFalse(primitives["events"]["requires_control"])
             self.assertFalse(primitives["history"]["requires_control"])
 
@@ -609,6 +614,11 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(manifest["control_enabled"])
             self.assertEqual(manifest["transport"]["active"], "usb")
             self.assertEqual(manifest["setup"]["preflight"]["path"], "/ready")
+            self.assertEqual(
+                manifest["setup"]["local_preflight"]["command"],
+                "zlight ready --transport usb --json",
+            )
+            self.assertFalse(manifest["setup"]["local_preflight"]["requires_bridge"])
             self.assertEqual(
                 manifest["setup"]["ble_authorization"]["status_command"],
                 "zlight ble-helper --status --json",

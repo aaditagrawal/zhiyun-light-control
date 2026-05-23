@@ -379,12 +379,13 @@ or show controller reconnects and needs to catch up before resuming `/events`.
 `GET /capabilities` is the discovery endpoint for dashboard, automation, and
 show-control clients. It lists every supported read/write primitive, required
 payload fields, whether the primitive requires `--allow-control`, scene fields,
-loaded preset names, and the transport evidence statuses a client should expect.
+loaded preset names, local preflight commands such as `zlight ready`, and the
+transport evidence statuses a client should expect.
 
 `GET /manifest` is the one-call integration map for media controllers. It lists
 HTTP control paths, state/event paths, OSC addresses, Art-Net/sACN defaults, BLE
-authorization commands, scene fields, loaded preset/cue names, and ACK evidence
-semantics.
+authorization commands, local CLI preflight commands, scene fields, loaded
+preset/cue names, and ACK evidence semantics.
 
 `GET /diagnostics` is the transport diagnostics endpoint for integration
 dashboards. It opens the bridge's configured transport, returns ACK-backed

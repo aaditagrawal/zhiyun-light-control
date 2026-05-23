@@ -176,10 +176,10 @@ are read-only and return parsed identity/status fields alongside the raw
 surface without using the gated raw-frame endpoint.
 
 `GET /manifest` is a machine-readable integration map. It groups the bridge's
-HTTP read/control/bench endpoints, state stream/history paths, OSC addresses,
-Art-Net and sACN defaults, BLE authorization commands, scene fields, loaded
-preset/cue names, and ACK evidence semantics into one response for show-control
-setup tools.
+HTTP read/control/bench endpoints, local CLI preflight commands, state
+stream/history paths, OSC addresses, Art-Net and sACN defaults, BLE
+authorization commands, scene fields, loaded preset/cue names, and ACK evidence
+semantics into one response for show-control setup tools.
 
 `GET /ready` is a dashboard/controller preflight that combines the same
 ACK-backed status read with non-scanning device discovery, the current requested
