@@ -45,6 +45,7 @@ from .discovery import (
 )
 from .models import Scene
 from .presets import ScenePresetLibrary
+from .profiles import LightSetupProfile
 from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .server import (
     capabilities_response,
@@ -542,6 +543,9 @@ class LightIntegration:
             intensity=intensity,
             control_mode=control_mode,
         )
+
+    def setup_profile(self, **options: object) -> LightSetupProfile:
+        return LightSetupProfile.from_setup_report(self.setup_report(**options))
 
     def ble_endpoint_connection_candidates(
         self,
@@ -1694,6 +1698,11 @@ class AsyncLightIntegration:
             saturation=saturation,
             intensity=intensity,
             control_mode=control_mode,
+        )
+
+    async def setup_profile(self, **options: object) -> LightSetupProfile:
+        return LightSetupProfile.from_setup_report(
+            await self.setup_report(**options)
         )
 
     async def ble_endpoint_connection_candidates(

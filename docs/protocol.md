@@ -273,6 +273,11 @@ status-probed routes, the selected config, readiness, validation readiness, and
 unconfirmed primitive names. It is intended for setup dashboards and media hosts
 that need to decide whether status, object reads, and control writes are
 independently usable on the selected transport.
+`setup_profile` wraps that report in a portable `LightSetupProfile` JSON object
+with the selected `LightConnectionConfig`, summary booleans, validation
+capabilities, and unconfirmed primitive names. Use
+`save_light_setup_profile`/`load_light_setup_profile` when a host needs to carry
+the same setup evidence between processes or operating systems.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.

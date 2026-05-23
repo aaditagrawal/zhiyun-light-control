@@ -1,0 +1,183 @@
+"""Portable setup profiles for host integrations."""
+
+from __future__ import annotations
+
+import json
+import time
+from collections.abc import Mapping
+from dataclasses import dataclass
+from os import PathLike
+from pathlib import Path
+
+from .bridge import LightConnectionConfig
+
+SETUP_PROFILE_KIND = "setup-profile"
+SETUP_PROFILE_SCHEMA_VERSION = 1
+
+
+@dataclass(frozen=True)
+class LightSetupProfile:
+    """Persisted connection config plus the evidence that made it usable."""
+
+    config: LightConnectionConfig
+    setup_report: dict[str, object]
+    created_at: float
+    schema_version: int = SETUP_PROFILE_SCHEMA_VERSION
+
+    @classmethod
+    def from_setup_report(
+        cls,
+        payload: Mapping[str, object],
+        *,
+        created_at: float | None = None,
+    ) -> LightSetupProfile:
+        config = LightConnectionConfig.from_mapping(_mapping(payload, "config"))
+        return cls(
+            config=config,
+            setup_report=_dict_from_mapping(payload),
+            created_at=time.time() if created_at is None else created_at,
+        )
+
+    @classmethod
+    def from_mapping(
+        cls,
+        payload: Mapping[str, object],
+    ) -> LightSetupProfile:
+        kind = str(payload.get("kind", SETUP_PROFILE_KIND))
+        if kind != SETUP_PROFILE_KIND:
+            raise ValueError(f"unsupported setup profile kind: {kind}")
+        report = _mapping(payload, "setup_report")
+        config_payload = payload.get("config")
+        if isinstance(config_payload, Mapping):
+            config = LightConnectionConfig.from_mapping(
+                _dict_from_mapping(config_payload)
+            )
+        else:
+            config = LightConnectionConfig.from_mapping(_mapping(report, "config"))
+        return cls(
+            config=config,
+            setup_report=_dict_from_mapping(report),
+            created_at=float(payload.get("created_at", 0.0)),
+            schema_version=int(
+                payload.get("schema_version", SETUP_PROFILE_SCHEMA_VERSION)
+            ),
+        )
+
+    @property
+    def ok(self) -> bool:
+        return self.setup_report.get("ok") is True
+
+    @property
+    def route_confirmed(self) -> bool:
+        return self.setup_report.get("route_confirmed") is True
+
+    @property
+    def connection_confirmed(self) -> bool:
+        summary = _optional_mapping(self.setup_report.get("summary"))
+        if summary is not None and "connection_confirmed" in summary:
+            return summary.get("connection_confirmed") is True
+        return self.setup_report.get("status_ok") is True
+
+    @property
+    def ready_for(self) -> dict[str, bool]:
+        return _bool_mapping(self.setup_report.get("ready_for"))
+
+    @property
+    def validation_ready_for(self) -> dict[str, bool]:
+        return _bool_mapping(self.setup_report.get("validation_ready_for"))
+
+    @property
+    def validation_unconfirmed(self) -> list[str]:
+        value = self.setup_report.get("validation_unconfirmed")
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value]
+
+    @property
+    def summary(self) -> dict[str, object]:
+        summary = _optional_mapping(self.setup_report.get("summary"))
+        if summary is None:
+            return {}
+        return _dict_from_mapping(summary)
+
+    def ready(self, capability: str) -> bool:
+        if capability in self.ready_for:
+            return self.ready_for[capability]
+        if capability in self.validation_ready_for:
+            return self.validation_ready_for[capability]
+        return False
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "api": "zhiyun-light-control",
+            "kind": SETUP_PROFILE_KIND,
+            "schema_version": self.schema_version,
+            "created_at": self.created_at,
+            "config": self.config.to_dict(),
+            "summary": self.summary,
+            "ready_for": self.ready_for,
+            "validation_ready_for": self.validation_ready_for,
+            "validation_unconfirmed": self.validation_unconfirmed,
+            "setup_report": _dict_from_mapping(self.setup_report),
+        }
+
+
+def light_setup_profile_from_mapping(
+    payload: Mapping[str, object],
+) -> LightSetupProfile:
+    return LightSetupProfile.from_mapping(payload)
+
+
+def light_setup_profile_from_json(text: str) -> LightSetupProfile:
+    payload = json.loads(text)
+    if not isinstance(payload, Mapping):
+        raise ValueError("setup profile JSON must contain an object")
+    return LightSetupProfile.from_mapping(payload)
+
+
+def light_setup_profile_to_json(
+    profile: LightSetupProfile,
+    *,
+    indent: int | None = 2,
+) -> str:
+    return json.dumps(profile.to_dict(), indent=indent, sort_keys=True)
+
+
+def save_light_setup_profile(
+    profile: LightSetupProfile,
+    path: str | PathLike[str],
+    *,
+    indent: int | None = 2,
+) -> None:
+    text = light_setup_profile_to_json(profile, indent=indent)
+    Path(path).write_text(f"{text}\n", encoding="utf-8")
+
+
+def load_light_setup_profile(path: str | PathLike[str]) -> LightSetupProfile:
+    return light_setup_profile_from_json(Path(path).read_text(encoding="utf-8"))
+
+
+def _mapping(
+    payload: Mapping[str, object],
+    key: str,
+) -> dict[str, object]:
+    value = payload.get(key)
+    if not isinstance(value, Mapping):
+        raise ValueError(f"setup profile is missing a {key} object")
+    return _dict_from_mapping(value)
+
+
+def _optional_mapping(value: object) -> Mapping[object, object] | None:
+    if isinstance(value, Mapping):
+        return value
+    return None
+
+
+def _dict_from_mapping(payload: Mapping[object, object]) -> dict[str, object]:
+    return {str(key): value for key, value in payload.items()}
+
+
+def _bool_mapping(value: object) -> dict[str, bool]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): item is True for key, item in value.items()}

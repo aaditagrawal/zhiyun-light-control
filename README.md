@@ -748,6 +748,10 @@ Call `setup_report()` when a host wants all setup evidence in one SDK payload:
 status-confirmed routes, selected config, readiness, validation readiness, and
 unconfirmed primitive names. This is the same evidence model used by
 `examples/sdk_quickstart.py`.
+Call `setup_profile()` when that evidence should be persisted with the selected
+config. A `LightSetupProfile` is plain JSON and can later answer capability
+checks such as `profile.ready("read_status")` or
+`profile.ready("control_writes")` before a host enables a workflow.
 The integration facade also exposes direct control helpers:
 `register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
 `set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,
@@ -780,6 +784,8 @@ from zhiyun_light_control import (
     LightConnectionConfig,
     LightIntegration,
     ScenePresetLibrary,
+    load_light_setup_profile,
+    save_light_setup_profile,
 )
 
 presets = ScenePresetLibrary.from_mapping(
@@ -795,6 +801,7 @@ integration = LightIntegration(
 
 ready = integration.readiness()
 setup = integration.setup_report(include_ble_status=True, include_object_reads=True)
+profile = integration.setup_profile(include_ble_status=True, include_object_reads=True)
 devices = integration.devices(include_ble_status=True)
 snapshot = integration.snapshot(include_ble_status=True)
 validation = integration.validate(include_object_reads=True)
@@ -811,6 +818,7 @@ integration.require_readiness("read_status")
 
 print(ready["ready_for"])
 print(setup["summary"])
+print(profile.ready("read_status"), profile.ready("control_writes"))
 print(devices["usb"]["selected_port"])
 print(snapshot["summary"]["connection_confirmed"])
 print(validation["summary"]["ready_for"])
@@ -825,6 +833,10 @@ primitive = integration.set_brightness(35, require_ready=True)
 print(primitive["transport_status"], integration.state()["action"])
 read_brightness = integration.read_brightness()
 print(read_brightness.get("value"), read_brightness["transport_status"])
+
+save_light_setup_profile(profile, "./zhiyun-light-profile.json")
+restored_profile = load_light_setup_profile("./zhiyun-light-profile.json")
+print(restored_profile.config.to_dict())
 
 result = integration.apply_scene(
     {"brightness": 35, "kelvin": 5600},

@@ -177,6 +177,14 @@ from .models import (
     require_command_results,
 )
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
+from .profiles import (
+    LightSetupProfile,
+    light_setup_profile_from_json,
+    light_setup_profile_from_mapping,
+    light_setup_profile_to_json,
+    load_light_setup_profile,
+    save_light_setup_profile,
+)
 from .protocol import (
     DEFAULT_CONTROL_MODE,
     LEGACY_CONTROL_MODE,
@@ -294,6 +302,7 @@ __all__ = [
     "LightIntegration",
     "LightFixture",
     "LightRig",
+    "LightSetupProfile",
     "LightStatusReport",
     "HardwareValidationReport",
     "FunctionalValue",
@@ -448,9 +457,13 @@ __all__ = [
     "load_rig",
     "load_rig_mapping",
     "load_light_connection_config",
+    "load_light_setup_profile",
     "light_connection_config_from_json",
     "light_connection_config_from_mapping",
     "light_connection_config_to_json",
+    "light_setup_profile_from_json",
+    "light_setup_profile_from_mapping",
+    "light_setup_profile_to_json",
     "test_ble_endpoint_candidates",
     "macos_ble_app_info",
     "macos_ble_app_status",
@@ -467,6 +480,7 @@ __all__ = [
     "resolve_ble_profile",
     "scan_zhiyun_devices_macos_app",
     "save_light_connection_config",
+    "save_light_setup_profile",
     "suggest_ble_endpoint_candidates",
     "suggest_ble_profile",
     "make_light_factory",
