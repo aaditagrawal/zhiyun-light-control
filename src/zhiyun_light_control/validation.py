@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
-from typing import Any, Awaitable, Callable
 
 from .models import CommandResult
 from .protocol import (
@@ -29,10 +29,10 @@ class PrimitiveCheck:
     sent: bool
     status: str
     command: int | None = None
-    result: dict[str, Any] | None = None
+    result: dict[str, object] | None = None
     detail: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
@@ -41,7 +41,7 @@ class HardwareValidationReport:
     """Structured report that does not conflate transmitted with confirmed."""
 
     transport: str
-    probe: dict[str, Any] | None
+    probe: dict[str, object] | None
     control_enabled: bool
     checks: tuple[PrimitiveCheck, ...]
     notes: tuple[str, ...] = ()
@@ -59,9 +59,11 @@ class HardwareValidationReport:
 
     @property
     def unconfirmed(self) -> tuple[PrimitiveCheck, ...]:
-        return tuple(check for check in self.checks if check.sent and not check.confirmed)
+        return tuple(
+            check for check in self.checks if check.sent and not check.confirmed
+        )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "transport": self.transport,
             "probe": self.probe,
@@ -75,7 +77,7 @@ class HardwareValidationReport:
 
 
 def validate_sync_light(
-    light: Any,
+    light: object,
     *,
     transport: str = "usb",
     allow_control: bool = False,
@@ -150,7 +152,7 @@ def validate_sync_light(
 
 
 async def validate_async_light(
-    light: Any,
+    light: object,
     *,
     transport: str = "ble",
     allow_control: bool = False,
@@ -256,7 +258,9 @@ async def _async_object_read_checks(
         _command_check(
             "read_brightness",
             "object_read",
-            await exchange(RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True)),
+            await exchange(
+                RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True)
+            ),
         ),
         _command_check(
             "read_cct",
@@ -396,7 +400,9 @@ async def _async_control_checks(
                 _command_check(
                     "set_rgb",
                     "control",
-                    await exchange(RuntimeCommand.RGB, rgb_payload(obj, red, green, blue)),
+                    await exchange(
+                        RuntimeCommand.RGB, rgb_payload(obj, red, green, blue)
+                    ),
                 ),
                 _command_check(
                     "set_hsi",
@@ -430,7 +436,7 @@ def _command_check(
     )
 
 
-def _probe_check(probe: dict[str, Any]) -> PrimitiveCheck:
+def _probe_check(probe: dict[str, object]) -> PrimitiveCheck:
     confirmed = _probe_confirmed(probe)
     return PrimitiveCheck(
         name="probe",
@@ -442,7 +448,7 @@ def _probe_check(probe: dict[str, Any]) -> PrimitiveCheck:
     )
 
 
-def _probe_confirmed(probe: dict[str, Any]) -> bool:
+def _probe_confirmed(probe: dict[str, object]) -> bool:
     return any(
         probe.get(key) is not None
         for key in ("device_identifier", "generation", "firmware", "device_id")
@@ -463,7 +469,9 @@ def _notes(
     if not allow_control:
         notes.append("control checks skipped; pass --allow-control to transmit writes")
     if not include_object_reads:
-        notes.append("object read checks skipped; pass --include-object-reads to test them")
+        notes.append(
+            "object read checks skipped; pass --include-object-reads to test them"
+        )
     if allow_control and not include_color:
         notes.append("RGB/HSI checks skipped; pass --include-color to test them")
     return tuple(notes)

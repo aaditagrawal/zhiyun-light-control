@@ -5,7 +5,6 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import asdict, dataclass
-from typing import Any
 
 from .models import Scene
 
@@ -20,7 +19,7 @@ class SceneState:
     reason: str | None = None
     result_statuses: tuple[str, ...] = ()
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         data = asdict(self)
         data["scene"] = self.scene.to_dict()
         data["result_statuses"] = list(self.result_statuses)
@@ -40,7 +39,7 @@ class SceneStateTracker:
         action: str,
         applied: bool | None = None,
         reason: str | None = None,
-        results: list[Any] | tuple[Any, ...] = (),
+        results: list[object] | tuple[object, ...] = (),
     ) -> SceneState:
         statuses = tuple(_result_status(result) for result in results)
         state = SceneState(
@@ -60,12 +59,12 @@ class SceneStateTracker:
         with self._lock:
             return self._state
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         state = self.snapshot()
         return {"scene": None} if state is None else state.to_dict()
 
 
-def _result_status(result: Any) -> str:
+def _result_status(result: object) -> str:
     status = getattr(result, "transport_status", None)
     if status is not None:
         return str(status)

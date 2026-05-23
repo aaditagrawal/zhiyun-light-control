@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
 
 from .async_client import AsyncZhiyunLight
 from .client import ZhiyunLight
@@ -22,7 +22,7 @@ class LightConnectionConfig:
     persistent: bool = False
 
 
-LightFactory = Callable[[], Any]
+LightFactory = Callable[[], object]
 
 
 def make_light_factory(config: LightConnectionConfig) -> LightFactory:
@@ -46,10 +46,10 @@ class PersistentLightFactory:
     def __init__(self, factory: LightFactory):
         self.factory = factory
         self._lock = threading.RLock()
-        self._context: Any | None = None
-        self._light: Any | None = None
+        self._context: object | None = None
+        self._light: object | None = None
 
-    def __call__(self) -> "_PersistentLightBorrow":
+    def __call__(self) -> _PersistentLightBorrow:
         return _PersistentLightBorrow(self)
 
     def close(self) -> None:
@@ -111,7 +111,7 @@ class SyncBleLight:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._light: AsyncZhiyunLight | None = None
 
-    def __enter__(self) -> "SyncBleLight":
+    def __enter__(self) -> SyncBleLight:
         self._loop = asyncio.new_event_loop()
         self._light = AsyncZhiyunLight.ble(
             address=self.config.address,
@@ -170,7 +170,7 @@ class SyncBleLight:
             easing=easing,
         )
 
-    def _run_light(self, method: str, *args: Any, **kwargs: Any):
+    def _run_light(self, method: str, *args: object, **kwargs: object):
         if self._light is None:
             raise RuntimeError("BLE light is not open")
         return self._run(getattr(self._light, method)(*args, **kwargs))

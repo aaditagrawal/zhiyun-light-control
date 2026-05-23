@@ -54,7 +54,9 @@ class AsyncFakeValidationLight(FakeValidationLight):
     async def probe(self) -> FakeProbe:
         return FakeProbe()
 
-    async def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 1.5):
+    async def exchange_runtime(
+        self, cmd: int, payload: bytes = b"", *, timeout: float = 1.5
+    ):
         return super().exchange_runtime(cmd, payload, timeout=timeout)
 
 
@@ -71,9 +73,11 @@ class ValidationTests(unittest.TestCase):
         self.assertFalse(payload["all_attempted_confirmed"])
         self.assertIn("set_brightness", payload["unconfirmed"])
         self.assertEqual(
-            next(check for check in payload["checks"] if check["name"] == "set_brightness")[
-                "status"
-            ],
+            next(
+                check
+                for check in payload["checks"]
+                if check["name"] == "set_brightness"
+            )["status"],
             "sent_no_response",
         )
 

@@ -83,9 +83,14 @@ class CliTests(unittest.TestCase):
                 return CommandResult(cmd, tx, rx, (), first_frame(rx, cmd=cmd))
 
         stdout = io.StringIO()
-        with patch("zhiyun_light_control.cli.ZhiyunLight.usb", return_value=FakeLight()):
-            with contextlib.redirect_stdout(stdout):
-                code = main(["validate", "--allow-control", "--strict", "--json"])
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["validate", "--allow-control", "--strict", "--json"])
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 1)
@@ -106,9 +111,14 @@ class CliTests(unittest.TestCase):
                 return CommandResult(cmd, tx, b"", (), None)
 
         stdout = io.StringIO()
-        with patch("zhiyun_light_control.cli.ZhiyunLight.usb", return_value=FakeLight()):
-            with contextlib.redirect_stdout(stdout):
-                code = main(["set", "brightness", "--value", "35", "--yes"])
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["set", "brightness", "--value", "35", "--yes"])
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 1)
@@ -128,9 +138,14 @@ class CliTests(unittest.TestCase):
                 return [CommandResult(RuntimeCommand.BRIGHTNESS, tx, b"", (), None)]
 
         stdout = io.StringIO()
-        with patch("zhiyun_light_control.cli.ZhiyunLight.usb", return_value=FakeLight()):
-            with contextlib.redirect_stdout(stdout):
-                code = main(["apply", "--brightness", "35", "--yes"])
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["apply", "--brightness", "35", "--yes"])
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 1)
@@ -184,18 +199,23 @@ class CliTests(unittest.TestCase):
                 )
 
         stdout = io.StringIO()
-        with patch("zhiyun_light_control.cli.ZhiyunLight.usb", return_value=FakeLight()):
-            with contextlib.redirect_stdout(stdout):
-                code = main(
-                    [
-                        "discover-usb",
-                        "--object-ids",
-                        "1",
-                        "--first-words",
-                        "0x0301",
-                        "--json",
-                    ]
-                )
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "discover-usb",
+                    "--object-ids",
+                    "1",
+                    "--first-words",
+                    "0x0301",
+                    "--json",
+                ]
+            )
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 0)

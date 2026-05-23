@@ -7,7 +7,6 @@ from typing import Literal
 
 from .models import Scene
 
-
 EasingName = Literal["linear", "ease-in", "ease-out", "ease-in-out"]
 
 
@@ -127,7 +126,9 @@ def _validate_complete_tuple(
             raise ValueError(f"scene transition {name} requires a complete tuple")
 
 
-def _interpolate_float(start: float | None, end: float | None, fraction: float) -> float | None:
+def _interpolate_float(
+    start: float | None, end: float | None, fraction: float
+) -> float | None:
     if end is None:
         return None
     if start is None:
@@ -169,4 +170,6 @@ def _clamp(fraction: float) -> float:
 
 
 def _has_control_fields(scene: Scene) -> bool:
-    return any(value is not None for key, value in scene.to_dict().items() if key != "obj")
+    return any(
+        value is not None for key, value in scene.to_dict().items() if key != "obj"
+    )

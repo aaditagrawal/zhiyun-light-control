@@ -14,10 +14,8 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from ..protocol import iter_frames
-
 
 DIRECT_ZY_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 DIRECT_ZY_WRITE_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -84,10 +82,10 @@ class BleTransport:
         self.write_uuid = write_uuid
         self.notify_uuid = notify_uuid
         self.timeout = timeout
-        self._client: Any | None = None
+        self._client: object | None = None
         self._queue: asyncio.Queue[bytes] = asyncio.Queue()
 
-    async def __aenter__(self) -> "BleTransport":
+    async def __aenter__(self) -> BleTransport:
         await self.open()
         return self
 
@@ -146,7 +144,7 @@ class BleTransport:
                 break
         return bytes(buf)
 
-    def _on_notify(self, _sender: Any, data: bytearray) -> None:
+    def _on_notify(self, _sender: object, data: bytearray) -> None:
         self._queue.put_nowait(bytes(data))
 
     def _drain_queue(self) -> None:
@@ -161,7 +159,10 @@ async def scan_zhiyun_devices(timeout: float = 5.0) -> list[BleDevice]:
     for device, adv in devices.values():
         service_uuids = {uuid.lower() for uuid in (adv.service_uuids or [])}
         name = device.name or adv.local_name
-        name_hit = bool(name and any(part in name.lower() for part in ("zhiyun", "molus", "g60", "zy")))
+        name_hit = bool(
+            name
+            and any(part in name.lower() for part in ("zhiyun", "molus", "g60", "zy"))
+        )
         service_hit = bool(KNOWN_ZHIYUN_SERVICE_UUIDS & service_uuids)
         if name_hit or service_hit:
             found.append(BleDevice(address=device.address, name=name, rssi=adv.rssi))
@@ -269,7 +270,7 @@ def _signal_name(returncode: int) -> str | None:
         return f"SIG{-returncode}"
 
 
-def _load_bleak() -> tuple[Any, Any]:
+def _load_bleak() -> tuple[object, object]:
     try:
         from bleak import BleakClient, BleakScanner
     except ImportError as exc:

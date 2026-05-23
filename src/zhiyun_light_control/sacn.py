@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
 
-from .artnet import DmxMapping, scene_from_dmx
+from .artnet import DEFAULT_DMX_MAPPING, DmxMapping, scene_from_dmx
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
 from .state import SceneStateTracker
-
 
 ACN_PACKET_IDENTIFIER = b"ASC-E1.17\x00\x00\x00"
 VECTOR_ROOT_E131_DATA = 0x00000004
@@ -171,10 +171,10 @@ def decode_sacn(packet: bytes) -> SacnPacket:
 class SacnLightDispatcher:
     def __init__(
         self,
-        light_factory: Callable[[], Any],
+        light_factory: Callable[[], object],
         *,
         universe: int = 1,
-        mapping: DmxMapping = DmxMapping(),
+        mapping: DmxMapping = DEFAULT_DMX_MAPPING,
         allow_control: bool = False,
         state_tracker: SceneStateTracker | None = None,
     ):
@@ -240,11 +240,11 @@ def serve_sacn(
     port: int = DEFAULT_SACN_PORT,
     universe: int = 1,
     light_port: str | None = None,
-    mapping: DmxMapping = DmxMapping(),
+    mapping: DmxMapping = DEFAULT_DMX_MAPPING,
     allow_control: bool = False,
     once: bool = False,
     multicast: bool = False,
-    light_factory: Callable[[], Any] | None = None,
+    light_factory: Callable[[], object] | None = None,
     state_tracker: SceneStateTracker | None = None,
 ) -> None:
     dispatcher = SacnLightDispatcher(
@@ -267,10 +267,8 @@ def serve_sacn(
                 )
             while True:
                 data, _addr = sock.recvfrom(1500)
-                try:
+                with contextlib.suppress(SacnError):
                     dispatcher.dispatch(decode_sacn(data))
-                except SacnError:
-                    pass
                 if once:
                     return
     finally:

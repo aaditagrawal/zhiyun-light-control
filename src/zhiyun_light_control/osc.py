@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import socket
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
@@ -25,7 +25,6 @@ from .protocol import (
     sleep_payload,
 )
 from .state import SceneStateTracker
-
 
 OscArg = int | float | str | bool | None
 
@@ -43,10 +42,10 @@ class OscMessage:
 class OscDispatchResult:
     message: OscMessage
     action: str
-    result: dict[str, Any] | None = None
+    result: dict[str, object] | None = None
     error: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "message": self.message.to_dict(),
             "action": self.action,
@@ -117,7 +116,7 @@ class OscLightDispatcher:
 
     def __init__(
         self,
-        light_factory: Callable[[], Any],
+        light_factory: Callable[[], object],
         *,
         allow_control: bool,
         preset_library: ScenePresetLibrary | None = None,
@@ -177,12 +176,21 @@ class OscLightDispatcher:
             return _command_result(message, "brightness", result.to_dict())
         if address in {"/zhiyun/cct", "/light/cct"}:
             kelvin = int(_number_arg(args, 0))
-            result = light.exchange_runtime(RuntimeCommand.CCT, cct_payload(obj, kelvin))
+            result = light.exchange_runtime(
+                RuntimeCommand.CCT, cct_payload(obj, kelvin)
+            )
             self._record_scene(Scene(obj=obj, kelvin=kelvin), "cct", [result])
             return _command_result(message, "cct", result.to_dict())
-        if address in {"/zhiyun/sleep", "/light/sleep", "/zhiyun/power", "/light/power"}:
+        if address in {
+            "/zhiyun/sleep",
+            "/light/sleep",
+            "/zhiyun/power",
+            "/light/power",
+        }:
             value = int(_number_arg(args, 0))
-            result = light.exchange_runtime(RuntimeCommand.SLEEP, sleep_payload(obj, value))
+            result = light.exchange_runtime(
+                RuntimeCommand.SLEEP, sleep_payload(obj, value)
+            )
             self._record_scene(Scene(obj=obj, sleep=value), "sleep", [result])
             return _command_result(message, "sleep", result.to_dict())
         if address in {"/zhiyun/rgb", "/light/rgb"}:
@@ -227,7 +235,9 @@ class OscLightDispatcher:
             if self.preset_library is None:
                 raise ValueError("no preset file loaded")
             name = _string_arg(args, 0)
-            preset_obj = int(args[1]) if len(args) >= 2 and isinstance(args[1], int) else None
+            preset_obj = (
+                int(args[1]) if len(args) >= 2 and isinstance(args[1], int) else None
+            )
             scene = self.preset_library.get(name)
             if preset_obj is not None:
                 scene = Scene(**{**scene.to_dict(), "obj": preset_obj})
@@ -245,7 +255,7 @@ class OscLightDispatcher:
             error=f"unknown OSC address: {address}",
         )
 
-    def _record_scene(self, scene: Scene, action: str, results) -> None:
+    def _record_scene(self, scene: Scene, action: str, results: list[object]) -> None:
         self.state_tracker.record(
             scene,
             source="osc",
@@ -262,7 +272,7 @@ def serve_osc(
     light_port: str | None = None,
     allow_control: bool = False,
     once: bool = False,
-    light_factory: Callable[[], Any] | None = None,
+    light_factory: Callable[[], object] | None = None,
     preset_library: ScenePresetLibrary | None = None,
     state_tracker: SceneStateTracker | None = None,
 ) -> None:
@@ -368,6 +378,6 @@ def _optional_int(args: tuple[OscArg, ...], index: int) -> int | None:
 def _command_result(
     message: OscMessage,
     action: str,
-    result: dict[str, Any],
+    result: dict[str, object],
 ) -> OscDispatchResult:
     return OscDispatchResult(message=message, action=action, result=result)

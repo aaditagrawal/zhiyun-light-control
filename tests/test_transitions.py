@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import unittest
 
-from zhiyun_light_control import Scene, SceneTransition, interpolate_scene, scene_transition
+from zhiyun_light_control import (
+    Scene,
+    SceneTransition,
+    interpolate_scene,
+    scene_transition,
+)
 from zhiyun_light_control.transitions import transition_interval
 
 
@@ -51,7 +56,9 @@ class TransitionTests(unittest.TestCase):
             include_start=True,
         )
 
-        self.assertEqual([scene.brightness for scene in transition.scenes()], [0, 5, 10])
+        self.assertEqual(
+            [scene.brightness for scene in transition.scenes()], [0, 5, 10]
+        )
 
     def test_validation_rejects_ambiguous_transitions(self) -> None:
         with self.assertRaisesRegex(ValueError, "steps"):

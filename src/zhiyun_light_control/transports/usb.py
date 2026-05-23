@@ -8,7 +8,6 @@ import select
 import termios
 import time
 
-
 DEFAULT_TIMEOUT = 0.8
 
 
@@ -20,7 +19,7 @@ class UsbTransport:
         self.timeout = timeout
         self.fd: int | None = None
 
-    def __enter__(self) -> "UsbTransport":
+    def __enter__(self) -> UsbTransport:
         self.open()
         return self
 
@@ -85,4 +84,3 @@ def find_usb_port(port: str | None = None) -> str:
     if not ports:
         raise RuntimeError("no /dev/cu.usbmodem* ports found")
     return ports[0]
-

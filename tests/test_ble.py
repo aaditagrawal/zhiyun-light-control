@@ -5,7 +5,11 @@ import types
 import unittest
 from unittest.mock import patch
 
-from zhiyun_light_control.protocol import RuntimeCommand, build_runtime_frame, first_frame
+from zhiyun_light_control.protocol import (
+    RuntimeCommand,
+    build_runtime_frame,
+    first_frame,
+)
 from zhiyun_light_control.transports.ble import (
     DIRECT_ZY_WRITE_UUID,
     BleTransport,
@@ -46,7 +50,9 @@ class SafeBleScanTests(unittest.TestCase):
             stderr="",
         )
 
-        with patch("zhiyun_light_control.transports.ble.subprocess.run", return_value=proc):
+        with patch(
+            "zhiyun_light_control.transports.ble.subprocess.run", return_value=proc
+        ):
             result = scan_zhiyun_devices_safe(timeout=1.0, python="python-test")
 
         self.assertTrue(result.ok)
@@ -62,7 +68,9 @@ class SafeBleScanTests(unittest.TestCase):
             stderr="",
         )
 
-        with patch("zhiyun_light_control.transports.ble.subprocess.run", return_value=proc):
+        with patch(
+            "zhiyun_light_control.transports.ble.subprocess.run", return_value=proc
+        ):
             result = scan_zhiyun_devices_safe(timeout=1.0)
 
         self.assertFalse(result.ok)
@@ -83,12 +91,16 @@ class SafeBleScanTests(unittest.TestCase):
             stderr="",
         )
 
-        with patch("zhiyun_light_control.transports.ble.subprocess.run", return_value=proc):
+        with patch(
+            "zhiyun_light_control.transports.ble.subprocess.run", return_value=proc
+        ):
             result = scan_zhiyun_devices_safe(timeout=1.0)
 
         self.assertFalse(result.ok)
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.error, "BLE support requires installing the 'ble' extra")
+        self.assertEqual(
+            result.error, "BLE support requires installing the 'ble' extra"
+        )
 
 
 class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
@@ -127,7 +139,9 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(devices[0].name, "MOLUS G60")
         self.assertEqual(devices[1].address, "CC")
 
-    async def test_transport_exchange_uses_write_and_notify_characteristics(self) -> None:
+    async def test_transport_exchange_uses_write_and_notify_characteristics(
+        self,
+    ) -> None:
         class FakeClient:
             callback = None
             writes: list[tuple[str, bytes, bool]] = []
@@ -148,7 +162,9 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
             async def stop_notify(self, uuid: str) -> None:
                 self.stopped_uuid = uuid
 
-            async def write_gatt_char(self, uuid: str, tx: bytes, response: bool) -> None:
+            async def write_gatt_char(
+                self, uuid: str, tx: bytes, response: bool
+            ) -> None:
                 self.__class__.writes.append((uuid, tx, response))
                 frame = first_frame(tx)
                 assert frame is not None

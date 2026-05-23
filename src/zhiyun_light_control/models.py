@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
 
 from .protocol import ParsedFrame, has_echo_frame, is_echo_frame
 
@@ -55,7 +54,7 @@ class CommandResult:
             return "sent_no_response"
         return "response_without_matching_ack"
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "command": self.command,
             "tx_hex": self.tx.hex(),
@@ -85,5 +84,5 @@ class Scene:
     saturation: float | None = None
     intensity: int | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)

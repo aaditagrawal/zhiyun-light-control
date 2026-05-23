@@ -26,7 +26,7 @@ class FakeAsyncLight:
         self.commands: list[tuple[int, bytes, float]] = []
         self.scenes: list[Scene] = []
 
-    async def __aenter__(self) -> "FakeAsyncLight":
+    async def __aenter__(self) -> FakeAsyncLight:
         self.opened = True
         return self
 
@@ -60,7 +60,7 @@ class FakeSyncContext:
         self.enter_count = 0
         self.exit_count = 0
 
-    def __enter__(self) -> "FakeSyncContext":
+    def __enter__(self) -> FakeSyncContext:
         self.enter_count += 1
         return self
 
@@ -149,9 +149,8 @@ class BridgeFactoryTests(unittest.TestCase):
             return context
 
         persistent = PersistentLightFactory(factory)
-        with self.assertRaisesRegex(RuntimeError, "boom"):
-            with persistent():
-                raise RuntimeError("boom")
+        with self.assertRaisesRegex(RuntimeError, "boom"), persistent():
+            raise RuntimeError("boom")
         with persistent() as light:
             self.assertEqual(light.name, "light-1")
 

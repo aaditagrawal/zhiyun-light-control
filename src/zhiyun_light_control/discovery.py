@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
 
 from .models import CommandResult
 from .protocol import (
@@ -18,7 +18,6 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
-
 
 DEFAULT_DISCOVERY_OBJECT_IDS = (0, 1)
 DEFAULT_DISCOVERY_FIRST_WORDS = (RUNTIME_TYPE, 0x0101, 0x0103, 0x0301)
@@ -44,7 +43,7 @@ class DiscoveryAttempt:
     def status(self) -> str:
         return self.result.transport_status
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "name": self.name,
             "category": self.category,
@@ -78,17 +77,15 @@ class UsbDiscoveryReport:
 
     @property
     def responsive(self) -> tuple[DiscoveryAttempt, ...]:
-        return tuple(attempt for attempt in self.attempts if not attempt.result.timed_out)
+        return tuple(
+            attempt for attempt in self.attempts if not attempt.result.timed_out
+        )
 
     @property
     def unconfirmed_responsive(self) -> tuple[DiscoveryAttempt, ...]:
-        return tuple(
-            attempt
-            for attempt in self.responsive
-            if not attempt.confirmed
-        )
+        return tuple(attempt for attempt in self.responsive if not attempt.confirmed)
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "transport": "usb",
             "object_ids": list(self.object_ids),
@@ -108,7 +105,7 @@ class UsbDiscoveryReport:
 
 
 def discover_usb_primitives(
-    light: Any,
+    light: object,
     *,
     object_ids: Iterable[int] = DEFAULT_DISCOVERY_OBJECT_IDS,
     first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
@@ -193,7 +190,7 @@ def discover_usb_primitives(
 
 
 def _attempt_runtime(
-    light: Any,
+    light: object,
     *,
     name: str,
     category: str,
@@ -215,7 +212,7 @@ def _attempt_runtime(
 
 
 def _attempt_frame(
-    light: Any,
+    light: object,
     *,
     name: str,
     category: str,

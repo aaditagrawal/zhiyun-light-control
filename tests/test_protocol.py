@@ -13,8 +13,8 @@ from zhiyun_light_control.protocol import (
     first_response_frame,
     has_echo_frame,
     parse_chip_sync,
-    parse_device_info,
     parse_device_id,
+    parse_device_info,
     parse_version,
     register_payload,
 )
@@ -87,8 +87,7 @@ class ProtocolTests(unittest.TestCase):
 
     def test_parse_chip_sync_after_upgrade(self) -> None:
         rx = bytes.fromhex(
-            "243c1b000103070000130048444c0000010010030041054008"
-            "a40065a36075fc30"
+            "243c1b000103070000130048444c0000010010030041054008a40065a36075fc30"
         )
         frame = first_frame(rx, cmd=UpdaterCommand.CHIP_SYNC)
         chip = parse_chip_sync(frame)

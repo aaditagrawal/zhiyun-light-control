@@ -6,8 +6,8 @@ import argparse
 import asyncio
 import json
 
-from .async_client import AsyncZhiyunLight
 from .artnet import DmxMapping, serve_artnet
+from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .discovery import (
@@ -20,8 +20,8 @@ from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
 from .protocol import (
     RuntimeCommand,
-    build_runtime_frame,
     brightness_payload,
+    build_runtime_frame,
     cct_payload,
     first_frame,
     object_id_payload,
@@ -89,7 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
         "discover-usb",
         help="Run a bounded USB protocol discovery matrix.",
     )
-    discover.add_argument("--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*.")
+    discover.add_argument(
+        "--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*."
+    )
     discover.add_argument("--timeout", type=float, default=0.5)
     discover.add_argument(
         "--object-ids",
@@ -133,7 +135,14 @@ def build_parser() -> argparse.ArgumentParser:
     add_transport_args(read)
     read.add_argument(
         "kind",
-        choices=["brightness", "cct", "sleep", "firmware-by-id", "voltage-by-id", "mode"],
+        choices=[
+            "brightness",
+            "cct",
+            "sleep",
+            "firmware-by-id",
+            "voltage-by-id",
+            "mode",
+        ],
     )
     read.add_argument("--obj", type=parse_int, default=1)
     read.set_defaults(func=cmd_read)
@@ -162,9 +171,15 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--hue", type=float)
     apply.add_argument("--saturation", type=float)
     apply.add_argument("--intensity", type=int)
-    apply.add_argument("--preset-file", help="JSON file containing named scene presets.")
+    apply.add_argument(
+        "--preset-file", help="JSON file containing named scene presets."
+    )
     apply.add_argument("--preset", help="Named preset to apply before CLI overrides.")
-    apply.add_argument("--dry-run", action="store_true", help="Resolve the scene without sending commands.")
+    apply.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Resolve the scene without sending commands.",
+    )
     apply.add_argument("--yes", action="store_true")
     apply.set_defaults(func=cmd_apply)
 
@@ -172,7 +187,9 @@ def build_parser() -> argparse.ArgumentParser:
     server.add_argument("--host", default="127.0.0.1")
     server.add_argument("--port", type=int, default=8765)
     add_bridge_transport_args(server)
-    server.add_argument("--preset-file", help="JSON file containing named scene presets.")
+    server.add_argument(
+        "--preset-file", help="JSON file containing named scene presets."
+    )
     server.add_argument("--allow-control", action="store_true")
     server.set_defaults(func=cmd_serve)
 
@@ -218,9 +235,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def add_transport_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--transport", choices=["usb", "ble"], default="usb")
-    parser.add_argument("--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*.")
+    parser.add_argument(
+        "--port", help="USB serial port. Defaults to first /dev/cu.usbmodem*."
+    )
     parser.add_argument("--address", help="BLE address/identifier.")
-    parser.add_argument("--name-contains", help="BLE name substring used for discovery.")
+    parser.add_argument(
+        "--name-contains", help="BLE name substring used for discovery."
+    )
     parser.add_argument("--timeout", type=float, default=1.5)
 
 
@@ -231,12 +252,17 @@ def add_bridge_transport_args(parser: argparse.ArgumentParser) -> None:
         help="USB serial port. Defaults to first /dev/cu.usbmodem*.",
     )
     parser.add_argument("--address", help="BLE address/identifier.")
-    parser.add_argument("--name-contains", help="BLE name substring used for discovery.")
+    parser.add_argument(
+        "--name-contains", help="BLE name substring used for discovery."
+    )
     parser.add_argument("--light-timeout", type=float, default=1.5)
     parser.add_argument(
         "--no-persistent-light",
         action="store_true",
-        help="Open and close the light for each bridge request instead of reusing one connection.",
+        help=(
+            "Open and close the light for each bridge request instead of reusing "
+            "one connection."
+        ),
     )
 
 
@@ -280,8 +306,9 @@ def cmd_validate(args: argparse.Namespace) -> int:
     if args.transport == "ble":
         if not args.unsafe_in_process:
             raise SystemExit(
-                "BLE validation uses the direct bleak transport and may crash on this macOS stack; "
-                "run scan-ble first, then re-run validate with --unsafe-in-process on a stable BLE runtime"
+                "BLE validation uses the direct bleak transport and may crash on "
+                "this macOS stack; run scan-ble first, then re-run validate with "
+                "--unsafe-in-process on a stable BLE runtime"
             )
         report = asyncio.run(_validate_ble(args))
     else:
@@ -460,7 +487,9 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
         kelvin = (
             args.kelvin
             if args.kelvin is not None
-            else int(require_value(args.value, "--kelvin or --value is required for cct"))
+            else int(
+                require_value(args.value, "--kelvin or --value is required for cct")
+            )
         )
         return light.exchange_runtime(
             RuntimeCommand.CCT,
@@ -498,7 +527,9 @@ async def _set_ble(args: argparse.Namespace):
             kelvin = (
                 args.kelvin
                 if args.kelvin is not None
-                else int(require_value(args.value, "--kelvin or --value is required for cct"))
+                else int(
+                    require_value(args.value, "--kelvin or --value is required for cct")
+                )
             )
             return await light.exchange_runtime(
                 RuntimeCommand.CCT,
@@ -531,7 +562,9 @@ def cmd_apply(args: argparse.Namespace) -> int:
     else:
         with ZhiyunLight.usb(port=args.port, timeout=args.timeout) as light:
             results = light.apply_scene(scene)
-    print_json({"scene": scene.to_dict(), "results": [result.to_dict() for result in results]})
+    print_json(
+        {"scene": scene.to_dict(), "results": [result.to_dict() for result in results]}
+    )
     return command_results_exit_code(results)
 
 
@@ -570,7 +603,9 @@ def scene_from_args(args: argparse.Namespace) -> Scene:
         library = load_preset_library(args)
         if library is None:
             raise SystemExit("--preset-file is required with --preset")
-        return merge_scene(library.get(preset_name), scene, override_obj=args.obj is not None)
+        return merge_scene(
+            library.get(preset_name), scene, override_obj=args.obj is not None
+        )
     return scene
 
 

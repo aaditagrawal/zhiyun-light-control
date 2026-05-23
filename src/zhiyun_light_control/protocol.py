@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import binascii
 import struct
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Iterable
-
 
 SOF = b"\x24\x3c"
 RUNTIME_TYPE = 0x0100
@@ -119,7 +118,9 @@ def ascii_payload(data: bytes) -> str:
 
 
 def build_frame(first_word: int, seq: int, cmd: int, payload: bytes = b"") -> bytes:
-    body = struct.pack("<HHH", first_word & 0xFFFF, seq & 0xFFFF, cmd & 0xFFFF) + payload
+    body = (
+        struct.pack("<HHH", first_word & 0xFFFF, seq & 0xFFFF, cmd & 0xFFFF) + payload
+    )
     return SOF + struct.pack("<H", len(body)) + body + struct.pack("<H", crc16(body))
 
 

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import fields, replace
 from pathlib import Path
-from typing import Any, Mapping
 
 from .models import Scene
-
 
 SCENE_FIELDS = {field.name for field in fields(Scene)}
 
@@ -22,7 +21,7 @@ class ScenePresetLibrary:
         self.scenes = dict(scenes)
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "ScenePresetLibrary":
+    def from_mapping(cls, data: Mapping[str, object]) -> ScenePresetLibrary:
         raw_scenes = data.get("scenes", data)
         if not isinstance(raw_scenes, Mapping):
             raise PresetError("preset file must contain a mapping of scene names")
@@ -36,7 +35,7 @@ class ScenePresetLibrary:
         return cls(scenes)
 
     @classmethod
-    def load(cls, path: str | Path) -> "ScenePresetLibrary":
+    def load(cls, path: str | Path) -> ScenePresetLibrary:
         with Path(path).open("r", encoding="utf-8") as handle:
             data = json.load(handle)
         if not isinstance(data, Mapping):
@@ -53,10 +52,12 @@ class ScenePresetLibrary:
             raise PresetError(f"unknown preset: {name}") from exc
 
     def to_dict(self) -> dict[str, object]:
-        return {"scenes": {name: scene.to_dict() for name, scene in self.scenes.items()}}
+        return {
+            "scenes": {name: scene.to_dict() for name, scene in self.scenes.items()}
+        }
 
 
-def scene_from_mapping(data: Mapping[str, Any]) -> Scene:
+def scene_from_mapping(data: Mapping[str, object]) -> Scene:
     unknown = set(data) - SCENE_FIELDS
     if unknown:
         raise PresetError(f"unknown scene fields: {', '.join(sorted(unknown))}")
@@ -83,18 +84,23 @@ def merge_scene(base: Scene, overrides: Scene, *, override_obj: bool = False) ->
     return replace(base, **changes)
 
 
-def scene_from_optional_mapping(data: Mapping[str, Any], *, obj: int = 1) -> Scene:
+def scene_from_optional_mapping(data: Mapping[str, object], *, obj: int = 1) -> Scene:
     scene = scene_from_mapping(data)
     if "obj" not in data:
         scene = replace(scene, obj=obj)
     return scene
 
 
-def _optional_int(data: Mapping[str, Any], key: str, *, default: int | None = None) -> int | None:
+def _optional_int(
+    data: Mapping[str, object],
+    key: str,
+    *,
+    default: int | None = None,
+) -> int | None:
     value = data.get(key, default)
     return int(value) if value is not None else None
 
 
-def _optional_float(data: Mapping[str, Any], key: str) -> float | None:
+def _optional_float(data: Mapping[str, object], key: str) -> float | None:
     value = data.get(key)
     return float(value) if value is not None else None

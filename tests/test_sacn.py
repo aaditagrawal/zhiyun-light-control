@@ -17,7 +17,7 @@ class FakeLight:
     def __init__(self) -> None:
         self.scenes = []
 
-    def __enter__(self) -> "FakeLight":
+    def __enter__(self) -> FakeLight:
         return self
 
     def __exit__(self, _exc_type, _exc, _tb) -> None:

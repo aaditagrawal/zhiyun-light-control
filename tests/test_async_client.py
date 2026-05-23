@@ -3,7 +3,11 @@ from __future__ import annotations
 import unittest
 
 from zhiyun_light_control import AsyncProbeResult, AsyncZhiyunLight, Scene
-from zhiyun_light_control.protocol import RuntimeCommand, build_runtime_frame, first_frame
+from zhiyun_light_control.protocol import (
+    RuntimeCommand,
+    build_runtime_frame,
+    first_frame,
+)
 
 
 class AsyncEchoAckTransport:
@@ -73,9 +77,13 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         transport = AsyncEchoAckTransport()
         light = AsyncZhiyunLight(transport)
 
-        results = await light.apply_scene(Scene(obj=1, sleep=0, brightness=25, kelvin=5600))
+        results = await light.apply_scene(
+            Scene(obj=1, sleep=0, brightness=25, kelvin=5600)
+        )
 
-        self.assertEqual([result.command for result in results], [0x1008, 0x1001, 0x1002])
+        self.assertEqual(
+            [result.command for result in results], [0x1008, 0x1001, 0x1002]
+        )
         sent_cmds = [first_frame(tx).cmd for tx in transport.sent]
         self.assertEqual(sent_cmds, [0x1008, 0x1001, 0x1002])
 
@@ -94,7 +102,9 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
             [result.command for batch in batches for result in batch],
             [0x1001, 0x1001],
         )
-        self.assertEqual([first_frame(tx).cmd for tx in transport.sent], [0x1001, 0x1001])
+        self.assertEqual(
+            [first_frame(tx).cmd for tx in transport.sent], [0x1001, 0x1001]
+        )
 
 
 if __name__ == "__main__":

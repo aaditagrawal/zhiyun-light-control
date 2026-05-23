@@ -16,7 +16,7 @@ class FakeLight:
     def __init__(self) -> None:
         self.scenes = []
 
-    def __enter__(self) -> "FakeLight":
+    def __enter__(self) -> FakeLight:
         return self
 
     def __exit__(self, _exc_type, _exc, _tb) -> None:
@@ -31,7 +31,9 @@ class ArtNetTests(unittest.TestCase):
     def test_encode_decode_artdmx_round_trip(self) -> None:
         payload = bytes([0, 128, 255])
 
-        packet = decode_artdmx(encode_artdmx(payload, universe=0x0102, sequence=7, physical=3))
+        packet = decode_artdmx(
+            encode_artdmx(payload, universe=0x0102, sequence=7, physical=3)
+        )
 
         self.assertEqual(packet.universe, 0x0102)
         self.assertEqual(packet.sequence, 7)
@@ -59,7 +61,9 @@ class ArtNetTests(unittest.TestCase):
 
     def test_dispatch_ignores_other_universe(self) -> None:
         light = FakeLight()
-        dispatcher = ArtNetLightDispatcher(lambda: light, universe=2, allow_control=True)
+        dispatcher = ArtNetLightDispatcher(
+            lambda: light, universe=2, allow_control=True
+        )
         packet = decode_artdmx(encode_artdmx(bytes([255, 255]), universe=1))
 
         result = dispatcher.dispatch(packet)

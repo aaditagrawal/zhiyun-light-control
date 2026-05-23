@@ -50,7 +50,9 @@ class ClientTests(unittest.TestCase):
         transport = EchoAckTransport()
         light = ZhiyunLight(transport)
 
-        result = light.exchange_runtime(RuntimeCommand.REGISTER_DEFAULT_GROUP, b"\x00\x00\x00\x00")
+        result = light.exchange_runtime(
+            RuntimeCommand.REGISTER_DEFAULT_GROUP, b"\x00\x00\x00\x00"
+        )
 
         self.assertTrue(result.acknowledged)
         self.assertFalse(result.timed_out)
@@ -95,7 +97,9 @@ class ClientTests(unittest.TestCase):
 
         results = light.apply_scene(Scene(obj=1, sleep=0, brightness=25, kelvin=5600))
 
-        self.assertEqual([result.command for result in results], [0x1008, 0x1001, 0x1002])
+        self.assertEqual(
+            [result.command for result in results], [0x1008, 0x1001, 0x1002]
+        )
         sent_cmds = [first_frame(tx).cmd for tx in transport.sent]
         self.assertEqual(sent_cmds, [0x1008, 0x1001, 0x1002])
 
@@ -120,7 +124,9 @@ class ClientTests(unittest.TestCase):
             [result.command for batch in batches for result in batch],
             [0x1001, 0x1001],
         )
-        self.assertEqual([first_frame(tx).cmd for tx in transport.sent], [0x1001, 0x1001])
+        self.assertEqual(
+            [first_frame(tx).cmd for tx in transport.sent], [0x1001, 0x1001]
+        )
 
 
 if __name__ == "__main__":

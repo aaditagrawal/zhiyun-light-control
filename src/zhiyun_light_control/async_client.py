@@ -5,18 +5,17 @@ from __future__ import annotations
 import asyncio
 import itertools
 from dataclasses import asdict, dataclass
-from typing import Any
 
 from .models import CommandResult, Scene
 from .protocol import (
     RUNTIME_TYPE,
     RuntimeCommand,
-    build_frame,
     brightness_payload,
+    build_frame,
     cct_payload,
     first_response_frame,
-    iter_frames,
     hsi_payload,
+    iter_frames,
     object_id_payload,
     parse_device_id,
     parse_device_info,
@@ -39,18 +38,18 @@ class AsyncProbeResult:
     device_id: int | None
     address: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
 class AsyncZhiyunLight:
     """Async light client for BLE transports."""
 
-    def __init__(self, transport: Any):
+    def __init__(self, transport: object):
         self.transport = transport
         self._seq = itertools.count(1)
 
-    async def __aenter__(self) -> "AsyncZhiyunLight":
+    async def __aenter__(self) -> AsyncZhiyunLight:
         if hasattr(self.transport, "open"):
             await self.transport.open()
         return self
@@ -65,7 +64,7 @@ class AsyncZhiyunLight:
         address: str | None = None,
         name_contains: str | None = None,
         timeout: float = 1.5,
-    ) -> "AsyncZhiyunLight":
+    ) -> AsyncZhiyunLight:
         return cls(
             BleTransport(address=address, name_contains=name_contains, timeout=timeout)
         )
@@ -157,10 +156,14 @@ class AsyncZhiyunLight:
         return await self.command(RuntimeCommand.CCT, cct_payload(obj, read=True))
 
     async def set_cct(self, obj: int, kelvin: int):
-        return await self.command(RuntimeCommand.CCT, cct_payload(obj, kelvin, read=False))
+        return await self.command(
+            RuntimeCommand.CCT, cct_payload(obj, kelvin, read=False)
+        )
 
     async def set_rgb(self, obj: int, red: int, green: int, blue: int):
-        return await self.command(RuntimeCommand.RGB, rgb_payload(obj, red, green, blue))
+        return await self.command(
+            RuntimeCommand.RGB, rgb_payload(obj, red, green, blue)
+        )
 
     async def set_hsi(self, obj: int, hue: float, saturation: float, intensity: int):
         return await self.command(
@@ -175,10 +178,14 @@ class AsyncZhiyunLight:
         return await self.command(RuntimeCommand.SLEEP, sleep_payload(obj, value))
 
     async def get_object_firmware(self, obj: int = 0):
-        return await self.command(RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj))
+        return await self.command(
+            RuntimeCommand.FIRMWARE_BY_OBJECT, object_id_payload(obj)
+        )
 
     async def get_object_voltage(self, obj: int = 0):
-        return await self.command(RuntimeCommand.VOLTAGE_BY_OBJECT, object_id_payload(obj))
+        return await self.command(
+            RuntimeCommand.VOLTAGE_BY_OBJECT, object_id_payload(obj)
+        )
 
     async def get_object_mode(self, obj: int = 0):
         return await self.command(RuntimeCommand.DEVICE_MODE, object_id_payload(obj))

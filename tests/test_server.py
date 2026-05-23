@@ -23,7 +23,7 @@ class FakeLight:
     def __init__(self) -> None:
         self.commands: list[int] = []
 
-    def __enter__(self) -> "FakeLight":
+    def __enter__(self) -> FakeLight:
         return self
 
     def __exit__(self, _exc_type, _exc, _tb) -> None:
@@ -95,7 +95,9 @@ class ServerTests(unittest.TestCase):
                 method="POST",
             )
             scene = json.loads(urlopen(request, timeout=3).read())
-            self.assertEqual([result["command"] for result in scene["results"]], [0x1001, 0x1002])
+            self.assertEqual(
+                [result["command"] for result in scene["results"]], [0x1001, 0x1002]
+            )
             self.assertEqual(light.commands, [0x1001, 0x1002])
             state = json.loads(urlopen(f"{base}/state", timeout=3).read())
             self.assertEqual(state["source"], "http")
@@ -134,7 +136,9 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(response["preset"], "key")
             self.assertEqual(response["scene"]["brightness"], 55.0)
             self.assertEqual(response["scene"]["kelvin"], 5200)
-            self.assertEqual([result["command"] for result in response["results"]], [0x1001, 0x1002])
+            self.assertEqual(
+                [result["command"] for result in response["results"]], [0x1001, 0x1002]
+            )
             state = json.loads(urlopen(f"{base}/state", timeout=3).read())
             self.assertEqual(state["action"], "preset")
             self.assertEqual(state["scene"]["brightness"], 55.0)
@@ -163,7 +167,9 @@ class ServerTests(unittest.TestCase):
 
             transition_request = Request(
                 f"{base}/transition",
-                data=json.dumps({"to": {"brightness": 30}, "steps": 2, "duration": 0}).encode(),
+                data=json.dumps(
+                    {"to": {"brightness": 30}, "steps": 2, "duration": 0}
+                ).encode(),
                 headers={"content-type": "application/json"},
                 method="POST",
             )

@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import struct
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
 from .models import Scene
 from .state import SceneStateTracker
-
 
 ARTNET_ID = b"Art-Net\x00"
 OP_DMX = 0x5000
@@ -55,6 +55,9 @@ class DmxMapping:
     cct_max: int = 6500
 
 
+DEFAULT_DMX_MAPPING = DmxMapping()
+
+
 @dataclass(frozen=True)
 class ArtNetDispatchResult:
     packet: ArtDmxPacket
@@ -88,7 +91,15 @@ def encode_artdmx(
     return (
         ARTNET_ID
         + struct.pack("<H", OP_DMX)
-        + struct.pack(">HBBBBH", protocol_version, sequence & 0xFF, physical & 0xFF, sub_uni, net, len(data))
+        + struct.pack(
+            ">HBBBBH",
+            protocol_version,
+            sequence & 0xFF,
+            physical & 0xFF,
+            sub_uni,
+            net,
+            len(data),
+        )
         + data
     )
 
@@ -122,10 +133,10 @@ def decode_artdmx(packet: bytes) -> ArtDmxPacket:
 class ArtNetLightDispatcher:
     def __init__(
         self,
-        light_factory: Callable[[], Any],
+        light_factory: Callable[[], object],
         *,
         universe: int = 0,
-        mapping: DmxMapping = DmxMapping(),
+        mapping: DmxMapping = DEFAULT_DMX_MAPPING,
         allow_control: bool = False,
         state_tracker: SceneStateTracker | None = None,
     ):
@@ -138,13 +149,19 @@ class ArtNetLightDispatcher:
 
     def dispatch(self, packet: ArtDmxPacket) -> ArtNetDispatchResult:
         if packet.universe != self.universe:
-            return ArtNetDispatchResult(packet=packet, scene=None, applied=False, reason="universe_ignored")
+            return ArtNetDispatchResult(
+                packet=packet, scene=None, applied=False, reason="universe_ignored"
+            )
         scene = scene_from_dmx(packet.data, self.mapping)
         if scene == self._last_scene:
-            return ArtNetDispatchResult(packet=packet, scene=scene, applied=False, reason="unchanged")
+            return ArtNetDispatchResult(
+                packet=packet, scene=scene, applied=False, reason="unchanged"
+            )
         if not self.allow_control:
             self._record_scene(scene, applied=False, reason="control_disabled")
-            return ArtNetDispatchResult(packet=packet, scene=scene, applied=False, reason="control_disabled")
+            return ArtNetDispatchResult(
+                packet=packet, scene=scene, applied=False, reason="control_disabled"
+            )
         with self.light_factory() as light:
             results = light.apply_scene(scene)
         self._record_scene(scene, applied=True, results=results)
@@ -169,7 +186,7 @@ class ArtNetLightDispatcher:
         )
 
 
-def scene_from_dmx(data: bytes, mapping: DmxMapping = DmxMapping()) -> Scene:
+def scene_from_dmx(data: bytes, mapping: DmxMapping = DEFAULT_DMX_MAPPING) -> Scene:
     brightness = None
     kelvin = None
     sleep = None
@@ -177,7 +194,9 @@ def scene_from_dmx(data: bytes, mapping: DmxMapping = DmxMapping()) -> Scene:
         brightness = _channel(data, mapping.brightness_channel) / 255.0 * 100.0
     if mapping.cct_channel is not None:
         cct_value = _channel(data, mapping.cct_channel)
-        kelvin = round(mapping.cct_min + (cct_value / 255.0 * (mapping.cct_max - mapping.cct_min)))
+        kelvin = round(
+            mapping.cct_min + (cct_value / 255.0 * (mapping.cct_max - mapping.cct_min))
+        )
     if mapping.sleep_channel is not None:
         sleep = 0 if _channel(data, mapping.sleep_channel) >= 128 else 1
     return Scene(obj=mapping.obj, brightness=brightness, kelvin=kelvin, sleep=sleep)
@@ -189,10 +208,10 @@ def serve_artnet(
     port: int = 6454,
     universe: int = 0,
     light_port: str | None = None,
-    mapping: DmxMapping = DmxMapping(),
+    mapping: DmxMapping = DEFAULT_DMX_MAPPING,
     allow_control: bool = False,
     once: bool = False,
-    light_factory: Callable[[], Any] | None = None,
+    light_factory: Callable[[], object] | None = None,
     state_tracker: SceneStateTracker | None = None,
 ) -> None:
     dispatcher = ArtNetLightDispatcher(
@@ -207,10 +226,8 @@ def serve_artnet(
             sock.bind((host, port))
             while True:
                 data, _addr = sock.recvfrom(1024)
-                try:
+                with contextlib.suppress(ArtNetError):
                     dispatcher.dispatch(decode_artdmx(data))
-                except ArtNetError:
-                    pass
                 if once:
                     return
     finally:

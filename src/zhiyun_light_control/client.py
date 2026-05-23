@@ -5,20 +5,19 @@ from __future__ import annotations
 import itertools
 import time
 from dataclasses import asdict, dataclass
-from typing import Any
 
 from .models import CommandResult, Scene
 from .protocol import (
     RUNTIME_TYPE,
-    RuntimeCommand,
     UPDATER_DEVICE,
+    RuntimeCommand,
     UpdaterCommand,
-    build_frame,
     brightness_payload,
+    build_frame,
     cct_payload,
     first_response_frame,
-    iter_frames,
     hsi_payload,
+    iter_frames,
     object_id_payload,
     parse_chip_sync,
     parse_device_id,
@@ -42,7 +41,7 @@ class ProbeResult:
     device_id: int | None
     port: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
@@ -53,11 +52,11 @@ class ZhiyunLight:
     ``close()``. The bundled implementation is USB CDC.
     """
 
-    def __init__(self, transport: Any):
+    def __init__(self, transport: object):
         self.transport = transport
         self._seq = itertools.count(1)
 
-    def __enter__(self) -> "ZhiyunLight":
+    def __enter__(self) -> ZhiyunLight:
         if hasattr(self.transport, "open"):
             self.transport.open()
         return self
@@ -66,7 +65,7 @@ class ZhiyunLight:
         self.close()
 
     @classmethod
-    def usb(cls, port: str | None = None, *, timeout: float = 0.8) -> "ZhiyunLight":
+    def usb(cls, port: str | None = None, *, timeout: float = 0.8) -> ZhiyunLight:
         return cls(UsbTransport(port=port, timeout=timeout))
 
     def close(self) -> None:
@@ -153,7 +152,9 @@ class ZhiyunLight:
         )
 
     def read_brightness(self, obj: int = 0):
-        return self.command(RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True))
+        return self.command(
+            RuntimeCommand.BRIGHTNESS, brightness_payload(obj, read=True)
+        )
 
     def set_brightness(self, obj: int, value: float):
         return self.command(
@@ -171,7 +172,9 @@ class ZhiyunLight:
         return self.command(RuntimeCommand.RGB, rgb_payload(obj, red, green, blue))
 
     def set_hsi(self, obj: int, hue: float, saturation: float, intensity: int):
-        return self.command(RuntimeCommand.HSI, hsi_payload(obj, hue, saturation, intensity))
+        return self.command(
+            RuntimeCommand.HSI, hsi_payload(obj, hue, saturation, intensity)
+        )
 
     def read_sleep(self, obj: int = 0):
         return self.command(RuntimeCommand.SLEEP, sleep_payload(obj, read=True))

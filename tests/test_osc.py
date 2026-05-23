@@ -22,7 +22,7 @@ class FakeLight:
     def __init__(self) -> None:
         self.commands: list[int] = []
 
-    def __enter__(self) -> "FakeLight":
+    def __enter__(self) -> FakeLight:
         return self
 
     def __exit__(self, _exc_type, _exc, _tb) -> None:
@@ -72,7 +72,9 @@ class OscTests(unittest.TestCase):
     def test_dispatch_blocks_control_without_allow_control(self) -> None:
         dispatcher = OscLightDispatcher(lambda: FakeLight(), allow_control=False)
 
-        result = dispatcher.dispatch(decode_message(encode_message("/zhiyun/brightness", 25.0)))
+        result = dispatcher.dispatch(
+            decode_message(encode_message("/zhiyun/brightness", 25.0))
+        )
 
         self.assertEqual(result.action, "blocked")
         self.assertIn("allow_control", result.error)
@@ -83,10 +85,15 @@ class OscTests(unittest.TestCase):
         dispatcher = OscLightDispatcher(lambda: light, allow_control=True)
         dispatcher.state_tracker = tracker
 
-        result = dispatcher.dispatch(decode_message(encode_message("/zhiyun/scene", 25.0, 5600, 0)))
+        result = dispatcher.dispatch(
+            decode_message(encode_message("/zhiyun/scene", 25.0, 5600, 0))
+        )
 
         self.assertEqual(result.action, "scene")
-        self.assertEqual([item["command"] for item in result.result["results"]], [0x1001, 0x1002, 0x1008])
+        self.assertEqual(
+            [item["command"] for item in result.result["results"]],
+            [0x1001, 0x1002, 0x1008],
+        )
         self.assertEqual(light.commands, [0x1001, 0x1002, 0x1008])
         state = tracker.to_dict()
         self.assertEqual(state["source"], "osc")
@@ -103,12 +110,16 @@ class OscTests(unittest.TestCase):
             preset_library=library,
         )
 
-        result = dispatcher.dispatch(decode_message(encode_message("/zhiyun/preset", "key", 2)))
+        result = dispatcher.dispatch(
+            decode_message(encode_message("/zhiyun/preset", "key", 2))
+        )
 
         self.assertEqual(result.action, "preset")
         self.assertEqual(result.result["preset"], "key")
         self.assertEqual(result.result["scene"]["obj"], 2)
-        self.assertEqual([item["command"] for item in result.result["results"]], [0x1001, 0x1002])
+        self.assertEqual(
+            [item["command"] for item in result.result["results"]], [0x1001, 0x1002]
+        )
 
 
 if __name__ == "__main__":

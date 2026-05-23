@@ -405,6 +405,7 @@ Use uv for all local Python work:
 
 ```sh
 uv sync --extra ble --extra dev
+uv run ruff check .
 uv run python -m unittest discover -s tests
 uv run python -m compileall -q src tests
 uv build

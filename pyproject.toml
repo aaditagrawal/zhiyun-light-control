@@ -24,10 +24,16 @@ dependencies = []
 
 [project.optional-dependencies]
 ble = ["bleak>=0.22"]
-dev = ["pytest>=8"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.11",
+]
 
 [project.scripts]
 zlight = "zhiyun_light_control.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "ANN401"]

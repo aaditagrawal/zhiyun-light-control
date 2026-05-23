@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import fields
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
-from typing import Any
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
@@ -33,7 +33,7 @@ class LightHttpServer(ThreadingHTTPServer):
         *,
         port: str | None = None,
         allow_control: bool = False,
-        light_factory: Any | None = None,
+        light_factory: Callable[[], object] | None = None,
         preset_library: ScenePresetLibrary | None = None,
         state_tracker: SceneStateTracker | None = None,
     ):
@@ -134,10 +134,10 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             return
         self._json(result)
 
-    def log_message(self, fmt: str, *args: Any) -> None:
+    def log_message(self, fmt: str, *args: object) -> None:
         return
 
-    def _handle_control(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+    def _handle_control(self, path: str, body: dict[str, object]) -> dict[str, object]:
         obj = int(body.get("obj", 1))
         with self.server.light_factory() as light:
             if path == "/register":
@@ -283,7 +283,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 }
         raise ValueError("unknown endpoint")
 
-    def _handle_validate(self, body: dict[str, Any]) -> dict[str, Any]:
+    def _handle_validate(self, body: dict[str, object]) -> dict[str, object]:
         allow_control = _body_bool(body, "allow_control")
         include_object_reads = _body_bool(body, "include_object_reads")
         include_color = _body_bool(body, "include_color")
@@ -308,7 +308,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             )
         return report.to_dict()
 
-    def _transition_start(self, body: dict[str, Any], *, obj: int) -> Scene:
+    def _transition_start(self, body: dict[str, object], *, obj: int) -> Scene:
         start_data = body.get("from")
         if start_data is not None:
             if not isinstance(start_data, dict):
@@ -334,13 +334,15 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             results=results,
         )
 
-    def _read_json(self) -> dict[str, Any]:
+    def _read_json(self) -> dict[str, object]:
         length = int(self.headers.get("content-length", "0"))
         if length == 0:
             return {}
         return json.loads(self.rfile.read(length).decode("utf-8"))
 
-    def _json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
+    def _json(
+        self, payload: dict[str, object], status: HTTPStatus = HTTPStatus.OK
+    ) -> None:
         data = json.dumps(payload, sort_keys=True).encode("utf-8")
         self.send_response(status)
         self._send_common_headers(len(data))
@@ -361,7 +363,7 @@ def serve(
     port: int = 8765,
     light_port: str | None = None,
     allow_control: bool = False,
-    light_factory: Any | None = None,
+    light_factory: Callable[[], object] | None = None,
     preset_library: ScenePresetLibrary | None = None,
     state_tracker: SceneStateTracker | None = None,
 ) -> None:
@@ -379,15 +381,15 @@ def serve(
         close_light_factory(httpd.light_factory)
 
 
-def _optional_int(body: dict[str, Any], key: str) -> int | None:
+def _optional_int(body: dict[str, object], key: str) -> int | None:
     return int(body[key]) if key in body and body[key] is not None else None
 
 
-def _optional_float(body: dict[str, Any], key: str) -> float | None:
+def _optional_float(body: dict[str, object], key: str) -> float | None:
     return float(body[key]) if key in body and body[key] is not None else None
 
 
-def _body_bool(body: dict[str, Any], key: str, default: bool = False) -> bool:
+def _body_bool(body: dict[str, object], key: str, default: bool = False) -> bool:
     value = body.get(key, default)
     if isinstance(value, bool):
         return value
@@ -399,11 +401,11 @@ def _body_bool(body: dict[str, Any], key: str, default: bool = False) -> bool:
 _SCENE_FIELDS = {field.name for field in fields(Scene)}
 
 
-def _scene_fields_from_body(body: dict[str, Any]) -> dict[str, Any]:
+def _scene_fields_from_body(body: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in body.items() if key in _SCENE_FIELDS}
 
 
-def _scene_from_body(body: dict[str, Any], *, obj: int = 1) -> Scene:
+def _scene_from_body(body: dict[str, object], *, obj: int = 1) -> Scene:
     return Scene(
         obj=int(body.get("obj", obj)),
         brightness=_optional_float(body, "brightness"),
