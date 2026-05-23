@@ -116,6 +116,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | --- | --- | --- |
 | `GET` | `/health` | Process health |
 | `GET` | `/openapi.json` | Machine-readable bridge schema |
+| `GET` | `/manifest` | One-call integration map for media controllers |
 | `GET` | `/probe` | Global light probe |
 | `GET` | `/status` | ACK-backed global status reads with raw command evidence |
 | `GET` | `/validate` | Read-only hardware validation report |
@@ -158,6 +159,12 @@ sent as an integer or an integer string such as `"0x01"`.
 are read-only and return parsed identity/status fields alongside the raw
 `CommandResult` for each global read. This gives integrations a stable polling
 surface without using the gated raw-frame endpoint.
+
+`GET /manifest` is a machine-readable integration map. It groups the bridge's
+HTTP read/control/bench endpoints, state stream/history paths, OSC addresses,
+Art-Net and sACN defaults, BLE authorization commands, scene fields, loaded
+preset/cue names, and ACK evidence semantics into one response for show-control
+setup tools.
 
 `GET /ready` is a dashboard/controller preflight that combines the same
 ACK-backed status read with non-scanning device discovery, the current requested

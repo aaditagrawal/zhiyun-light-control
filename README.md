@@ -263,6 +263,7 @@ Useful HTTP calls:
 curl http://127.0.0.1:8765/probe
 curl http://127.0.0.1:8765/status
 curl http://127.0.0.1:8765/openapi.json
+curl http://127.0.0.1:8765/manifest
 curl http://127.0.0.1:8765/validate
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/capabilities
@@ -346,6 +347,11 @@ or show controller reconnects and needs to catch up before resuming `/events`.
 show-control clients. It lists every supported read/write primitive, required
 payload fields, whether the primitive requires `--allow-control`, scene fields,
 loaded preset names, and the transport evidence statuses a client should expect.
+
+`GET /manifest` is the one-call integration map for media controllers. It lists
+HTTP control paths, state/event paths, OSC addresses, Art-Net/sACN defaults, BLE
+authorization commands, scene fields, loaded preset/cue names, and ACK evidence
+semantics.
 
 `GET /diagnostics` is the transport diagnostics endpoint for integration
 dashboards. It opens the bridge's configured transport, returns ACK-backed
@@ -498,6 +504,7 @@ from zhiyun_light_control import (
 
 bridge = LightBridgeClient("http://127.0.0.1:8765")
 
+print(bridge.manifest()["osc"]["addresses"])
 print(bridge.diagnostics()["connection_confirmed"])
 print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())

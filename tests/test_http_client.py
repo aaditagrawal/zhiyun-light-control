@@ -150,6 +150,7 @@ class HttpClientTests(unittest.TestCase):
         client = LightBridgeClient(f"http://127.0.0.1:{server.server_port}")
         try:
             self.assertTrue(client.health()["ok"])
+            self.assertEqual(client.manifest()["setup"]["preflight"]["path"], "/ready")
             self.assertTrue(client.diagnostics()["connection_confirmed"])
             ready = client.ready()
             self.assertTrue(ready["ready_for"]["read_status"])

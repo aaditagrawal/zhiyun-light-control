@@ -556,6 +556,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", commands["get"])
             self.assertIn("/validate", commands["get"])
             self.assertIn("/validate", commands["post"])
+            self.assertIn("/manifest", commands["get"])
             self.assertIn("/capabilities", commands["get"])
             self.assertIn("/devices", commands["get"])
             self.assertIn("/ready", commands["get"])
@@ -602,6 +603,19 @@ class ServerTests(unittest.TestCase):
             self.assertFalse(primitives["ready"]["requires_control"])
             self.assertFalse(primitives["events"]["requires_control"])
             self.assertFalse(primitives["history"]["requires_control"])
+
+            manifest = json.loads(urlopen(f"{base}/manifest", timeout=3).read())
+            self.assertEqual(manifest["api"], "zhiyun-light-control")
+            self.assertFalse(manifest["control_enabled"])
+            self.assertEqual(manifest["transport"]["active"], "usb")
+            self.assertEqual(manifest["setup"]["preflight"]["path"], "/ready")
+            self.assertEqual(
+                manifest["setup"]["ble_authorization"]["status_command"],
+                "zlight ble-helper --status --json",
+            )
+            self.assertIn("/zhiyun/cue", manifest["osc"]["addresses"])
+            self.assertEqual(manifest["dmx"]["artnet"]["default_universe"], 0)
+            self.assertIn("sent_no_response", manifest["evidence"]["statuses"])
 
             diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
             self.assertTrue(diagnostics["ok"])
@@ -1036,6 +1050,7 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(schema["openapi"], "3.1.0")
             self.assertIn("/scene", schema["paths"])
             self.assertIn("/status", schema["paths"])
+            self.assertIn("/manifest", schema["paths"])
             self.assertIn("/capabilities", schema["paths"])
             self.assertIn("/diagnostics", schema["paths"])
             self.assertIn("/ready", schema["paths"])
@@ -1052,6 +1067,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
             self.assertIn("CommandResult", schema["components"]["schemas"])
+            self.assertIn("Manifest", schema["components"]["schemas"])
             self.assertIn("Status", schema["components"]["schemas"])
             self.assertIn("Capabilities", schema["components"]["schemas"])
             self.assertIn("Diagnostics", schema["components"]["schemas"])

@@ -36,6 +36,9 @@ class LightBridgeClient:
     def commands(self) -> dict[str, object]:
         return self._get("/commands")
 
+    def manifest(self) -> dict[str, object]:
+        return self._get("/manifest")
+
     def capabilities(self) -> dict[str, object]:
         return self._get("/capabilities")
 

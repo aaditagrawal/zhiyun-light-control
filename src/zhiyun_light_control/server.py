@@ -94,6 +94,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 {
                     "get": [
                         "/health",
+                        "/manifest",
                         "/openapi.json",
                         "/probe",
                         "/status",
@@ -136,6 +137,24 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     if self.server.cue_library
                     else [],
                 }
+            )
+            return
+        if path == "/manifest":
+            self._json(
+                integration_manifest_response(
+                    allow_control=self.server.allow_control,
+                    presets=self.server.preset_library.names()
+                    if self.server.preset_library
+                    else [],
+                    cues=self.server.cue_library.names()
+                    if self.server.cue_library
+                    else [],
+                    transport=self.server.transport,
+                    ble_backend=self.server.ble_backend,
+                    ble_profile=self.server.ble_profile,
+                    ble_address=self.server.ble_address,
+                    ble_name_contains=self.server.ble_name_contains,
+                )
             )
             return
         if path == "/capabilities":
@@ -1107,6 +1126,12 @@ def openapi_schema() -> dict[str, object]:
         },
         "paths": {
             "/health": {"get": _operation("Process health", "Health")},
+            "/manifest": {
+                "get": _operation(
+                    "Describe integration surfaces for media controllers",
+                    "Manifest",
+                )
+            },
             "/openapi.json": {
                 "get": _operation("Machine-readable bridge schema", "OpenApiSchema")
             },
@@ -1335,6 +1360,7 @@ def _openapi_schemas() -> dict[str, object]:
             "required": ["ok"],
         },
         "OpenApiSchema": {"type": "object"},
+        "Manifest": {"type": "object", "additionalProperties": True},
         "Commands": {
             "type": "object",
             "properties": {
@@ -1583,6 +1609,149 @@ def _openapi_schemas() -> dict[str, object]:
         "SequenceResponse": {"type": "object", "additionalProperties": True},
         "CueRequest": {"type": "object", "additionalProperties": True},
         "CueResponse": {"type": "object", "additionalProperties": True},
+    }
+
+
+def integration_manifest_response(
+    *,
+    allow_control: bool,
+    presets: list[str],
+    cues: list[str],
+    transport: str,
+    ble_backend: str | None,
+    ble_profile: str | None,
+    ble_address: str | None,
+    ble_name_contains: str | None,
+) -> dict[str, object]:
+    """Return a stable integration map for local media-control tools."""
+
+    return {
+        "api": "zhiyun-light-control",
+        "version": "0.1.0",
+        "control_enabled": allow_control,
+        "transport": {
+            "active": transport,
+            "ble_backend": ble_backend,
+            "ble_profile": ble_profile,
+            "ble_address": ble_address,
+            "ble_name_contains": ble_name_contains,
+        },
+        "setup": {
+            "preflight": {"method": "GET", "path": "/ready"},
+            "capabilities": {"method": "GET", "path": "/capabilities"},
+            "diagnostics": {"method": "GET", "path": "/diagnostics"},
+            "devices": {
+                "method": "GET",
+                "path": "/devices",
+                "query": [
+                    "include_ble",
+                    "include_ble_status",
+                    "ble_backend",
+                    "timeout",
+                    "name_contains",
+                ],
+            },
+            "openapi": {"method": "GET", "path": "/openapi.json"},
+            "ble_authorization": {
+                "command": "zlight ble-helper --ensure --open-settings",
+                "status_command": "zlight ble-helper --status --json",
+                "devices_query": "/devices?include_ble_status=true",
+            },
+        },
+        "http": {
+            "read": [
+                {"name": "status", "method": "GET", "path": "/status"},
+                {"name": "state", "method": "GET", "path": "/state"},
+                {"name": "history", "method": "GET", "path": "/history"},
+            ],
+            "control": [
+                {"name": "brightness", "method": "POST", "path": "/brightness"},
+                {"name": "cct", "method": "POST", "path": "/cct"},
+                {"name": "sleep", "method": "POST", "path": "/sleep"},
+                {"name": "rgb", "method": "POST", "path": "/rgb"},
+                {"name": "hsi", "method": "POST", "path": "/hsi"},
+                {"name": "scene", "method": "POST", "path": "/scene"},
+                {"name": "transition", "method": "POST", "path": "/transition"},
+                {"name": "preset", "method": "POST", "path": "/preset"},
+                {"name": "sequence", "method": "POST", "path": "/sequence"},
+                {"name": "cue", "method": "POST", "path": "/cue"},
+            ],
+            "bench": [
+                {"name": "validate", "method": "POST", "path": "/validate"},
+                {"name": "discover-usb", "method": "POST", "path": "/discover-usb"},
+                {"name": "inspect-ble", "method": "POST", "path": "/inspect-ble"},
+                {
+                    "name": "test-ble-endpoints",
+                    "method": "POST",
+                    "path": "/test-ble-endpoints",
+                },
+                {"name": "frame", "method": "POST", "path": "/frame"},
+            ],
+        },
+        "state": {
+            "snapshot": {"method": "GET", "path": "/state"},
+            "events": {
+                "method": "GET",
+                "path": "/events",
+                "query": ["limit", "timeout", "initial"],
+            },
+            "history": {
+                "method": "GET",
+                "path": "/history",
+                "query": ["after", "limit"],
+            },
+        },
+        "osc": {
+            "server_command": "zlight osc-serve --allow-control",
+            "addresses": [
+                "/zhiyun/probe",
+                "/zhiyun/register",
+                "/zhiyun/brightness",
+                "/zhiyun/cct",
+                "/zhiyun/sleep",
+                "/zhiyun/rgb",
+                "/zhiyun/hsi",
+                "/zhiyun/scene",
+                "/zhiyun/preset",
+                "/zhiyun/cue",
+            ],
+            "alias_prefix": "/light",
+            "result_address": "/zhiyun/result",
+        },
+        "dmx": {
+            "artnet": {
+                "server_command": "zlight artnet-serve --allow-control",
+                "default_universe": 0,
+            },
+            "sacn": {
+                "server_command": "zlight sacn-serve --allow-control",
+                "default_universe": 1,
+            },
+            "default_channels": {
+                "brightness": 1,
+                "cct": 2,
+                "sleep": None,
+            },
+        },
+        "scene_fields": list(_SCENE_FIELD_ORDER),
+        "presets": presets,
+        "cues": cues,
+        "evidence": {
+            "statuses": [
+                "acknowledged",
+                "sent_no_response",
+                "echoed_write",
+                "response_without_matching_ack",
+            ],
+            "write_applied_rule": (
+                "A control request is applied only when every CommandResult is "
+                "acknowledged."
+            ),
+            "state_model": (
+                "State endpoints report requested state plus ACK evidence, not a "
+                "physical light measurement."
+            ),
+        },
     }
 
 
