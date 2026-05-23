@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterable, Iterator, Mapping
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -16,6 +17,36 @@ class LightBridgeError(RuntimeError):
         super().__init__(f"bridge request failed with HTTP {status}: {payload}")
         self.status = status
         self.payload = payload
+
+
+class LightBridgeNotReady(RuntimeError):
+    def __init__(
+        self,
+        capabilities: Iterable[str],
+        payload: Mapping[str, object],
+    ):
+        self.capabilities = _readiness_capabilities(capabilities)
+        self.payload = {
+            str(key): value
+            for key, value in payload.items()
+            if isinstance(key, str)
+        }
+        self.ready_for = readiness_ready_for(payload)
+        self.pending_action_ids = {
+            capability: readiness_pending_action_ids(payload, capability=capability)
+            for capability in self.capabilities
+            if not readiness_ready(payload, capability)
+        }
+        self.warnings = readiness_warnings(payload)
+        details = ", ".join(
+            f"{capability}: {', '.join(action_ids) or 'not ready'}"
+            for capability, action_ids in self.pending_action_ids.items()
+        )
+        if not details:
+            details = "not ready"
+        super().__init__(
+            f"bridge not ready for {', '.join(self.capabilities)} ({details})"
+        )
 
 
 class LightBridgeClient:
@@ -82,6 +113,27 @@ class LightBridgeClient:
 
     def readiness_action(self, action_id: str) -> dict[str, object] | None:
         return self.readiness_actions().get(action_id)
+
+    def require_readiness(self, *capabilities: str) -> dict[str, object]:
+        payload = self.ready()
+        readiness_require(payload, capabilities)
+        return payload
+
+    def wait_until_ready(
+        self,
+        *capabilities: str,
+        timeout: float = 10.0,
+        interval: float = 0.25,
+    ) -> dict[str, object]:
+        selected = _readiness_capabilities(capabilities)
+        deadline = time.monotonic() + max(0.0, timeout)
+        while True:
+            payload = self.ready()
+            if readiness_all_ready(payload, selected):
+                return payload
+            if time.monotonic() >= deadline:
+                raise LightBridgeNotReady(selected, payload)
+            time.sleep(max(0.0, interval))
 
     def devices(
         self,
@@ -612,6 +664,33 @@ def readiness_ready(payload: Mapping[str, object], capability: str) -> bool:
     return readiness_ready_for(payload).get(capability, False)
 
 
+def readiness_all_ready(
+    payload: Mapping[str, object],
+    capabilities: Iterable[str],
+) -> bool:
+    return not readiness_unready_capabilities(payload, capabilities)
+
+
+def readiness_unready_capabilities(
+    payload: Mapping[str, object],
+    capabilities: Iterable[str],
+) -> list[str]:
+    return [
+        capability
+        for capability in _readiness_capabilities(capabilities)
+        if not readiness_ready(payload, capability)
+    ]
+
+
+def readiness_require(
+    payload: Mapping[str, object],
+    capabilities: Iterable[str],
+) -> None:
+    selected = _readiness_capabilities(capabilities)
+    if readiness_unready_capabilities(payload, selected):
+        raise LightBridgeNotReady(selected, payload)
+
+
 def readiness_requirements(
     payload: Mapping[str, object],
 ) -> dict[str, dict[str, object]]:
@@ -662,6 +741,11 @@ def readiness_warnings(payload: Mapping[str, object]) -> list[str]:
     if not isinstance(warnings, list):
         return []
     return [str(item) for item in warnings if item is not None]
+
+
+def _readiness_capabilities(capabilities: Iterable[str]) -> tuple[str, ...]:
+    selected = tuple(str(capability) for capability in capabilities)
+    return selected or ("read_status",)
 
 
 def _action_requires(action: Mapping[str, object], capability: str) -> bool:

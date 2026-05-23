@@ -8,6 +8,7 @@ from unittest.mock import patch
 from zhiyun_light_control import (
     LightBridgeClient,
     LightBridgeError,
+    LightBridgeNotReady,
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
@@ -23,11 +24,14 @@ from zhiyun_light_control import (
     devices_usb_available,
     devices_usb_ports,
     readiness_actions_by_id,
+    readiness_all_ready,
     readiness_pending_action_ids,
     readiness_ready,
     readiness_ready_for,
+    readiness_require,
     readiness_requirement,
     readiness_requirements,
+    readiness_unready_capabilities,
     readiness_warnings,
     validation_category,
     validation_ready,
@@ -178,6 +182,17 @@ class HttpClientTests(unittest.TestCase):
             self.assertFalse(ready["ready_for"]["confirmed_control"])
             self.assertTrue(readiness_ready(ready, "read_status"))
             self.assertTrue(readiness_ready_for(ready)["control_requests"])
+            self.assertTrue(readiness_all_ready(ready, ["read_status"]))
+            self.assertEqual(
+                readiness_unready_capabilities(ready, ["confirmed_control"]),
+                ["confirmed_control"],
+            )
+            with self.assertRaises(LightBridgeNotReady) as readiness_error:
+                readiness_require(ready, ["confirmed_control"])
+            self.assertEqual(
+                readiness_error.exception.pending_action_ids,
+                {"confirmed_control": ["confirm-control"]},
+            )
             self.assertEqual(readiness_warnings(ready), ready["warnings"])
             requirements = readiness_requirements(ready)
             self.assertEqual(
@@ -223,6 +238,26 @@ class HttpClientTests(unittest.TestCase):
                 ["enable-control"],
             )
             self.assertEqual(client.readiness_warnings(), ready["warnings"])
+            self.assertTrue(
+                client.require_readiness("read_status")["ready_for"]["read_status"]
+            )
+            self.assertTrue(
+                client.wait_until_ready(
+                    "read_status",
+                    timeout=0,
+                    interval=0,
+                )["ready_for"]["read_status"]
+            )
+            with self.assertRaises(LightBridgeNotReady) as wait_error:
+                client.wait_until_ready(
+                    "confirmed_control",
+                    timeout=0,
+                    interval=0,
+                )
+            self.assertEqual(
+                wait_error.exception.pending_action_ids,
+                {"confirmed_control": ["confirm-control"]},
+            )
             self.assertIn("/brightness", client.commands()["post"])
             self.assertIn("brightness", client.capabilities()["scene_fields"])
             with patch(

@@ -598,10 +598,15 @@ still check `acknowledged`, `transport_status`, and `/state` rather than assumin
 that a transmitted command was applied.
 It also includes `readiness_actions()`, `readiness_action(id)`, and
 `pending_readiness_actions()` helpers for setup dashboards that consume
-`GET /ready`. Use `readiness_ready_for()`, `readiness_ready()`,
+`GET /ready`. Call `require_readiness("control_requests")` before sending live
+commands, or `wait_until_ready("read_status", timeout=5)` when a controller is
+starting alongside the bridge. These raise `LightBridgeNotReady` with
+`pending_action_ids` and `warnings` for UI prompts. Use `readiness_ready_for()`,
+`readiness_ready()`, `readiness_all_ready()`, `readiness_require()`,
 `readiness_requirements()`, `readiness_requirement()`,
-`readiness_pending_action_ids()`, and `readiness_warnings()` when consuming
-preflight results outside the client class.
+`readiness_pending_action_ids()`, `readiness_unready_capabilities()`, and
+`readiness_warnings()` when consuming preflight results outside the client
+class.
 Transport discovery payloads from `GET /devices` and the nested `devices` field
 inside `GET /ready` have `devices_selected_usb_port()`,
 `devices_usb_available()`, `devices_usb_ports()`, `devices_ble_status()`,
