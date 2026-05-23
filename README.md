@@ -1,146 +1,154 @@
 # Zhiyun Light Control
 
-Experimental USB and BLE control library for Zhiyun MOLUS lights, started from live protocol work against a MOLUS G60 on macOS.
+Python tooling for controlling Zhiyun MOLUS lights over USB CDC and, where the
+local Bluetooth stack is stable, BLE. The project started from live protocol
+work against a MOLUS G60 on macOS and is built for local media-production
+automation: command line control, Python APIs, HTTP, OSC, Art-Net, and sACN.
 
-The current verified target is a MOLUS G60 updated to firmware `1.6.4`, visible as `Zhiyun Virtual ComPort` (`fff8:0180`) at `/dev/cu.usbmodem21301`.
+The current verified target is a MOLUS G60 on firmware `1.6.4`, visible on
+macOS as `Zhiyun Virtual ComPort` (`fff8:0180`) at `/dev/cu.usbmodem21301`.
 
 ## Status
 
-Verified over USB:
+Verified over USB on the G60:
 
-- Device info command `0x2003`
-- Firmware version command `0x8001`
-- Voltage/status command `0x2001`
-- Device id command `0x2005` (`0` before registration, `1` after registration in the current session)
-- Register-to-default-group command `0x0006`
-- Firmware sync/read identity commands `0x1300` and `0x1302`
+- Device probe, firmware, voltage/status, and device id reads.
+- Register-to-default-group command.
+- Firmware identity reads used by Zhiyun's updater flow.
+- Runtime command framing, CRC, ACK parsing, and command diagnostics.
 
-Implemented but still experimental:
+Implemented and still experimental:
 
-- Object-scoped brightness, CCT, sleep/power, RGB, HSI, and related controls.
-- BLE transport using the direct ZY service and characteristics found in ZY Vega.
-- Local JSON HTTP bridge for wider media-production automation.
-- Local OSC/UDP bridge for QLab, TouchDesigner, Max/MSP, Resolume, and similar tools.
-- Local Art-Net/DMX bridge for lighting desks and media servers.
-- Local sACN/E1.31 DMX bridge for lighting desks and media servers.
-- Scene application for media workflows that need to set several light properties together.
-- Named scene presets for repeatable looks across CLI, HTTP, and OSC.
+- Brightness, CCT, sleep/power, RGB, HSI, and scene application.
+- BLE transport using the direct ZY service and characteristics seen in ZY Vega.
+- Local HTTP, OSC, Art-Net, and sACN bridges for production tools.
+- Named scene presets loaded from JSON.
+- Requested-state tracking for bridge clients.
 
-Firmware flashing is intentionally not part of this package. Use Zhiyun's official updater for firmware writes.
+Firmware flashing is intentionally not implemented here. Use Zhiyun's official
+updater for firmware writes.
 
-## Install For Development
+## Requirements
+
+- macOS, Linux, or Windows with Python `>=3.10`. This repository defaults to
+  Python `3.12` through `.python-version`.
+- [`uv`](https://docs.astral.sh/uv/) for Python runtime and package management.
+- A USB data cable for USB control. Some C-to-C charging cables do not enumerate
+  the serial interface; a known data-capable USB-A-to-C cable through an adapter
+  is a useful fallback.
+- For a MOLUS G60, keep the light on its normal PD power supply while using USB
+  data from the computer.
+
+## Quick Start
+
+From this repository:
 
 ```sh
 cd /Users/mav/Documents/aurion/zhiyun-light-control
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[ble,dev]'
+uv sync --extra ble --extra dev
+uv run zlight probe --transport usb
 ```
 
-For USB-only work, the package has no runtime dependencies:
+USB-only operation has no runtime dependencies, so this also works for the
+smallest environment:
 
 ```sh
-PYTHONPATH=src python3 -m zhiyun_light_control.cli probe
+uv sync
+uv run zlight probe --transport usb
 ```
 
-## CLI
-
-Probe the attached USB light:
+If the light is not found automatically, pass the serial port explicitly:
 
 ```sh
-zlight probe --transport usb
+uv run zlight probe --transport usb --port /dev/cu.usbmodem21301
 ```
 
-Scan for BLE devices:
+Register the current session to the default group before object-scoped control:
 
 ```sh
-zlight scan-ble --timeout 8
-```
-
-BLE scans run in a worker process by default, because the local macOS CoreBluetooth/bleak stack can abort the interpreter instead of raising a Python exception. Use `--unsafe-in-process` only when debugging bleak itself.
-If bleak is installed in a separate runtime, point the worker at it:
-
-```sh
-zlight scan-ble --python /path/to/venv/bin/python --timeout 8
-```
-
-The scan result includes `worker_python`, `returncode`, and `signal` fields so
-automation can distinguish "no devices found" from local CoreBluetooth/PyObjC
-worker crashes. On this Mac, fresh Python `3.13` and `3.12` virtualenvs with
-`bleak 3.0.2` both currently terminate the scan worker with `SIGABRT`; USB and
-the bridge code paths remain usable.
-
-Register the light to the default group over USB:
-
-```sh
-zlight register --device-id 0 --yes
-```
-
-Send an experimental brightness command:
-
-```sh
-zlight set brightness --obj 1 --value 35 --yes
+uv run zlight register --transport usb --device-id 0 --yes
 ```
 
 Apply a simple scene:
 
 ```sh
-zlight apply --obj 1 --sleep 0 --brightness 35 --kelvin 5600 --yes
+uv run zlight apply --obj 1 --sleep 0 --brightness 35 --kelvin 5600 --yes
 ```
 
-Apply a named preset:
+Preview a named preset without sending hardware commands:
 
 ```sh
-zlight apply --preset-file examples/scenes.json --preset key --yes
-zlight apply --preset-file examples/scenes.json --preset key --brightness 42 --dry-run
+uv run zlight apply --preset-file examples/scenes.json --preset key --dry-run
 ```
 
-Start the local HTTP bridge:
+## CLI
+
+Probe:
 
 ```sh
-zlight serve --host 127.0.0.1 --port 8765 --preset-file examples/scenes.json --allow-control
+uv run zlight probe --transport usb
+uv run zlight probe --transport ble --name-contains MOLUS
 ```
 
-HTTP, OSC, and Art-Net bridges default to USB. They can target BLE with the
-same control surface:
+Scan BLE devices:
 
 ```sh
-zlight serve --transport ble --address AA:BB:CC:DD:EE:FF --allow-control
-zlight osc-serve --transport ble --name-contains MOLUS --allow-control
-zlight artnet-serve --transport ble --name-contains MOLUS --allow-control
-zlight sacn-serve --transport ble --name-contains MOLUS --allow-control
+uv run --extra ble zlight scan-ble --timeout 8
 ```
 
-Bridge commands keep one light connection open by default for live control
-traffic. Use `--no-persistent-light` if you need a new USB/BLE connection per
-request while debugging.
+Send direct controls:
 
-Example HTTP calls:
+```sh
+uv run zlight set brightness --obj 1 --value 35 --yes
+uv run zlight set cct --obj 1 --kelvin 5600 --yes
+uv run zlight set rgb --obj 1 --red 255 --green 180 --blue 120 --yes
+```
+
+Apply presets:
+
+```sh
+uv run zlight apply --preset-file examples/scenes.json --preset key --yes
+uv run zlight apply --preset-file examples/scenes.json --preset key --brightness 42 --dry-run
+```
+
+Commands that change light state require `--yes` so automation cannot
+accidentally send hardware writes during a dry run.
+
+## Media Bridges
+
+All bridge commands default to USB and can target BLE with the same control
+surface by adding `--transport ble` plus `--address` or `--name-contains`.
+Bridge processes keep one light connection open by default for lower-latency
+live control. Add `--no-persistent-light` when debugging connection setup.
+
+HTTP JSON bridge:
+
+```sh
+uv run zlight serve --host 127.0.0.1 --port 8765 --preset-file examples/scenes.json --allow-control
+```
+
+Useful HTTP calls:
 
 ```sh
 curl http://127.0.0.1:8765/probe
 curl http://127.0.0.1:8765/commands
 curl http://127.0.0.1:8765/state
+curl http://127.0.0.1:8765/presets
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
 curl -X POST http://127.0.0.1:8765/scene \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "sleep": 0, "brightness": 35, "kelvin": 5600}'
-curl http://127.0.0.1:8765/presets
 curl -X POST http://127.0.0.1:8765/preset \
   -H 'content-type: application/json' \
   -d '{"name": "key", "brightness": 45}'
 ```
 
-`/state` returns the last accepted scene request across HTTP bridge controls.
-OSC, Art-Net, and sACN dispatchers expose the same `SceneStateTracker` for
-embedded use.
-
-Start the local OSC bridge:
+OSC bridge:
 
 ```sh
-zlight osc-serve --host 127.0.0.1 --port 9000 --allow-control
+uv run zlight osc-serve --host 127.0.0.1 --port 9000 --allow-control
 ```
 
 Supported OSC addresses:
@@ -157,18 +165,18 @@ Supported OSC addresses:
 /zhiyun/preset       s:name [i:obj]
 ```
 
-The `/light/...` prefix is accepted as an alias for the same OSC commands.
+The `/light/...` prefix is accepted as an alias.
 
-Start the local Art-Net bridge:
+Art-Net bridge:
 
 ```sh
-zlight artnet-serve --host 0.0.0.0 --port 6454 --universe 0 --allow-control
+uv run zlight artnet-serve --host 0.0.0.0 --port 6454 --universe 0 --allow-control
 ```
 
-Start the local sACN/E1.31 bridge:
+sACN/E1.31 bridge:
 
 ```sh
-zlight sacn-serve --host 0.0.0.0 --port 5568 --universe 1 --multicast --allow-control
+uv run zlight sacn-serve --host 0.0.0.0 --port 5568 --universe 1 --multicast --allow-control
 ```
 
 Default DMX mapping:
@@ -178,18 +186,18 @@ Channel 1 -> brightness 0-100%
 Channel 2 -> CCT 2700-6500K
 ```
 
-Power/sleep is intentionally disabled by default. To opt in:
+Power/sleep is disabled by default. To opt in:
 
 ```sh
-zlight artnet-serve --sleep-channel 3 --allow-control
-zlight sacn-serve --sleep-channel 3 --allow-control
+uv run zlight artnet-serve --sleep-channel 3 --allow-control
+uv run zlight sacn-serve --sleep-channel 3 --allow-control
 ```
 
 Use `none` to disable a mapped channel:
 
 ```sh
-zlight artnet-serve --cct-channel none --allow-control
-zlight sacn-serve --cct-channel none --allow-control
+uv run zlight artnet-serve --cct-channel none --allow-control
+uv run zlight sacn-serve --cct-channel none --allow-control
 ```
 
 ## Python API
@@ -209,18 +217,18 @@ with ZhiyunLight.usb() as light:
 Map a DMX frame to the same scene model:
 
 ```python
-from zhiyun_light_control import DmxMapping, LightConnectionConfig, encode_sacn, make_light_factory, scene_from_dmx
+from zhiyun_light_control import DmxMapping, LightConnectionConfig, make_light_factory, scene_from_dmx
 
 scene = scene_from_dmx(bytes([128, 255]), DmxMapping(obj=1))
-print(scene)
-print(encode_sacn(bytes([128, 255]), universe=1).hex())
 
 with make_light_factory(LightConnectionConfig(transport="usb", persistent=True))() as light:
     light.apply_scene(scene)
 ```
 
-For integration debugging, use `exchange_runtime()` instead of the convenience methods. It returns a `CommandResult` with the transmitted frame, raw response bytes, parsed frames, and matching ACK if one arrived.
-`CommandResult.transport_status` is one of `acknowledged`, `sent_no_response`, or `response_without_matching_ack`, which is useful for fire-and-forget control paths where the current G60 does not ACK every object command.
+For integration debugging, use `exchange_runtime()` instead of the convenience
+methods. It returns a `CommandResult` with the transmitted frame, raw response
+bytes, parsed frames, matching ACK, and a transport status:
+`acknowledged`, `sent_no_response`, or `response_without_matching_ack`.
 
 BLE is async:
 
@@ -236,8 +244,79 @@ async def main():
 asyncio.run(main())
 ```
 
-On the local Python `3.13` and `3.12` test environments, importing the BLE transport works but CoreBluetooth scanning via bleak aborts before returning a Python exception. USB tests and live USB probing are verified; BLE needs validation from a Python/macOS combination where bleak scanning is stable. The CLI's default `scan-ble` command isolates that crash in a worker process and reports it as JSON, including `signal: "SIGABRT"` when macOS aborts the worker.
+## Presets
+
+Preset files can be a top-level mapping of names to scenes or an object with a
+`scenes` mapping:
+
+```json
+{
+  "scenes": {
+    "key": {"brightness": 35, "kelvin": 5600},
+    "blackout": {"sleep": 1}
+  }
+}
+```
+
+CLI fields override preset values when supplied. HTTP `/preset` accepts the same
+scene fields plus `name`.
+
+## BLE Notes
+
+`zlight scan-ble` runs discovery in a worker process by default. This is
+deliberate: on this Mac, fresh Python `3.13` and `3.12` virtualenvs with
+`bleak 3.0.2` and PyObjC `12.1` both terminate CoreBluetooth scanning with
+`SIGABRT` before Python can raise an exception. The worker wrapper keeps the main
+process alive and reports `worker_python`, `returncode`, and `signal` fields.
+
+USB control, bridge code paths, and BLE module imports are verified. BLE control
+still needs validation on a Python/macOS/Bluetooth stack where bleak scanning is
+stable.
+
+## Firmware
+
+This repository only implements read-only updater identity commands. It does not
+flash firmware, package firmware files, or replace Zhiyun's updater.
+
+The locally verified firmware update result is:
+
+```text
+firmware: 1.6.4
+generation: pl103
+device_id: 1 after registration
+chip_sync core: HDL
+product: 0x0541
+hardware: 0x0840
+updater firmware: 1.64
+```
+
+Zhiyun did not expose detailed release notes through the protocol data gathered
+here, so behavior claims in this project are based on observed commands rather
+than official firmware changelog text.
+
+## Development
+
+Use uv for all local Python work:
+
+```sh
+uv sync --extra ble --extra dev
+uv run python -m unittest discover -s tests
+uv run python -m compileall -q src tests
+uv build
+```
+
+Useful live checks:
+
+```sh
+uv run zlight probe --transport usb
+uv run --extra ble zlight scan-ble --timeout 8
+```
+
+`uv.lock` is committed so contributors test against the same resolved dependency
+set. Avoid hand-managed virtualenv or pip workflows unless you are explicitly
+testing downstream package installation.
 
 ## Protocol Notes
 
-See [docs/protocol.md](docs/protocol.md).
+See [docs/protocol.md](docs/protocol.md) for frame layout, command ids, bridge
+surface details, BLE services, and current validation notes.
