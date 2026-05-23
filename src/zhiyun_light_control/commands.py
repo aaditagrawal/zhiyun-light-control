@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from collections.abc import Iterable
 from dataclasses import dataclass
+from inspect import isawaitable
 
-from .models import Scene
+from .models import (
+    CommandResult,
+    Scene,
+    flatten_command_batches,
+    require_command_results,
+)
 from .protocol import (
     DEFAULT_CONTROL_MODE,
     RUNTIME_TYPE,
@@ -16,7 +25,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
-from .transitions import EasingName, scene_transition
+from .transitions import EasingName, scene_transition, transition_interval
 
 
 @dataclass(frozen=True)
@@ -266,3 +275,173 @@ def transition_command_plans(
         plans.append(plan)
         next_seq = plan.next_seq
     return tuple(plans)
+
+
+def execute_command_plan(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+) -> list[CommandResult]:
+    """Execute a planned scene through a sync USB or sync BLE light object."""
+
+    return [
+        _exchange_runtime(light, command, timeout=timeout)
+        for command in plan.commands
+    ]
+
+
+def execute_command_plan_confirmed(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+    action: str = "scene",
+) -> list[CommandResult]:
+    """Execute a planned scene and require matching ACK evidence."""
+
+    return require_command_results(
+        execute_command_plan(light, plan, timeout=timeout),
+        action=action,
+    )
+
+
+def execute_transition_plans(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+) -> list[list[CommandResult]]:
+    """Execute per-scene transition plans through a sync light object."""
+
+    plan_items = tuple(plans)
+    delay = transition_interval(duration, len(plan_items))
+    batches: list[list[CommandResult]] = []
+    for index, plan in enumerate(plan_items):
+        batches.append(execute_command_plan(light, plan, timeout=timeout))
+        if delay > 0 and index < len(plan_items) - 1:
+            time.sleep(delay)
+    return batches
+
+
+def execute_transition_plans_confirmed(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+    action: str = "transition",
+) -> list[list[CommandResult]]:
+    """Execute transition plans and require matching ACK evidence."""
+
+    batches = execute_transition_plans(
+        light,
+        plans,
+        duration=duration,
+        timeout=timeout,
+    )
+    require_command_results(flatten_command_batches(batches), action=action)
+    return batches
+
+
+async def execute_async_command_plan(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+) -> list[CommandResult]:
+    """Execute a planned scene through an async BLE light object."""
+
+    results: list[CommandResult] = []
+    for command in plan.commands:
+        results.append(
+            await _exchange_runtime_async(light, command, timeout=timeout)
+        )
+    return results
+
+
+async def execute_async_command_plan_confirmed(
+    light: object,
+    plan: SceneCommandPlan,
+    *,
+    timeout: float | None = None,
+    action: str = "scene",
+) -> list[CommandResult]:
+    """Execute an async planned scene and require matching ACK evidence."""
+
+    return require_command_results(
+        await execute_async_command_plan(light, plan, timeout=timeout),
+        action=action,
+    )
+
+
+async def execute_async_transition_plans(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+) -> list[list[CommandResult]]:
+    """Execute per-scene transition plans through an async light object."""
+
+    plan_items = tuple(plans)
+    delay = transition_interval(duration, len(plan_items))
+    batches: list[list[CommandResult]] = []
+    for index, plan in enumerate(plan_items):
+        batches.append(await execute_async_command_plan(light, plan, timeout=timeout))
+        if delay > 0 and index < len(plan_items) - 1:
+            await asyncio.sleep(delay)
+    return batches
+
+
+async def execute_async_transition_plans_confirmed(
+    light: object,
+    plans: Iterable[SceneCommandPlan],
+    *,
+    duration: float = 0.0,
+    timeout: float | None = None,
+    action: str = "transition",
+) -> list[list[CommandResult]]:
+    """Execute async transition plans and require matching ACK evidence."""
+
+    batches = await execute_async_transition_plans(
+        light,
+        plans,
+        duration=duration,
+        timeout=timeout,
+    )
+    require_command_results(flatten_command_batches(batches), action=action)
+    return batches
+
+
+def _exchange_runtime(
+    light: object,
+    command: RuntimeCommandSpec,
+    *,
+    timeout: float | None,
+) -> CommandResult:
+    exchange = getattr(light, "exchange_runtime", None)
+    if not callable(exchange):
+        raise TypeError("light must expose exchange_runtime(command, payload)")
+    if timeout is None:
+        return exchange(command.command, command.payload)
+    return exchange(command.command, command.payload, timeout=timeout)
+
+
+async def _exchange_runtime_async(
+    light: object,
+    command: RuntimeCommandSpec,
+    *,
+    timeout: float | None,
+) -> CommandResult:
+    exchange = getattr(light, "exchange_runtime", None)
+    if not callable(exchange):
+        raise TypeError("light must expose exchange_runtime(command, payload)")
+    if timeout is None:
+        result = exchange(command.command, command.payload)
+    else:
+        result = exchange(command.command, command.payload, timeout=timeout)
+    if isawaitable(result):
+        return await result
+    return result

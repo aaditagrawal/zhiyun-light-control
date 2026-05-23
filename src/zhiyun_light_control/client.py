@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import itertools
-import time
 from dataclasses import asdict, dataclass
 
-from .commands import scene_command_specs
+from .commands import (
+    execute_command_plan,
+    execute_transition_plans,
+    scene_command_plan,
+    transition_command_plans,
+)
 from .models import (
     CommandResult,
     Scene,
@@ -37,7 +41,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
-from .transitions import EasingName, scene_transition, transition_interval
+from .transitions import EasingName
 from .transports.usb import DEFAULT_LOCK_TIMEOUT, UsbTransport
 
 
@@ -353,10 +357,10 @@ class ZhiyunLight:
         *,
         control_mode: int = DEFAULT_CONTROL_MODE,
     ) -> list[CommandResult]:
-        return [
-            self.exchange_runtime(command.command, command.payload)
-            for command in scene_command_specs(scene, control_mode=control_mode)
-        ]
+        return execute_command_plan(
+            self,
+            scene_command_plan(scene, control_mode=control_mode),
+        )
 
     def apply_scene_confirmed(
         self,
@@ -379,14 +383,17 @@ class ZhiyunLight:
         easing: EasingName = "linear",
         control_mode: int = DEFAULT_CONTROL_MODE,
     ) -> list[list[CommandResult]]:
-        scenes = scene_transition(start, end, steps=steps, easing=easing)
-        delay = transition_interval(duration, len(scenes))
-        batches: list[list[CommandResult]] = []
-        for index, scene in enumerate(scenes):
-            batches.append(self.apply_scene(scene, control_mode=control_mode))
-            if delay > 0 and index < len(scenes) - 1:
-                time.sleep(delay)
-        return batches
+        return execute_transition_plans(
+            self,
+            transition_command_plans(
+                start,
+                end,
+                steps=steps,
+                easing=easing,
+                control_mode=control_mode,
+            ),
+            duration=duration,
+        )
 
     def transition_scene_confirmed(
         self,

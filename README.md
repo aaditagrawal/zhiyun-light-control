@@ -767,6 +767,7 @@ asyncio.run(main())
 
 ```python
 from zhiyun_light_control import (
+    execute_command_plan,
     LightConnectionConfig,
     Scene,
     open_light,
@@ -797,9 +798,7 @@ print(
 with open_light(config) as light:
     print(light.probe())
     light.register_confirmed(device_id=0)
-    light.set_brightness_confirmed(obj=1, value=35)
-    light.set_cct(obj=1, kelvin=5600)
-    results = light.apply_scene_confirmed(scene)
+    results = execute_command_plan(light, scene_command_plan(scene))
     print([result.to_dict() for result in results])
 ```
 
@@ -817,6 +816,10 @@ serialized frame bytes before any transport is opened, so host applications can
 preview, audit, log, or route commands through their own media-control systems.
 The plan objects are plain Python data with `to_dict()` serializers, which keeps
 them useful in CLI tools, daemons, timeline renderers, and custom transports.
+`execute_command_plan()` / `execute_async_command_plan()` and the matching
+transition helpers send those plan objects through any light object exposing
+`exchange_runtime()`, including USB clients, sync BLE adapters, async BLE
+clients, and test doubles.
 
 For media-control code that wants presets and cues without running the HTTP
 bridge, use the in-process controller:

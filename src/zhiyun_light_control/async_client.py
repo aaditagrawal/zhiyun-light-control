@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import itertools
 from dataclasses import asdict, dataclass
 
-from .commands import scene_command_specs
+from .commands import (
+    execute_async_command_plan,
+    execute_async_transition_plans,
+    scene_command_plan,
+    transition_command_plans,
+)
 from .models import (
     CommandResult,
     Scene,
@@ -37,7 +41,7 @@ from .protocol import (
     rgb_payload,
     sleep_payload,
 )
-from .transitions import EasingName, scene_transition, transition_interval
+from .transitions import EasingName
 from .transports.ble import (
     DEFAULT_BLE_PROFILE,
     BleProfile,
@@ -450,12 +454,10 @@ class AsyncZhiyunLight:
         *,
         control_mode: int = DEFAULT_CONTROL_MODE,
     ) -> list[CommandResult]:
-        results: list[CommandResult] = []
-        for command in scene_command_specs(scene, control_mode=control_mode):
-            results.append(
-                await self.exchange_runtime(command.command, command.payload)
-            )
-        return results
+        return await execute_async_command_plan(
+            self,
+            scene_command_plan(scene, control_mode=control_mode),
+        )
 
     async def apply_scene_confirmed(
         self,
@@ -478,14 +480,17 @@ class AsyncZhiyunLight:
         easing: EasingName = "linear",
         control_mode: int = DEFAULT_CONTROL_MODE,
     ) -> list[list[CommandResult]]:
-        scenes = scene_transition(start, end, steps=steps, easing=easing)
-        delay = transition_interval(duration, len(scenes))
-        batches: list[list[CommandResult]] = []
-        for index, scene in enumerate(scenes):
-            batches.append(await self.apply_scene(scene, control_mode=control_mode))
-            if delay > 0 and index < len(scenes) - 1:
-                await asyncio.sleep(delay)
-        return batches
+        return await execute_async_transition_plans(
+            self,
+            transition_command_plans(
+                start,
+                end,
+                steps=steps,
+                easing=easing,
+                control_mode=control_mode,
+            ),
+            duration=duration,
+        )
 
     async def transition_scene_confirmed(
         self,

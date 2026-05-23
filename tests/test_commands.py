@@ -3,16 +3,67 @@ from __future__ import annotations
 import unittest
 
 from zhiyun_light_control import (
+    CommandResult,
     RuntimeCommandSpec,
     RuntimeFrameSpec,
     Scene,
     SceneCommandPlan,
+    UnconfirmedCommandError,
+    execute_async_command_plan,
+    execute_async_command_plan_confirmed,
+    execute_async_transition_plans,
+    execute_command_plan,
+    execute_command_plan_confirmed,
+    execute_transition_plans,
     scene_command_plan,
     scene_command_specs,
     scene_frame_specs,
     transition_command_plans,
 )
-from zhiyun_light_control.protocol import RuntimeCommand, first_frame
+from zhiyun_light_control.protocol import (
+    RuntimeCommand,
+    build_runtime_frame,
+    first_frame,
+)
+
+
+class FakeRuntimeLight:
+    def __init__(self, *, acknowledged: bool = True) -> None:
+        self.acknowledged = acknowledged
+        self.exchanges: list[tuple[int, bytes, float | None]] = []
+
+    def exchange_runtime(
+        self,
+        command: int,
+        payload: bytes = b"",
+        *,
+        timeout: float | None = None,
+    ) -> CommandResult:
+        self.exchanges.append((command, payload, timeout))
+        tx = build_runtime_frame(len(self.exchanges), command, payload)
+        if not self.acknowledged:
+            return CommandResult(command, tx, b"", (), None)
+        rx = build_runtime_frame(len(self.exchanges), command, b"\x00")
+        ack = first_frame(rx, cmd=command)
+        return CommandResult(command, tx, rx, (ack,), ack)
+
+
+class AsyncFakeRuntimeLight:
+    def __init__(self, *, acknowledged: bool = True) -> None:
+        self.sync = FakeRuntimeLight(acknowledged=acknowledged)
+
+    @property
+    def exchanges(self) -> list[tuple[int, bytes, float | None]]:
+        return self.sync.exchanges
+
+    async def exchange_runtime(
+        self,
+        command: int,
+        payload: bytes = b"",
+        *,
+        timeout: float | None = None,
+    ) -> CommandResult:
+        return self.sync.exchange_runtime(command, payload, timeout=timeout)
 
 
 class CommandPlanningTests(unittest.TestCase):
@@ -120,12 +171,102 @@ class CommandPlanningTests(unittest.TestCase):
             ["0x1001", "0x1001", "0x1002"],
         )
 
+    def test_execute_command_plan_sends_ordered_runtime_exchanges(self) -> None:
+        light = FakeRuntimeLight()
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25, kelvin=5600),
+            control_mode=0x01,
+        )
+
+        results = execute_command_plan(light, plan, timeout=0.2)
+
+        self.assertEqual(
+            [command for command, _payload, _timeout in light.exchanges],
+            [RuntimeCommand.BRIGHTNESS, RuntimeCommand.CCT],
+        )
+        self.assertEqual(
+            [timeout for _command, _payload, timeout in light.exchanges],
+            [0.2, 0.2],
+        )
+        self.assertEqual(light.exchanges[0][1][:3], b"\x01\x00\x01")
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    def test_execute_command_plan_confirmed_fails_on_unacknowledged_result(
+        self,
+    ) -> None:
+        light = FakeRuntimeLight(acknowledged=False)
+        plan = scene_command_plan(Scene(obj=1, brightness=25))
+
+        with self.assertRaises(UnconfirmedCommandError):
+            execute_command_plan_confirmed(light, plan)
+
+    def test_execute_transition_plans_sends_each_planned_batch(self) -> None:
+        light = FakeRuntimeLight()
+        plans = transition_command_plans(
+            Scene(obj=1, brightness=10),
+            Scene(obj=1, brightness=30, kelvin=5600),
+            steps=2,
+        )
+
+        batches = execute_transition_plans(light, plans)
+
+        self.assertEqual([len(batch) for batch in batches], [1, 2])
+        self.assertEqual(
+            [command for command, _payload, _timeout in light.exchanges],
+            [RuntimeCommand.BRIGHTNESS, RuntimeCommand.BRIGHTNESS, RuntimeCommand.CCT],
+        )
+
     def test_scene_command_specs_reject_partial_color_tuples(self) -> None:
         with self.assertRaisesRegex(ValueError, "RGB"):
             scene_command_specs(Scene(obj=1, red=255))
 
         with self.assertRaisesRegex(ValueError, "HSI"):
             scene_command_specs(Scene(obj=1, hue=120, saturation=0.5))
+
+
+class AsyncCommandExecutionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_execute_async_command_plan_sends_ordered_runtime_exchanges(
+        self,
+    ) -> None:
+        light = AsyncFakeRuntimeLight()
+        plan = scene_command_plan(Scene(obj=1, brightness=25, kelvin=5600))
+
+        results = await execute_async_command_plan(light, plan, timeout=0.2)
+
+        self.assertEqual(
+            [command for command, _payload, _timeout in light.exchanges],
+            [RuntimeCommand.BRIGHTNESS, RuntimeCommand.CCT],
+        )
+        self.assertEqual(
+            [timeout for _command, _payload, timeout in light.exchanges],
+            [0.2, 0.2],
+        )
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    async def test_execute_async_command_plan_confirmed_fails_closed(
+        self,
+    ) -> None:
+        light = AsyncFakeRuntimeLight(acknowledged=False)
+        plan = scene_command_plan(Scene(obj=1, brightness=25))
+
+        with self.assertRaises(UnconfirmedCommandError):
+            await execute_async_command_plan_confirmed(light, plan)
+
+    async def test_execute_async_transition_plans_sends_each_batch(self) -> None:
+        light = AsyncFakeRuntimeLight()
+        plans = transition_command_plans(
+            Scene(obj=1, brightness=10),
+            Scene(obj=1, brightness=30, kelvin=5600),
+            steps=2,
+        )
+
+        batches = await execute_async_transition_plans(light, plans)
+
+        self.assertEqual([len(batch) for batch in batches], [1, 2])
+        self.assertEqual(
+            [command for command, _payload, _timeout in light.exchanges],
+            [RuntimeCommand.BRIGHTNESS, RuntimeCommand.BRIGHTNESS, RuntimeCommand.CCT],
+        )
 
 
 if __name__ == "__main__":

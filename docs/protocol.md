@@ -96,7 +96,10 @@ commands for a `Scene`, `scene_frame_specs()` serializes those commands into
 frames for a chosen first word and sequence range, and `scene_command_plan()`
 groups both views with a serializable scene payload. `transition_command_plans()`
 does the same for each generated transition scene while carrying sequence
-numbers forward. None of these helpers opens USB or BLE.
+numbers forward. None of these helpers opens USB or BLE. When a host is ready to
+send, `execute_command_plan()` / `execute_async_command_plan()` and the matching
+transition helpers execute those same plans against any USB, sync BLE, async BLE,
+or custom light object exposing `exchange_runtime()`.
 
 `zlight validate` and `validate_sync_light()` build on `CommandResult` to produce
 a hardware evidence report. A primitive is `confirmed` only when the device
