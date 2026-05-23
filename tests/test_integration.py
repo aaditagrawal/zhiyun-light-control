@@ -12,6 +12,7 @@ from zhiyun_light_control import (
     local_async_integration_snapshot,
     local_async_readiness,
     local_async_status_snapshot,
+    local_async_usb_discovery,
     local_async_validation,
     local_capabilities,
     local_devices,
@@ -20,6 +21,7 @@ from zhiyun_light_control import (
     local_manifest,
     local_readiness,
     local_status_snapshot,
+    local_usb_discovery,
     local_validation,
 )
 from zhiyun_light_control.models import CommandResult
@@ -261,6 +263,14 @@ class FakeFactory:
         return self.light
 
 
+class FakePayload:
+    def __init__(self, payload: dict[str, object]) -> None:
+        self.payload = payload
+
+    def to_dict(self) -> dict[str, object]:
+        return dict(self.payload)
+
+
 class AsyncFakeFactory:
     def __init__(self, light: object) -> None:
         self.light = light
@@ -411,6 +421,83 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(kwargs["ble_name_contains"], "PL103")
         self.assertTrue(kwargs["include_ble"])
         self.assertTrue(kwargs["include_ble_status"])
+
+    def test_light_integration_exposes_usb_discovery_pipeline(self) -> None:
+        light = FakeStatusLight()
+        integration = LightIntegration(
+            config=LightConnectionConfig(
+                transport="usb",
+                port="/dev/cu.test",
+                timeout=1.25,
+            ),
+            allow_control=True,
+            light_factory=FakeFactory(light),
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.discover_usb_primitives",
+            return_value=FakePayload(
+                {"transport": "usb", "summary": {"confirmed": 1}},
+            ),
+        ) as discover:
+            payload = integration.discover_usb(
+                object_ids=(1,),
+                first_words=(0x0100,),
+                timeout=0.25,
+                allow_control=False,
+            )
+
+        self.assertEqual(payload["summary"]["confirmed"], 1)
+        self.assertIs(discover.call_args.args[0], light)
+        kwargs = discover.call_args.kwargs
+        self.assertEqual(kwargs["object_ids"], (1,))
+        self.assertEqual(kwargs["first_words"], (0x0100,))
+        self.assertEqual(kwargs["timeout"], 0.25)
+        self.assertFalse(kwargs["allow_control"])
+
+    def test_local_usb_discovery_requires_usb_transport(self) -> None:
+        with self.assertRaisesRegex(ValueError, "transport='usb'"):
+            local_usb_discovery(LightConnectionConfig(transport="ble"))
+
+    def test_light_integration_exposes_ble_endpoint_pipeline(self) -> None:
+        integration = LightIntegration(
+            config=LightConnectionConfig(
+                transport="ble",
+                ble_backend="macos-app",
+                name_contains="PL103",
+                timeout=2.0,
+            )
+        )
+
+        with patch(
+            "zhiyun_light_control.integration.inspect_ble_device",
+            return_value=FakePayload({"ok": False, "address": None}),
+        ) as inspect:
+            inspect_payload = integration.inspect_ble()
+
+        self.assertFalse(inspect_payload["ok"])
+        self.assertEqual(inspect_payload["backend"], "macos-app")
+        self.assertEqual(inspect_payload["timeout"], 2.0)
+        self.assertEqual(inspect_payload["name_contains"], "PL103")
+        inspect_kwargs = inspect.call_args.kwargs
+        self.assertEqual(inspect_kwargs["backend"], "macos-app")
+        self.assertEqual(inspect_kwargs["timeout"], 2.0)
+        self.assertEqual(inspect_kwargs["name_contains"], "PL103")
+
+        with patch(
+            "zhiyun_light_control.integration.test_ble_endpoint_candidates",
+            return_value=FakePayload(
+                {"ok": True, "confirmed_candidates": [{"profile": "legacy"}]},
+            ),
+        ) as test_ble:
+            test_payload = integration.test_ble_endpoints(max_candidates=2)
+
+        self.assertTrue(test_payload["ok"])
+        self.assertEqual(test_payload["confirmed_candidates"][0]["profile"], "legacy")
+        test_kwargs = test_ble.call_args.kwargs
+        self.assertEqual(test_kwargs["backend"], "macos-app")
+        self.assertEqual(test_kwargs["name_contains"], "PL103")
+        self.assertEqual(test_kwargs["max_candidates"], 2)
 
     def test_local_devices_can_override_ble_status_probe(self) -> None:
         with patch(
@@ -640,6 +727,37 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["ble"]["macos_status"]["state"], "unauthorized")
         self.assertTrue(devices.call_args.kwargs["include_ble_status"])
         self.assertEqual(devices.call_args.kwargs["ble_name_contains"], "PL103")
+
+    async def test_async_discovery_helpers_use_threaded_local_paths(self) -> None:
+        config = LightConnectionConfig(transport="usb", port="/dev/cu.test")
+        with patch(
+            "zhiyun_light_control.integration.local_usb_discovery",
+            return_value={"transport": "usb", "summary": {"confirmed": 1}},
+        ) as discover:
+            payload = await local_async_usb_discovery(
+                config,
+                object_ids=(1,),
+                first_words=(0x0100,),
+            )
+
+        self.assertEqual(payload["summary"]["confirmed"], 1)
+        self.assertEqual(discover.call_args.args[0].port, "/dev/cu.test")
+        self.assertEqual(discover.call_args.kwargs["object_ids"], (1,))
+
+        with patch(
+            "zhiyun_light_control.integration.local_ble_endpoint_test",
+            return_value={"ok": False, "confirmed_candidates": []},
+        ) as test_ble:
+            payload = await AsyncLightIntegration(
+                config=LightConnectionConfig(
+                    transport="ble",
+                    ble_backend="macos-app",
+                    name_contains="PL103",
+                )
+            ).test_ble_endpoints(max_candidates=1)
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(test_ble.call_args.kwargs["max_candidates"], 1)
 
     async def test_local_async_snapshot_includes_manifest_and_summary(self) -> None:
         with patch(

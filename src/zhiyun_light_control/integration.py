@@ -18,7 +18,21 @@ from .controller import (
     open_async_light,
 )
 from .cues import CueLibrary
-from .devices import discover_transport_devices
+from .devices import (
+    discover_transport_devices,
+    inspect_ble_device,
+    test_ble_endpoint_candidates,
+)
+from .discovery import (
+    DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    DEFAULT_DISCOVERY_CONTROL_KINDS,
+    DEFAULT_DISCOVERY_CONTROL_MODES,
+    DEFAULT_DISCOVERY_FIRST_WORDS,
+    DEFAULT_DISCOVERY_OBJECT_IDS,
+    DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+    DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    discover_usb_primitives,
+)
 from .presets import ScenePresetLibrary
 from .protocol import DEFAULT_CONTROL_MODE
 from .server import (
@@ -94,6 +108,83 @@ class LightIntegration:
             self.config,
             include_ble=include_ble,
             include_ble_status=include_ble_status,
+        )
+
+    def discover_usb(
+        self,
+        *,
+        object_ids: Iterable[int] = DEFAULT_DISCOVERY_OBJECT_IDS,
+        first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
+        control_object_ids: Iterable[int] | None = None,
+        control_first_words: Iterable[int] = DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+        register_device_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+        register_group_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+        control_kinds: Iterable[str] = DEFAULT_DISCOVERY_CONTROL_KINDS,
+        control_modes: Iterable[int] | None = DEFAULT_DISCOVERY_CONTROL_MODES,
+        post_register_reads: bool = False,
+        timeout: float | None = None,
+        allow_control: bool | None = None,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+    ) -> dict[str, object]:
+        return local_usb_discovery(
+            self.config,
+            light_factory=self.light_factory,
+            object_ids=object_ids,
+            first_words=first_words,
+            control_object_ids=control_object_ids,
+            control_first_words=control_first_words,
+            register_device_ids=register_device_ids,
+            register_group_ids=register_group_ids,
+            control_kinds=control_kinds,
+            control_modes=control_modes,
+            post_register_reads=post_register_reads,
+            timeout=timeout,
+            allow_control=(
+                self.allow_control if allow_control is None else allow_control
+            ),
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+        )
+
+    def inspect_ble(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+    ) -> dict[str, object]:
+        return local_ble_inspect(
+            self.config,
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+        )
+
+    def test_ble_endpoints(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+    ) -> dict[str, object]:
+        return local_ble_endpoint_test(
+            self.config,
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+            max_candidates=max_candidates,
         )
 
     def controller(
@@ -241,6 +332,83 @@ class AsyncLightIntegration:
             include_ble_status=include_ble_status,
         )
 
+    async def discover_usb(
+        self,
+        *,
+        object_ids: Iterable[int] = DEFAULT_DISCOVERY_OBJECT_IDS,
+        first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
+        control_object_ids: Iterable[int] | None = None,
+        control_first_words: Iterable[int] = DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+        register_device_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+        register_group_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+        control_kinds: Iterable[str] = DEFAULT_DISCOVERY_CONTROL_KINDS,
+        control_modes: Iterable[int] | None = DEFAULT_DISCOVERY_CONTROL_MODES,
+        post_register_reads: bool = False,
+        timeout: float | None = None,
+        allow_control: bool | None = None,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+    ) -> dict[str, object]:
+        return await local_async_usb_discovery(
+            self.config,
+            light_factory=None,
+            object_ids=object_ids,
+            first_words=first_words,
+            control_object_ids=control_object_ids,
+            control_first_words=control_first_words,
+            register_device_ids=register_device_ids,
+            register_group_ids=register_group_ids,
+            control_kinds=control_kinds,
+            control_modes=control_modes,
+            post_register_reads=post_register_reads,
+            timeout=timeout,
+            allow_control=(
+                self.allow_control if allow_control is None else allow_control
+            ),
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+        )
+
+    async def inspect_ble(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+    ) -> dict[str, object]:
+        return await local_async_ble_inspect(
+            self.config,
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+        )
+
+    async def test_ble_endpoints(
+        self,
+        *,
+        backend: str | None = None,
+        timeout: float | None = None,
+        address: str | None = None,
+        name_contains: str | None = None,
+        python: str | None = None,
+        max_candidates: int = 4,
+    ) -> dict[str, object]:
+        return await local_async_ble_endpoint_test(
+            self.config,
+            backend=backend,
+            timeout=timeout,
+            address=address,
+            name_contains=name_contains,
+            python=python,
+            max_candidates=max_candidates,
+        )
+
     def controller(
         self,
         *,
@@ -378,6 +546,187 @@ async def local_async_devices(
         resolved,
         include_ble=include_ble,
         include_ble_status=include_ble_status,
+    )
+
+
+def local_usb_discovery(
+    config: LightConnectionConfig | None = None,
+    *,
+    light_factory: LightFactory | None = None,
+    object_ids: Iterable[int] = DEFAULT_DISCOVERY_OBJECT_IDS,
+    first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
+    control_object_ids: Iterable[int] | None = None,
+    control_first_words: Iterable[int] = DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    register_device_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+    register_group_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    control_kinds: Iterable[str] = DEFAULT_DISCOVERY_CONTROL_KINDS,
+    control_modes: Iterable[int] | None = DEFAULT_DISCOVERY_CONTROL_MODES,
+    post_register_reads: bool = False,
+    timeout: float | None = None,
+    allow_control: bool = False,
+    brightness: float = 35.0,
+    kelvin: int = 5600,
+    sleep: int = 0,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig()
+    if resolved.transport != "usb":
+        raise ValueError("USB discovery requires transport='usb'")
+    factory = light_factory or make_light_factory(resolved)
+    with factory() as light:
+        report = discover_usb_primitives(
+            light,
+            object_ids=object_ids,
+            first_words=first_words,
+            control_object_ids=control_object_ids,
+            control_first_words=control_first_words,
+            register_device_ids=register_device_ids,
+            register_group_ids=register_group_ids,
+            control_kinds=control_kinds,
+            control_modes=control_modes,
+            post_register_reads=post_register_reads,
+            timeout=resolved.timeout if timeout is None else timeout,
+            allow_control=allow_control,
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+        )
+    return report.to_dict()
+
+
+async def local_async_usb_discovery(
+    config: LightConnectionConfig | None = None,
+    *,
+    light_factory: LightFactory | None = None,
+    object_ids: Iterable[int] = DEFAULT_DISCOVERY_OBJECT_IDS,
+    first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
+    control_object_ids: Iterable[int] | None = None,
+    control_first_words: Iterable[int] = DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    register_device_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+    register_group_ids: Iterable[int] = DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    control_kinds: Iterable[str] = DEFAULT_DISCOVERY_CONTROL_KINDS,
+    control_modes: Iterable[int] | None = DEFAULT_DISCOVERY_CONTROL_MODES,
+    post_register_reads: bool = False,
+    timeout: float | None = None,
+    allow_control: bool = False,
+    brightness: float = 35.0,
+    kelvin: int = 5600,
+    sleep: int = 0,
+) -> dict[str, object]:
+    return await asyncio.to_thread(
+        local_usb_discovery,
+        config,
+        light_factory=light_factory,
+        object_ids=object_ids,
+        first_words=first_words,
+        control_object_ids=control_object_ids,
+        control_first_words=control_first_words,
+        register_device_ids=register_device_ids,
+        register_group_ids=register_group_ids,
+        control_kinds=control_kinds,
+        control_modes=control_modes,
+        post_register_reads=post_register_reads,
+        timeout=timeout,
+        allow_control=allow_control,
+        brightness=brightness,
+        kelvin=kelvin,
+        sleep=sleep,
+    )
+
+
+def local_ble_inspect(
+    config: LightConnectionConfig | None = None,
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    address: str | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig(transport="ble")
+    selected_backend = backend or _ble_backend(resolved)
+    selected_timeout = resolved.timeout if timeout is None else timeout
+    selected_address = address or resolved.address
+    selected_name = name_contains or resolved.name_contains
+    selected_python = python or resolved.ble_python
+    result = inspect_ble_device(
+        backend=selected_backend,
+        timeout=selected_timeout,
+        address=selected_address,
+        name_contains=selected_name,
+        python=selected_python,
+    ).to_dict()
+    result.update(
+        {
+            "backend": selected_backend,
+            "timeout": selected_timeout,
+            "name_contains": selected_name,
+        }
+    )
+    return result
+
+
+async def local_async_ble_inspect(
+    config: LightConnectionConfig | None = None,
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    address: str | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+) -> dict[str, object]:
+    return await asyncio.to_thread(
+        local_ble_inspect,
+        config,
+        backend=backend,
+        timeout=timeout,
+        address=address,
+        name_contains=name_contains,
+        python=python,
+    )
+
+
+def local_ble_endpoint_test(
+    config: LightConnectionConfig | None = None,
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    address: str | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+    max_candidates: int = 4,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig(transport="ble")
+    selected_backend = backend or _ble_backend(resolved)
+    selected_timeout = resolved.timeout if timeout is None else timeout
+    return test_ble_endpoint_candidates(
+        backend=selected_backend,
+        timeout=selected_timeout,
+        address=address or resolved.address,
+        name_contains=name_contains or resolved.name_contains,
+        python=python or resolved.ble_python,
+        max_candidates=max_candidates,
+    ).to_dict()
+
+
+async def local_async_ble_endpoint_test(
+    config: LightConnectionConfig | None = None,
+    *,
+    backend: str | None = None,
+    timeout: float | None = None,
+    address: str | None = None,
+    name_contains: str | None = None,
+    python: str | None = None,
+    max_candidates: int = 4,
+) -> dict[str, object]:
+    return await asyncio.to_thread(
+        local_ble_endpoint_test,
+        config,
+        backend=backend,
+        timeout=timeout,
+        address=address,
+        name_contains=name_contains,
+        python=python,
+        max_candidates=max_candidates,
     )
 
 
