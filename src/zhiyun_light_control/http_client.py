@@ -339,7 +339,14 @@ class LightBridgeClient:
             payload["sleep"] = sleep
         return self._post("/discover-usb", payload)
 
-    def register(self, *, device_id: int = 0) -> dict[str, object]:
+    def register(
+        self,
+        *,
+        device_id: int = 0,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         return self._post("/register", {"device_id": device_id})
 
     def set_brightness(
@@ -348,7 +355,10 @@ class LightBridgeClient:
         *,
         obj: int = 1,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         return self._post(
             "/brightness",
             _with_control_mode({"obj": obj, "value": value}, control_mode),
@@ -360,7 +370,10 @@ class LightBridgeClient:
         *,
         obj: int = 1,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         return self._post(
             "/cct",
             _with_control_mode({"obj": obj, "kelvin": kelvin}, control_mode),
@@ -372,7 +385,10 @@ class LightBridgeClient:
         *,
         obj: int = 1,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         return self._post(
             "/sleep",
             _with_control_mode({"obj": obj, "value": value}, control_mode),
@@ -386,7 +402,10 @@ class LightBridgeClient:
         *,
         obj: int = 1,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         return self._post(
             "/rgb",
             _with_control_mode(
@@ -402,7 +421,10 @@ class LightBridgeClient:
         *,
         obj: int = 1,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         return self._post(
             "/hsi",
             _with_control_mode(
@@ -423,7 +445,10 @@ class LightBridgeClient:
         command: int | str,
         payload_hex: str = "",
         timeout: float | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {
             "first_word": first_word,
             "command": command,
@@ -438,7 +463,10 @@ class LightBridgeClient:
         scene: Scene | Mapping[str, object],
         *,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         payload = _scene_payload(scene)
         return self._post("/scene", _with_control_mode(payload, control_mode))
 
@@ -451,7 +479,10 @@ class LightBridgeClient:
         duration: float = 1.0,
         easing: str = "linear",
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {
             "to": _scene_payload(to_scene),
             "steps": steps,
@@ -468,7 +499,10 @@ class LightBridgeClient:
         *,
         overrides: Mapping[str, object] | None = None,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         payload = {"name": name}
         if overrides is not None:
             payload.update(overrides)
@@ -480,7 +514,10 @@ class LightBridgeClient:
         *,
         control_mode: int | None = None,
         stop_on_unconfirmed: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {
             "steps": [dict(step) for step in steps],
             "stop_on_unconfirmed": stop_on_unconfirmed,
@@ -492,7 +529,10 @@ class LightBridgeClient:
         cue: Mapping[str, object],
         *,
         control_mode: int | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         return self._post("/sequence", _with_control_mode(dict(cue), control_mode))
 
     def run_named_cue(
@@ -502,7 +542,10 @@ class LightBridgeClient:
         control_mode: int | None = None,
         obj: int | None = None,
         stop_on_unconfirmed: bool | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
     ) -> dict[str, object]:
+        self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {"name": name}
         if obj is not None:
             payload["obj"] = obj
@@ -515,6 +558,16 @@ class LightBridgeClient:
 
     def _post(self, path: str, payload: Mapping[str, object]) -> dict[str, object]:
         return self._request("POST", path, payload)
+
+    def _require_control_readiness(
+        self,
+        require_ready: bool,
+        required_readiness: Iterable[str] | None,
+    ) -> None:
+        if require_ready or required_readiness is not None:
+            self.require_readiness(
+                *_control_readiness_capabilities(required_readiness)
+            )
 
     def _request(
         self,
@@ -746,6 +799,14 @@ def readiness_warnings(payload: Mapping[str, object]) -> list[str]:
 def _readiness_capabilities(capabilities: Iterable[str]) -> tuple[str, ...]:
     selected = tuple(str(capability) for capability in capabilities)
     return selected or ("read_status",)
+
+
+def _control_readiness_capabilities(
+    capabilities: Iterable[str] | None,
+) -> tuple[str, ...]:
+    if capabilities is None:
+        return ("control_requests",)
+    return tuple(str(capability) for capability in capabilities)
 
 
 def _action_requires(action: Mapping[str, object], capability: str) -> bool:

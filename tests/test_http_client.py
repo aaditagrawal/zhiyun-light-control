@@ -376,7 +376,12 @@ class HttpClientTests(unittest.TestCase):
             )
             self.assertEqual(client.status()["firmware"], "1.6.4")
 
-            brightness = client.set_brightness(35, obj=1, control_mode=0x01)
+            brightness = client.set_brightness(
+                35,
+                obj=1,
+                control_mode=0x01,
+                require_ready=True,
+            )
             self.assertTrue(brightness["acknowledged"])
             self.assertTrue(command_result_acknowledged(brightness))
             self.assertEqual(command_result_status(brightness), "acknowledged")
@@ -452,6 +457,41 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(validation_category(validation, "control")["confirmed"], 4)
             self.assertEqual(validation_unconfirmed_names(validation), [])
             self.assertEqual(validation_summary(validation)["unconfirmed"], 0)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_control_methods_can_gate_on_readiness_before_post(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=False,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(f"http://127.0.0.1:{server.server_port}")
+        try:
+            with self.assertRaises(LightBridgeNotReady) as brightness_error:
+                client.set_brightness(10, require_ready=True)
+            self.assertEqual(
+                brightness_error.exception.pending_action_ids,
+                {"control_requests": ["enable-control"]},
+            )
+            self.assertNotIn(
+                RuntimeCommand.BRIGHTNESS,
+                [command for command, _payload in light.commands],
+            )
+
+            with self.assertRaises(LightBridgeNotReady) as scene_error:
+                client.apply_scene(
+                    {"brightness": 10},
+                    required_readiness=["confirmed_control"],
+                )
+            self.assertEqual(
+                scene_error.exception.pending_action_ids,
+                {"confirmed_control": ["enable-control", "confirm-control"]},
+            )
         finally:
             server.shutdown()
             server.server_close()
