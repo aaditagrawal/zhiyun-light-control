@@ -15,6 +15,7 @@ from .bridge import (
     open_light,
 )
 from .client import ProbeResult, ZhiyunLight
+from .controller import LightController
 from .cues import CueError, CueLibrary, cue_from_mapping
 from .devices import (
     BLE_BACKENDS,
@@ -162,6 +163,7 @@ __all__ = [
     "DmxMapping",
     "DiscoveryAttempt",
     "LightConnectionConfig",
+    "LightController",
     "LightBridgeClient",
     "LightBridgeError",
     "LightBridgeNotReady",

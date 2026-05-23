@@ -686,6 +686,35 @@ BLE, isolated BLE, and custom transports, and they raise
 context manager with the same sync SDK methods for USB and for BLE via the sync
 adapter, so host scripts can switch transports from configuration.
 
+For media-control code that wants presets and cues without running the HTTP
+bridge, use the in-process controller:
+
+```python
+from zhiyun_light_control import (
+    CueLibrary,
+    LightConnectionConfig,
+    LightController,
+    ScenePresetLibrary,
+)
+
+presets = ScenePresetLibrary.from_mapping(
+    {"scenes": {"key": {"brightness": 35, "kelvin": 5600}}}
+)
+cues = CueLibrary.from_mapping(
+    {"cues": {"intro": {"steps": [{"preset": "key"}], "stop_on_unconfirmed": True}}}
+)
+
+controller = LightController(
+    LightConnectionConfig(transport="usb"),
+    preset_library=presets,
+    cue_library=cues,
+)
+
+print(controller.plan_sequence(cues.get("intro")["steps"]))
+result = controller.run_named_cue("intro", require_acknowledged=True)
+print(result["applied"], result["reason"])
+```
+
 Smooth transitions use the same scene model and work with both USB and BLE
 clients:
 
