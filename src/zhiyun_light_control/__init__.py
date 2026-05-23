@@ -93,6 +93,7 @@ from .integration import (
     local_manifest,
     local_readiness,
     local_status_snapshot,
+    local_validation,
 )
 from .macos_ble_app import (
     macos_ble_app_info,
@@ -259,6 +260,7 @@ __all__ = [
     "local_manifest",
     "local_readiness",
     "local_status_snapshot",
+    "local_validation",
     "test_ble_endpoint_candidates",
     "macos_ble_app_info",
     "macos_ble_app_status",

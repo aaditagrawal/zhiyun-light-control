@@ -675,9 +675,11 @@ integration = LightIntegration(
 
 ready = integration.readiness()
 snapshot = integration.snapshot(include_ble_status=True)
+validation = integration.validate(include_object_reads=True)
 
 print(ready["ready_for"])
 print(snapshot["summary"]["connection_confirmed"])
+print(validation["summary"]["ready_for"])
 ```
 
 ```python

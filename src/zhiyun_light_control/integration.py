@@ -11,6 +11,7 @@ from .bridge import (
     make_light_factory,
 )
 from .devices import discover_transport_devices
+from .protocol import DEFAULT_CONTROL_MODE
 from .server import (
     capabilities_response,
     integration_manifest_response,
@@ -19,6 +20,7 @@ from .server import (
 )
 from .status import read_sync_status
 from .transports.ble import BleWorkerError
+from .validation import validate_sync_light
 
 StatusSnapshot = tuple[dict[str, object], bool, str | None]
 
@@ -89,6 +91,48 @@ class LightIntegration:
             cues=self.cue_names,
             state_version=state_version,
             state=state,
+            light_factory=self.light_factory,
+        )
+
+    def validate(
+        self,
+        *,
+        allow_control: bool | None = None,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        obj: int = 1,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> dict[str, object]:
+        control_enabled = (
+            self.allow_control if allow_control is None else allow_control
+        )
+        return local_validation(
+            self.config,
+            allow_control=control_enabled,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            device_id=device_id,
+            obj=obj,
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+            red=red,
+            green=green,
+            blue=blue,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+            control_mode=control_mode,
             light_factory=self.light_factory,
         )
 
@@ -241,6 +285,54 @@ def local_integration_snapshot(
     )
 
 
+def local_validation(
+    config: LightConnectionConfig | None = None,
+    *,
+    allow_control: bool = False,
+    include_object_reads: bool = False,
+    include_color: bool = False,
+    device_id: int = 0,
+    obj: int = 1,
+    brightness: float = 35.0,
+    kelvin: int = 5600,
+    sleep: int = 0,
+    red: int = 255,
+    green: int = 255,
+    blue: int = 255,
+    hue: float = 0.0,
+    saturation: float = 0.0,
+    intensity: int = 35,
+    control_mode: int = DEFAULT_CONTROL_MODE,
+    light_factory: LightFactory | None = None,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig()
+    try:
+        factory = light_factory or make_light_factory(resolved)
+        with factory() as light:
+            report = validate_sync_light(
+                light,
+                transport=resolved.transport,
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=device_id,
+                obj=obj,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+                red=red,
+                green=green,
+                blue=blue,
+                hue=hue,
+                saturation=saturation,
+                intensity=intensity,
+                control_mode=control_mode,
+            )
+    except Exception as exc:
+        return _validation_error_payload(resolved, exc, allow_control=allow_control)
+    return report.to_dict()
+
+
 def local_error_status(exc: Exception) -> dict[str, object]:
     status: dict[str, object] = {"ok": False, "error": str(exc)}
     if isinstance(exc, BleWorkerError):
@@ -261,3 +353,35 @@ def _report_to_dict(report: object) -> dict[str, object]:
     if not isinstance(payload, dict):
         raise TypeError("status reader to_dict() must return a dict")
     return {str(key): value for key, value in payload.items()}
+
+
+def _validation_error_payload(
+    config: LightConnectionConfig,
+    exc: Exception,
+    *,
+    allow_control: bool,
+) -> dict[str, object]:
+    return {
+        "transport": config.transport,
+        "ok": False,
+        "error": str(exc),
+        "control_enabled": allow_control,
+        "connection_confirmed": False,
+        "all_attempted_confirmed": False,
+        "unconfirmed": [],
+        "summary": {
+            "attempted": 0,
+            "confirmed": 0,
+            "unconfirmed": 0,
+            "status_counts": {},
+            "categories": {},
+            "ready_for": {
+                "read_status": False,
+                "object_reads": False,
+                "control_setup": False,
+                "control_writes": False,
+            },
+        },
+        "checks": [],
+        "notes": ["validation did not run because the transport could not open"],
+    }

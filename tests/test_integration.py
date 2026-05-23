@@ -12,6 +12,7 @@ from zhiyun_light_control import (
     local_manifest,
     local_readiness,
     local_status_snapshot,
+    local_validation,
 )
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.protocol import (
@@ -62,6 +63,57 @@ class FakeStatusLight:
             UpdaterCommand.READ_SN: bytes.fromhex("004105130110c1e009a408"),
         }
         return _result(UPDATER_DEVICE, cmd, payload_by_cmd[cmd])
+
+
+class FakeProbe:
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "firmware": "1.6.4",
+            "device_identifier": "id",
+            "generation": "pl103",
+            "voltage_status": 101,
+            "device_id": 1,
+            "port": "/dev/cu.test",
+        }
+
+
+class FakeValidationLight:
+    def __init__(self, *, acknowledged: bool = True) -> None:
+        self.acknowledged = acknowledged
+        self.payloads: list[tuple[int, bytes]] = []
+
+    def __enter__(self) -> FakeValidationLight:
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        return
+
+    def probe(self) -> FakeProbe:
+        return FakeProbe()
+
+    def exchange_runtime(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        del timeout
+        self.payloads.append((cmd, payload))
+        if not self.acknowledged:
+            tx = build_frame(RUNTIME_TYPE, len(self.payloads), cmd, payload)
+            return CommandResult(cmd, tx, b"", (), None)
+        return _result(RUNTIME_TYPE, cmd, b"\x00")
+
+    def exchange_updater(
+        self,
+        cmd: int,
+        payload: bytes = b"",
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        del payload, timeout
+        return _result(UPDATER_DEVICE, cmd, b"\x00")
 
 
 class FailingLight:
@@ -188,6 +240,43 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(snapshot["payloads"]["manifest"]["presets"], ["key"])
         self.assertTrue(devices.call_args_list[0].kwargs["include_ble_status"])
         self.assertTrue(devices.call_args_list[1].kwargs["include_ble"])
+
+    def test_local_validation_runs_configured_transport_report(self) -> None:
+        payload = local_validation(
+            LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            include_object_reads=True,
+            light_factory=FakeFactory(FakeValidationLight()),
+        )
+
+        self.assertEqual(payload["transport"], "usb")
+        self.assertTrue(payload["connection_confirmed"])
+        self.assertTrue(payload["all_attempted_confirmed"])
+        self.assertTrue(payload["summary"]["ready_for"]["object_reads"])
+        self.assertIn("read_brightness", [check["name"] for check in payload["checks"]])
+
+    def test_light_integration_validate_uses_control_policy(self) -> None:
+        light = FakeValidationLight(acknowledged=False)
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            allow_control=True,
+            light_factory=FakeFactory(light),
+        )
+
+        payload = integration.validate(control_mode=0x01)
+
+        self.assertTrue(payload["control_enabled"])
+        self.assertIn("set_sleep", payload["unconfirmed"])
+        self.assertFalse(payload["summary"]["ready_for"]["control_writes"])
+        payloads = dict(light.payloads)
+        self.assertEqual(payloads[RuntimeCommand.SLEEP][2], 0x01)
+        self.assertEqual(payloads[RuntimeCommand.BRIGHTNESS][2], 0x01)
+
+    def test_local_validation_reports_open_errors_without_raising(self) -> None:
+        payload = local_validation(light_factory=FakeFactory(FailingLight()))
+
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"], "port busy")
+        self.assertFalse(payload["summary"]["ready_for"]["read_status"])
 
     def test_local_status_snapshot_reports_errors_without_raising(self) -> None:
         status, confirmed, error = local_status_snapshot(
