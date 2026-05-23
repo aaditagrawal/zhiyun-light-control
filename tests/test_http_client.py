@@ -149,6 +149,9 @@ class HttpClientTests(unittest.TestCase):
             brightness = client.set_brightness(35, obj=1, control_mode=0x01)
             self.assertTrue(brightness["acknowledged"])
             self.assertEqual(light.commands[-1][1][2], 0x01)
+            history = client.history(limit=1)
+            self.assertEqual(history["version"], 1)
+            self.assertEqual(history["events"][0]["state"]["action"], "brightness")
 
             scene = client.apply_scene(Scene(obj=1, brightness=42, kelvin=5600))
             self.assertEqual(

@@ -169,6 +169,17 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(state["action"], "scene")
             self.assertTrue(state["applied"])
             self.assertEqual(state["scene"]["brightness"], 30.0)
+
+            history = json.loads(urlopen(f"{base}/history?limit=1", timeout=3).read())
+            self.assertEqual(history["version"], 1)
+            self.assertEqual(len(history["events"]), 1)
+            self.assertEqual(history["events"][0]["version"], 1)
+            self.assertEqual(history["events"][0]["state"]["action"], "scene")
+
+            empty_history = json.loads(
+                urlopen(f"{base}/history?after=1&limit=5", timeout=3).read()
+            )
+            self.assertEqual(empty_history["events"], [])
         finally:
             server.shutdown()
             server.server_close()
@@ -420,6 +431,7 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(primitives["sequence"]["path"], "/sequence")
             self.assertEqual(primitives["devices"]["path"], "/devices")
             self.assertFalse(primitives["events"]["requires_control"])
+            self.assertFalse(primitives["history"]["requires_control"])
 
             diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
             self.assertTrue(diagnostics["ok"])
@@ -687,6 +699,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/devices", schema["paths"])
             self.assertIn("/discover-usb", schema["paths"])
             self.assertIn("/events", schema["paths"])
+            self.assertIn("/history", schema["paths"])
             self.assertIn("/sequence", schema["paths"])
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
@@ -695,6 +708,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("Capabilities", schema["components"]["schemas"])
             self.assertIn("Diagnostics", schema["components"]["schemas"])
             self.assertIn("Devices", schema["components"]["schemas"])
+            self.assertIn("History", schema["components"]["schemas"])
             self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])
             self.assertIn("UsbDiscovery", schema["components"]["schemas"])
             self.assertIn("SequenceRequest", schema["components"]["schemas"])
@@ -704,6 +718,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", commands["get"])
             self.assertIn("/devices", commands["get"])
             self.assertIn("/events", commands["get"])
+            self.assertIn("/history", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
             self.assertIn("/frame", commands["post"])
 

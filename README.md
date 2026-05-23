@@ -252,6 +252,7 @@ curl http://127.0.0.1:8765/diagnostics
 curl http://127.0.0.1:8765/devices
 curl 'http://127.0.0.1:8765/devices?include_ble=true&ble_backend=macos-app&timeout=6&name_contains=PL103'
 curl http://127.0.0.1:8765/events?limit=1
+curl http://127.0.0.1:8765/history?limit=10
 curl http://127.0.0.1:8765/state
 curl http://127.0.0.1:8765/presets
 curl -X POST http://127.0.0.1:8765/discover-usb \
@@ -301,6 +302,10 @@ such as `sent_no_response` or `echoed_write`.
 automation panels that should react to cue/control requests without polling.
 Use `limit`, `timeout`, and `initial=false` query parameters for finite scripts
 and tests.
+
+`GET /history` returns recent requested-state events with their monotonically
+increasing versions. Use `after` and `limit` query parameters when a dashboard
+or show controller reconnects and needs to catch up before resuming `/events`.
 
 `GET /capabilities` is the discovery endpoint for dashboard, automation, and
 show-control clients. It lists every supported read/write primitive, required
@@ -413,6 +418,7 @@ print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(next(bridge.state_events(limit=1))["state"])
+print(bridge.history(limit=10)["events"])
 
 result = bridge.set_brightness(35, obj=1)
 print(result["transport_status"])

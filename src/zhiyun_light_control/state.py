@@ -27,10 +27,12 @@ class SceneState:
 
 
 class SceneStateTracker:
-    def __init__(self) -> None:
+    def __init__(self, *, history_limit: int = 256) -> None:
         self._condition = threading.Condition(threading.Lock())
         self._state: SceneState | None = None
         self._version = 0
+        self._history_limit = max(1, history_limit)
+        self._history: list[tuple[int, SceneState]] = []
 
     def record(
         self,
@@ -60,6 +62,9 @@ class SceneStateTracker:
         with self._condition:
             self._state = state
             self._version += 1
+            self._history.append((self._version, state))
+            if len(self._history) > self._history_limit:
+                del self._history[: len(self._history) - self._history_limit]
             self._condition.notify_all()
         return state
 
@@ -84,6 +89,22 @@ class SceneStateTracker:
                     timeout=timeout,
                 )
             return self._version, self._state
+
+    def history(
+        self,
+        *,
+        after_version: int = 0,
+        limit: int | None = None,
+    ) -> tuple[tuple[int, SceneState], ...]:
+        with self._condition:
+            items = tuple(
+                item for item in self._history if item[0] > after_version
+            )
+        if limit is None:
+            return items
+        if limit <= 0:
+            return ()
+        return items[-limit:]
 
     def to_dict(self) -> dict[str, object]:
         state = self.snapshot()

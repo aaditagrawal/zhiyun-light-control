@@ -53,6 +53,18 @@ class StateTests(unittest.TestCase):
         assert state is not None
         self.assertEqual(state.scene.brightness, 20)
 
+    def test_tracker_keeps_bounded_history(self) -> None:
+        tracker = SceneStateTracker(history_limit=2)
+
+        tracker.record(Scene(obj=1, brightness=10), source="test", action="a")
+        second = tracker.record(Scene(obj=1, brightness=20), source="test", action="b")
+        third = tracker.record(Scene(obj=1, brightness=30), source="test", action="c")
+
+        self.assertEqual(tracker.history(), ((2, second), (3, third)))
+        self.assertEqual(tracker.history(after_version=2), ((3, third),))
+        self.assertEqual(tracker.history(limit=1), ((3, third),))
+        self.assertEqual(tracker.history(limit=0), ())
+
     def test_tracker_infers_unconfirmed_results(self) -> None:
         tracker = SceneStateTracker()
 

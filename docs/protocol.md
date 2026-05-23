@@ -116,6 +116,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/diagnostics` | Check bridge transport readiness and next steps |
 | `GET` | `/devices` | Discover local USB ports and optional BLE scan results |
 | `GET` | `/events` | Server-Sent Events stream of requested bridge state |
+| `GET` | `/history` | Recent requested-state event history for reconnect recovery |
 | `GET` | `/presets` | List loaded named scene presets |
 | `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
@@ -229,6 +230,11 @@ and automation panels. By default it sends the current snapshot first, then
 future updates. `limit`, `timeout`, and `initial=false` query parameters make it
 usable in finite scripts and tests; browsers can consume it directly with
 `EventSource`.
+
+HTTP `/history` returns the bridge's recent requested-state events with the same
+version numbers used by `/events`. Use `after=<version>` and `limit=<n>` when a
+dashboard, show controller, or automation process reconnects and needs to catch
+up on missed cue/control requests before opening a new event stream.
 
 HTTP `/transition` accepts either explicit `from` and `to` scene objects or
 top-level target scene fields. If `from` is omitted, the bridge uses the last

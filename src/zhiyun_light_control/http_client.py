@@ -74,6 +74,20 @@ class LightBridgeClient:
     def state(self) -> dict[str, object]:
         return self._get("/state")
 
+    def history(
+        self,
+        *,
+        after: int | None = None,
+        limit: int | None = None,
+    ) -> dict[str, object]:
+        query: dict[str, object] = {}
+        if after is not None:
+            query["after"] = after
+        if limit is not None:
+            query["limit"] = limit
+        suffix = f"?{urlencode(query)}" if query else ""
+        return self._get(f"/history{suffix}")
+
     def presets(self) -> dict[str, object]:
         return self._get("/presets")
 

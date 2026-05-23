@@ -95,6 +95,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/diagnostics",
                         "/devices",
                         "/events",
+                        "/history",
                         "/presets",
                         "/state",
                     ],
@@ -141,6 +142,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             return
         if path == "/events":
             self._handle_events(parsed.query)
+            return
+        if path == "/history":
+            self._json(self._handle_history(parsed.query))
             return
         if path == "/openapi.json":
             self._json(openapi_schema())
@@ -729,6 +733,25 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         except OSError:
             return
 
+    def _handle_history(self, query: str) -> dict[str, object]:
+        params = parse_qs(query)
+        after = _query_int(params, "after", default=0)
+        limit = _query_int(params, "limit", default=50)
+        version, _state = self.server.state_tracker.versioned_snapshot()
+        events = self.server.state_tracker.history(
+            after_version=after,
+            limit=limit,
+        )
+        return {
+            "version": version,
+            "after": after,
+            "limit": limit,
+            "events": [
+                {"version": event_version, "state": state.to_dict()}
+                for event_version, state in events
+            ],
+        }
+
     def _write_state_event(self, version: int, state) -> None:
         payload = {
             "version": version,
@@ -845,6 +868,12 @@ def openapi_schema() -> dict[str, object]:
                         }
                     },
                 }
+            },
+            "/history": {
+                "get": _operation(
+                    "Read recent bridge state events",
+                    "History",
+                )
             },
             "/probe": {"get": _operation("Probe the connected light", "Probe")},
             "/status": {
@@ -1013,6 +1042,16 @@ def _openapi_schemas() -> dict[str, object]:
                 "configured_transport": {"type": "string"},
                 "usb": {"type": "object", "additionalProperties": True},
                 "ble": {"type": "object", "additionalProperties": True},
+            },
+        },
+        "History": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "version": {"type": "integer"},
+                "after": {"type": "integer"},
+                "limit": {"type": "integer"},
+                "events": {"type": "array", "items": {"type": "object"}},
             },
         },
         "Probe": {
@@ -1291,6 +1330,14 @@ def capabilities_response(
                 "requires_control": False,
                 "fields": ["limit", "timeout", "initial"],
                 "confirmation": "state-event stream mirrors requested bridge state",
+            },
+            {
+                "name": "history",
+                "method": "GET",
+                "path": "/history",
+                "requires_control": False,
+                "fields": ["after", "limit"],
+                "confirmation": "bounded recent state-event history",
             },
             {
                 "name": "register",
