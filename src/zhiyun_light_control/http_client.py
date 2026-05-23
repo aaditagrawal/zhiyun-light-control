@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -207,6 +207,19 @@ class LightBridgeClient:
         if overrides is not None:
             payload.update(overrides)
         return self._post("/preset", _with_control_mode(payload, control_mode))
+
+    def run_sequence(
+        self,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        control_mode: int | None = None,
+        stop_on_unconfirmed: bool = False,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "steps": [dict(step) for step in steps],
+            "stop_on_unconfirmed": stop_on_unconfirmed,
+        }
+        return self._post("/sequence", _with_control_mode(payload, control_mode))
 
     def _get(self, path: str) -> dict[str, object]:
         return self._request("GET", path)

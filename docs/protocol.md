@@ -127,12 +127,13 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/scene` | Apply several properties in order |
 | `POST` | `/transition` | Apply a timed sequence from one requested scene to another |
 | `POST` | `/preset` | Apply a loaded named preset with optional overrides |
+| `POST` | `/sequence` | Run ordered scene, preset, and transition cue steps |
 
 Control endpoints require `zlight serve --allow-control`. `POST /validate` can
 run read-only checks without that flag, but its `allow_control` write checks are
 also gated by it. Responses include command result details instead of hiding
 timeouts, because some endpoints are still experimental on the current G60.
-Write endpoints, `/scene`, `/transition`, `/preset`, and write-enabled
+Write endpoints, `/scene`, `/transition`, `/preset`, `/sequence`, and write-enabled
 `/validate` accept optional `control_mode`; it defaults to `0x33` and can be
 sent as an integer or an integer string such as `"0x01"`.
 `GET /status`, `zlight status`, `read_sync_status()`, and `read_async_status()`
@@ -215,6 +216,14 @@ immediately. Supported transition fields: `steps`, `duration`, and `easing`
 (`linear`, `ease-in`, `ease-out`, `ease-in-out`). The same transition planner is
 exposed in Python through `SceneTransition`, `scene_transition()`,
 `ZhiyunLight.transition_scene()`, and `AsyncZhiyunLight.transition_scene()`.
+
+HTTP `/sequence` accepts an ordered `steps` array for cue-style integrations.
+Each step can be a scene step (`{"scene": {...}}` or top-level scene fields), a
+preset step (`{"preset": "key", "overrides": {...}}`), or a transition step
+(`{"to": {...}, "steps": 8, "duration": 2.0}`). The response includes
+per-step `applied` and `reason` fields plus an aggregate sequence result. Pass
+`stop_on_unconfirmed: true` to stop executing after the first unacknowledged
+step.
 
 The Art-Net bridge listens for ArtDmx packets, defaults to universe `0`, and maps DMX channels to a `Scene`:
 

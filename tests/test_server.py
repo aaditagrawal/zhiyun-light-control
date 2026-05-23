@@ -282,6 +282,102 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_sequence_runs_scene_preset_and_transition_steps(self) -> None:
+        light = FakeLight()
+        library = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 40, "kelvin": 5200}}}
+        )
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+            preset_library=library,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            request = Request(
+                f"{base}/sequence",
+                data=json.dumps(
+                    {
+                        "steps": [
+                            {"scene": {"brightness": 10}},
+                            {"preset": "key", "overrides": {"brightness": 55}},
+                            {
+                                "to": {"brightness": 20},
+                                "steps": 2,
+                                "duration": 0,
+                            },
+                        ],
+                        "control_mode": "0x01",
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            response = json.loads(urlopen(request, timeout=3).read())
+
+            self.assertTrue(response["applied"])
+            self.assertFalse(response["stopped"])
+            self.assertEqual(
+                [step["action"] for step in response["steps"]],
+                ["scene", "preset", "transition"],
+            )
+            self.assertEqual(response["steps"][1]["scene"]["brightness"], 55.0)
+            self.assertEqual(response["steps"][2]["from"]["brightness"], 55.0)
+            self.assertEqual(response["steps"][2]["scene"]["brightness"], 20.0)
+            self.assertEqual(light.payloads[0][1][2], 0x01)
+
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["action"], "sequence")
+            self.assertTrue(state["applied"])
+            self.assertEqual(state["scene"]["brightness"], 20.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_sequence_can_stop_on_unconfirmed_step(self) -> None:
+        light = FakeUnconfirmedLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            request = Request(
+                f"{base}/sequence",
+                data=json.dumps(
+                    {
+                        "steps": [
+                            {"scene": {"brightness": 10}},
+                            {"scene": {"kelvin": 5600}},
+                        ],
+                        "stop_on_unconfirmed": True,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            response = json.loads(urlopen(request, timeout=3).read())
+
+            self.assertFalse(response["applied"])
+            self.assertTrue(response["stopped"])
+            self.assertEqual(response["reason"], "sent_no_response")
+            self.assertEqual(len(response["steps"]), 1)
+            self.assertEqual(light.commands, [0x1001])
+
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["action"], "sequence")
+            self.assertFalse(state["applied"])
+            self.assertEqual(state["reason"], "sent_no_response")
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_validate_read_only_without_control_gate(self) -> None:
         light = FakeLight()
         server = LightHttpServer(
@@ -298,6 +394,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/validate", commands["get"])
             self.assertIn("/validate", commands["post"])
             self.assertIn("/capabilities", commands["get"])
+            self.assertIn("/sequence", commands["post"])
 
             capabilities = json.loads(
                 urlopen(f"{base}/capabilities", timeout=3).read()
@@ -312,6 +409,7 @@ class ServerTests(unittest.TestCase):
             self.assertTrue(primitives["brightness"]["requires_control"])
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
+            self.assertEqual(primitives["sequence"]["path"], "/sequence")
 
             diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())
             self.assertTrue(diagnostics["ok"])
@@ -470,12 +568,14 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", schema["paths"])
             self.assertIn("/capabilities", schema["paths"])
             self.assertIn("/diagnostics", schema["paths"])
+            self.assertIn("/sequence", schema["paths"])
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
             self.assertIn("CommandResult", schema["components"]["schemas"])
             self.assertIn("Status", schema["components"]["schemas"])
             self.assertIn("Capabilities", schema["components"]["schemas"])
             self.assertIn("Diagnostics", schema["components"]["schemas"])
+            self.assertIn("SequenceRequest", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])

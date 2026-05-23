@@ -139,6 +139,19 @@ class HttpClientTests(unittest.TestCase):
             preset = client.apply_preset("key", overrides={"brightness": 55})
             self.assertEqual(preset["scene"]["brightness"], 55.0)
 
+            sequence = client.run_sequence(
+                [
+                    {"scene": {"brightness": 10}},
+                    {"preset": "key", "overrides": {"brightness": 45}},
+                ],
+                control_mode=0x01,
+            )
+            self.assertTrue(sequence["applied"])
+            self.assertEqual(
+                [step["action"] for step in sequence["steps"]],
+                ["scene", "preset"],
+            )
+
             validation = client.validate(allow_control=True, values={"brightness": 32})
             self.assertTrue(validation["connection_confirmed"])
         finally:

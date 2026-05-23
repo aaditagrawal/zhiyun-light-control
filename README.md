@@ -269,6 +269,9 @@ curl -X POST http://127.0.0.1:8765/transition \
 curl -X POST http://127.0.0.1:8765/preset \
   -H 'content-type: application/json' \
   -d '{"name": "key", "brightness": 45}'
+curl -X POST http://127.0.0.1:8765/sequence \
+  -H 'content-type: application/json' \
+  -d '{"steps": [{"scene": {"brightness": 10}}, {"preset": "key", "overrides": {"brightness": 45}}, {"to": {"brightness": 60}, "steps": 4, "duration": 1.0}]}'
 ```
 
 For `/transition`, omit `from` to use the bridge's last requested state for the
@@ -293,6 +296,12 @@ next-step hints for cases such as macOS Bluetooth authorization failures.
 `GET /status` returns read-only identity/status fields plus the raw
 `CommandResult` evidence for global device info, firmware, voltage/status,
 device id, and updater chip sync when that transport exposes it.
+
+`POST /sequence` is a cue-style orchestration endpoint for media controllers. It
+accepts ordered `steps` containing scene steps, preset steps, or transition steps
+with `to`, and returns per-step `applied`/`reason` evidence plus an aggregate
+sequence result. Add `stop_on_unconfirmed: true` when a cue should stop after
+the first unacknowledged write.
 
 `GET /validate` returns the same hardware-evidence report as `zlight validate`
 without transmitting control writes. `POST /validate` accepts
@@ -373,6 +382,16 @@ print(result["transport_status"])
 
 scene = bridge.apply_scene(Scene(obj=1, sleep=0, brightness=35, kelvin=5600))
 print(scene["results"])
+
+cue = bridge.run_sequence(
+    [
+        {"scene": {"brightness": 10}},
+        {"preset": "key", "overrides": {"brightness": 45}},
+        {"to": {"brightness": 60}, "steps": 4, "duration": 1.0},
+    ],
+    stop_on_unconfirmed=True,
+)
+print(cue["applied"], cue["reason"])
 ```
 
 This wrapper preserves the bridge's JSON evidence fields, so callers should

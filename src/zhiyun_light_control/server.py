@@ -95,6 +95,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/scene",
                         "/transition",
                         "/preset",
+                        "/sequence",
                     ],
                     "control_enabled": self.server.allow_control,
                     "presets": self.server.preset_library.names()
@@ -337,7 +338,199 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     "scene": scene.to_dict(),
                     "results": [result.to_dict() for result in results],
                 }
+            if path == "/sequence":
+                return self._handle_sequence(
+                    light,
+                    body,
+                    obj=obj,
+                    control_mode=control_mode,
+                )
         raise ValueError("unknown endpoint")
+
+    def _handle_sequence(
+        self,
+        light,
+        body: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+    ) -> dict[str, object]:
+        raw_steps = body.get("steps")
+        if not isinstance(raw_steps, list) or not raw_steps:
+            raise ValueError("sequence steps must be a non-empty array")
+        stop_on_unconfirmed = _body_bool(body, "stop_on_unconfirmed")
+        current_scene: Scene | None = None
+        sequence_results = []
+        step_responses: list[dict[str, object]] = []
+        stopped = False
+        for index, raw_step in enumerate(raw_steps):
+            if not isinstance(raw_step, dict):
+                raise ValueError("sequence steps must be objects")
+            step_response, step_scene, step_results = self._handle_sequence_step(
+                light,
+                raw_step,
+                index=index,
+                obj=obj,
+                current_scene=current_scene,
+                control_mode=control_mode,
+            )
+            step_responses.append(step_response)
+            sequence_results.extend(step_results)
+            current_scene = step_scene
+            if stop_on_unconfirmed and not step_response["applied"]:
+                stopped = True
+                break
+        applied = results_confirmed(sequence_results)
+        reason = None if applied else unconfirmed_results_reason(sequence_results)
+        if current_scene is not None:
+            self._record_scene(
+                current_scene,
+                action="sequence",
+                results=sequence_results,
+            )
+        return {
+            "steps": step_responses,
+            "stopped": stopped,
+            "applied": applied,
+            "reason": reason,
+        }
+
+    def _handle_sequence_step(
+        self,
+        light,
+        step: dict[str, object],
+        *,
+        index: int,
+        obj: int,
+        current_scene: Scene | None,
+        control_mode: int,
+    ):
+        if "to" in step:
+            response, scene, results = self._handle_sequence_transition(
+                light,
+                step,
+                obj=obj,
+                current_scene=current_scene,
+                control_mode=control_mode,
+            )
+        elif "preset" in step:
+            response, scene, results = self._handle_sequence_preset(
+                light,
+                step,
+                obj=obj,
+                control_mode=control_mode,
+            )
+        else:
+            response, scene, results = self._handle_sequence_scene(
+                light,
+                step,
+                obj=obj,
+                control_mode=control_mode,
+            )
+        applied = results_confirmed(results)
+        response.update(
+            {
+                "index": index,
+                "applied": applied,
+                "reason": None if applied else unconfirmed_results_reason(results),
+            }
+        )
+        return response, scene, results
+
+    def _handle_sequence_scene(
+        self,
+        light,
+        step: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+    ):
+        scene_data = step.get("scene", _scene_fields_from_body(step))
+        if not isinstance(scene_data, dict):
+            raise ValueError("sequence scene step must be an object")
+        scene = _scene_from_body(scene_data, obj=obj)
+        results = light.apply_scene(scene, control_mode=control_mode)
+        return (
+            {
+                "action": "scene",
+                "scene": scene.to_dict(),
+                "results": [result.to_dict() for result in results],
+            },
+            scene,
+            results,
+        )
+
+    def _handle_sequence_preset(
+        self,
+        light,
+        step: dict[str, object],
+        *,
+        obj: int,
+        control_mode: int,
+    ):
+        library = self.server.preset_library
+        if library is None:
+            raise ValueError("no preset file loaded")
+        name = str(step["preset"])
+        overrides = _sequence_preset_overrides(step)
+        scene = merge_scene(
+            library.get(name),
+            scene_from_optional_mapping(overrides, obj=obj),
+            override_obj="obj" in overrides,
+        )
+        results = light.apply_scene(scene, control_mode=control_mode)
+        return (
+            {
+                "action": "preset",
+                "preset": name,
+                "scene": scene.to_dict(),
+                "results": [result.to_dict() for result in results],
+            },
+            scene,
+            results,
+        )
+
+    def _handle_sequence_transition(
+        self,
+        light,
+        step: dict[str, object],
+        *,
+        obj: int,
+        current_scene: Scene | None,
+        control_mode: int,
+    ):
+        target_data = step["to"]
+        if not isinstance(target_data, dict):
+            raise ValueError("sequence transition 'to' must be an object")
+        end = _scene_from_body(target_data, obj=obj)
+        start = _sequence_transition_start(self, step, current_scene, obj=end.obj)
+        steps = int(step.get("steps", 10))
+        duration = float(step.get("duration", 1.0))
+        easing = str(step.get("easing", "linear"))
+        batches = light.transition_scene(
+            start,
+            end,
+            steps=steps,
+            duration=duration,
+            easing=easing,
+            control_mode=control_mode,
+        )
+        results = [result for batch in batches for result in batch]
+        return (
+            {
+                "action": "transition",
+                "from": start.to_dict(),
+                "scene": end.to_dict(),
+                "steps": steps,
+                "duration": duration,
+                "easing": easing,
+                "batches": [
+                    [result.to_dict() for result in batch] for batch in batches
+                ],
+            },
+            end,
+            results,
+        )
 
     def _handle_validate(self, body: dict[str, object]) -> dict[str, object]:
         allow_control = _body_bool(body, "allow_control")
@@ -561,6 +754,13 @@ def openapi_schema() -> dict[str, object]:
                     request_schema="PresetRequest",
                 )
             },
+            "/sequence": {
+                "post": _operation(
+                    "Run an ordered cue sequence",
+                    "SequenceResponse",
+                    request_schema="SequenceRequest",
+                )
+            },
         },
         "components": {"schemas": _openapi_schemas()},
     }
@@ -778,6 +978,8 @@ def _openapi_schemas() -> dict[str, object]:
             ]
         },
         "PresetResponse": {"type": "object", "additionalProperties": True},
+        "SequenceRequest": {"type": "object", "additionalProperties": True},
+        "SequenceResponse": {"type": "object", "additionalProperties": True},
     }
 
 
@@ -918,6 +1120,14 @@ def capabilities_response(
                 "fields": ["name", *list(_SCENE_FIELD_ORDER), "control_mode"],
                 "confirmation": "all results acknowledged",
             },
+            {
+                "name": "sequence",
+                "method": "POST",
+                "path": "/sequence",
+                "requires_control": True,
+                "fields": ["steps", "stop_on_unconfirmed", "control_mode"],
+                "confirmation": "all step results acknowledged",
+            },
         ],
     }
 
@@ -981,6 +1191,40 @@ def _diagnostic_next_steps(
             "Use POST /validate with allow_control=true to prove write primitives."
         )
     return steps
+
+
+def _sequence_preset_overrides(step: dict[str, object]) -> dict[str, object]:
+    overrides: dict[str, object] = {}
+    explicit = step.get("overrides")
+    if explicit is not None:
+        if not isinstance(explicit, dict):
+            raise ValueError("sequence preset overrides must be an object")
+        overrides.update({key: value for key, value in explicit.items()})
+    overrides.update(
+        {
+            key: value
+            for key, value in step.items()
+            if key in _SCENE_FIELDS and value is not None
+        }
+    )
+    return overrides
+
+
+def _sequence_transition_start(
+    handler: LightRequestHandler,
+    step: dict[str, object],
+    current_scene: Scene | None,
+    *,
+    obj: int,
+) -> Scene:
+    if "from" in step:
+        start_data = step["from"]
+        if not isinstance(start_data, dict):
+            raise ValueError("sequence transition 'from' must be an object")
+        return _scene_from_body(start_data, obj=obj)
+    if current_scene is not None and current_scene.obj == obj:
+        return current_scene
+    return handler._transition_start(step, obj=obj)
 
 
 def serve(
