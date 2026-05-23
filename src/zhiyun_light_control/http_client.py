@@ -158,6 +158,9 @@ class LightBridgeClient:
             payload.update(values)
         return self._post("/validate", payload)
 
+    def plan(self, payload: Mapping[str, object]) -> dict[str, object]:
+        return self._post("/plan", dict(payload))
+
     def discover_usb(
         self,
         *,

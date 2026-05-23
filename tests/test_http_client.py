@@ -165,6 +165,17 @@ class HttpClientTests(unittest.TestCase):
             devices = client.devices()
             self.assertIn("usb", devices)
             self.assertFalse(devices["ble"]["included"])
+            plan = client.plan(
+                {
+                    "preset": "key",
+                    "overrides": {"brightness": 44},
+                    "control_mode": "0x01",
+                }
+            )
+            self.assertTrue(plan["dry_run"])
+            self.assertEqual(plan["action"], "preset")
+            self.assertEqual(plan["control_mode"], 1)
+            self.assertEqual(plan["scene"]["brightness"], 44.0)
             discovery = client.discover_usb(
                 object_ids=[1],
                 first_words=["0x0100"],

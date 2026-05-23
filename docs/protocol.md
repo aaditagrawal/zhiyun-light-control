@@ -129,6 +129,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `GET` | `/presets` | List loaded named scene presets |
 | `GET` | `/state` | Last accepted scene/control request |
 | `POST` | `/validate` | Hardware validation report with optional object-read and write checks |
+| `POST` | `/plan` | Resolve a scene/preset/transition/sequence without writes |
 | `POST` | `/discover-usb` | Bounded USB primitive discovery matrix with per-attempt evidence |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
@@ -187,6 +188,12 @@ long-running media-control process. The bridge CLI keeps one light context open
 by default. USB and direct BLE use that to avoid reconnecting for every request;
 worker-isolated BLE still performs each raw BLE exchange in a child process. Use
 `--no-persistent-light` to restore per-request contexts.
+
+HTTP `/plan` is the non-hardware planning surface for controllers. It accepts
+the same scene, preset, transition, and sequence shapes used by the write
+endpoints, resolves presets and implicit transition starts, and returns
+`dry_run: true` plus the target scene data without opening USB/BLE or requiring
+`--allow-control`.
 
 HTTP `/devices` exposes transport discovery for dashboards and controller
 setup flows. It always returns USB `/dev/cu.usbmodem*` ports and the configured

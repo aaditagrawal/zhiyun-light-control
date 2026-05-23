@@ -391,6 +391,78 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_plan_resolves_without_control_gate_or_light_access(self) -> None:
+        library = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 40, "kelvin": 5200}}}
+        )
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=False,
+            light_factory=lambda: BrokenLight(),
+            preset_library=library,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            request = Request(
+                f"{base}/plan",
+                data=json.dumps(
+                    {
+                        "steps": [
+                            {"scene": {"brightness": 10}},
+                            {"preset": "key", "overrides": {"brightness": 55}},
+                            {
+                                "to": {"brightness": 20},
+                                "steps": 2,
+                                "duration": 0,
+                            },
+                        ],
+                        "control_mode": "0x01",
+                        "stop_on_unconfirmed": True,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            response = json.loads(urlopen(request, timeout=3).read())
+
+            self.assertTrue(response["dry_run"])
+            self.assertEqual(response["action"], "sequence")
+            self.assertEqual(response["control_mode"], 1)
+            self.assertTrue(response["stop_on_unconfirmed"])
+            self.assertEqual(
+                [step["action"] for step in response["steps"]],
+                ["scene", "preset", "transition"],
+            )
+            self.assertEqual(response["steps"][1]["scene"]["brightness"], 55.0)
+            self.assertEqual(response["steps"][2]["from"]["brightness"], 55.0)
+            self.assertEqual(response["scene"]["brightness"], 20.0)
+
+            transition_request = Request(
+                f"{base}/plan",
+                data=json.dumps(
+                    {
+                        "to": {"brightness": 45, "kelvin": 5600},
+                        "steps": 3,
+                        "duration": 0.5,
+                    }
+                ).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            transition = json.loads(urlopen(transition_request, timeout=3).read())
+            self.assertEqual(transition["action"], "transition")
+            self.assertEqual(transition["steps"], 3)
+            self.assertEqual(transition["duration"], 0.5)
+            self.assertEqual(transition["scene"]["brightness"], 45.0)
+
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertIsNone(state["scene"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_validate_read_only_without_control_gate(self) -> None:
         light = FakeLight()
         server = LightHttpServer(
@@ -410,6 +482,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/devices", commands["get"])
             self.assertIn("/ready", commands["get"])
             self.assertIn("/discover-usb", commands["post"])
+            self.assertIn("/plan", commands["post"])
             self.assertIn("/sequence", commands["post"])
 
             capabilities = json.loads(
@@ -426,6 +499,8 @@ class ServerTests(unittest.TestCase):
                 primitives["discover-usb"]["requires_control"],
                 "allow_control request field",
             )
+            self.assertFalse(primitives["plan"]["requires_control"])
+            self.assertEqual(primitives["plan"]["path"], "/plan")
             self.assertTrue(primitives["brightness"]["requires_control"])
             self.assertEqual(primitives["brightness"]["path"], "/brightness")
             self.assertIn("control_mode", primitives["scene"]["fields"])
@@ -767,6 +842,7 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/diagnostics", schema["paths"])
             self.assertIn("/ready", schema["paths"])
             self.assertIn("/devices", schema["paths"])
+            self.assertIn("/plan", schema["paths"])
             self.assertIn("/discover-usb", schema["paths"])
             self.assertIn("/events", schema["paths"])
             self.assertIn("/history", schema["paths"])
@@ -786,6 +862,8 @@ class ServerTests(unittest.TestCase):
             )
             self.assertIn("Devices", schema["components"]["schemas"])
             self.assertIn("History", schema["components"]["schemas"])
+            self.assertIn("PlanRequest", schema["components"]["schemas"])
+            self.assertIn("PlanResponse", schema["components"]["schemas"])
             self.assertIn("UsbDiscoveryRequest", schema["components"]["schemas"])
             self.assertIn("UsbDiscovery", schema["components"]["schemas"])
             self.assertIn("SequenceRequest", schema["components"]["schemas"])

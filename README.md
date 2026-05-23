@@ -264,6 +264,9 @@ curl -X POST http://127.0.0.1:8765/discover-usb \
 curl -X POST http://127.0.0.1:8765/validate \
   -H 'content-type: application/json' \
   -d '{"allow_control": true, "include_object_reads": true}'
+curl -X POST http://127.0.0.1:8765/plan \
+  -H 'content-type: application/json' \
+  -d '{"preset": "key", "overrides": {"brightness": 45}}'
 curl -X POST http://127.0.0.1:8765/brightness \
   -H 'content-type: application/json' \
   -d '{"obj": 1, "value": 35}'
@@ -329,6 +332,10 @@ turns true when the bridge is connected and started with `--allow-control`;
 ACK-confirmed control request. The response also includes stable `actions`
 entries such as `read-status`, `enable-control`, `confirm-control`, and
 `authorize-bluetooth` so setup dashboards can render deterministic next steps.
+
+`POST /plan` resolves a scene, preset, transition, or sequence without opening
+the light or requiring `--allow-control`. Use it for show-control previews and
+setup UIs that need to inspect the exact target scene before arming writes.
 
 `GET /devices` lists local USB serial ports and the bridge's selected USB port.
 On macOS it also attaches best-effort USB descriptor metadata such as
@@ -448,6 +455,7 @@ print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
 print(bridge.devices(include_ble=True, ble_backend="macos-app")["ble"]["scan"])
+print(bridge.plan({"preset": "key", "overrides": {"brightness": 45}})["scene"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(next(bridge.state_events(limit=1))["state"])
 print(bridge.history(limit=10)["events"])

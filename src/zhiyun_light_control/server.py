@@ -102,6 +102,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     ],
                     "post": [
                         "/validate",
+                        "/plan",
                         "/register",
                         "/discover-usb",
                         "/brightness",
@@ -182,7 +183,9 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         try:
             body = self._read_json()
             path = urlparse(self.path).path
-            if path == "/validate":
+            if path == "/plan":
+                result = self._handle_plan(body)
+            elif path == "/validate":
                 if _body_bool(body, "allow_control") and not self.server.allow_control:
                     self._json(
                         {
@@ -392,6 +395,138 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     control_mode=control_mode,
                 )
         raise ValueError("unknown endpoint")
+
+    def _handle_plan(self, body: dict[str, object]) -> dict[str, object]:
+        action = _plan_action(body)
+        obj = int(body.get("obj", 1))
+        control_mode = _control_mode(body)
+        if action == "sequence":
+            response = self._plan_sequence(body, obj=obj)
+        elif action == "preset":
+            response = self._plan_preset(body, obj=obj)
+        elif action == "transition":
+            response = self._plan_transition(body, obj=obj)
+        else:
+            response = self._plan_scene(body, obj=obj)
+        return {
+            "dry_run": True,
+            "control_mode": control_mode,
+            **response,
+        }
+
+    def _plan_scene(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
+        scene_data = body.get("scene", _scene_fields_from_body(body))
+        if not isinstance(scene_data, dict):
+            raise ValueError("plan scene must be an object")
+        scene = _scene_from_body(scene_data, obj=obj)
+        return {"action": "scene", "scene": scene.to_dict()}
+
+    def _plan_preset(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
+        library = self.server.preset_library
+        if library is None:
+            raise ValueError("no preset file loaded")
+        name_value = body.get("preset", body.get("name"))
+        if name_value is None:
+            raise ValueError("plan preset requires name or preset")
+        name = str(name_value)
+        overrides = _sequence_preset_overrides(body)
+        scene = merge_scene(
+            library.get(name),
+            scene_from_optional_mapping(overrides, obj=obj),
+            override_obj="obj" in overrides,
+        )
+        return {"action": "preset", "preset": name, "scene": scene.to_dict()}
+
+    def _plan_transition(
+        self,
+        body: dict[str, object],
+        *,
+        obj: int,
+    ) -> dict[str, object]:
+        target_data = body.get("to")
+        if target_data is None:
+            target_data = _scene_fields_from_body(body)
+        if not isinstance(target_data, dict):
+            raise ValueError("plan transition 'to' must be an object")
+        end = _scene_from_body(target_data, obj=obj)
+        start = self._transition_start(body, obj=end.obj)
+        return {
+            "action": "transition",
+            "from": start.to_dict(),
+            "scene": end.to_dict(),
+            "steps": int(body.get("steps", 10)),
+            "duration": float(body.get("duration", 1.0)),
+            "easing": str(body.get("easing", "linear")),
+        }
+
+    def _plan_sequence(self, body: dict[str, object], *, obj: int) -> dict[str, object]:
+        raw_steps = body.get("steps")
+        if not isinstance(raw_steps, list) or not raw_steps:
+            raise ValueError("plan sequence steps must be a non-empty array")
+        current_scene: Scene | None = None
+        planned_steps: list[dict[str, object]] = []
+        for index, raw_step in enumerate(raw_steps):
+            if not isinstance(raw_step, dict):
+                raise ValueError("plan sequence steps must be objects")
+            step_response, current_scene = self._plan_sequence_step(
+                raw_step,
+                index=index,
+                obj=obj,
+                current_scene=current_scene,
+            )
+            planned_steps.append(step_response)
+        return {
+            "action": "sequence",
+            "steps": planned_steps,
+            "scene": None if current_scene is None else current_scene.to_dict(),
+            "stop_on_unconfirmed": _body_bool(body, "stop_on_unconfirmed"),
+        }
+
+    def _plan_sequence_step(
+        self,
+        step: dict[str, object],
+        *,
+        index: int,
+        obj: int,
+        current_scene: Scene | None,
+    ) -> tuple[dict[str, object], Scene]:
+        if "to" in step:
+            response = self._plan_sequence_transition(
+                step,
+                obj=obj,
+                current_scene=current_scene,
+            )
+        elif "preset" in step:
+            response = self._plan_preset(step, obj=obj)
+        else:
+            response = self._plan_scene(step, obj=obj)
+        scene_payload = response.get("scene")
+        if not isinstance(scene_payload, dict):
+            raise ValueError("planned step did not produce a scene")
+        scene = _scene_from_body(scene_payload, obj=obj)
+        response["index"] = index
+        return response, scene
+
+    def _plan_sequence_transition(
+        self,
+        step: dict[str, object],
+        *,
+        obj: int,
+        current_scene: Scene | None,
+    ) -> dict[str, object]:
+        target_data = step["to"]
+        if not isinstance(target_data, dict):
+            raise ValueError("plan sequence transition 'to' must be an object")
+        end = _scene_from_body(target_data, obj=obj)
+        start = _sequence_transition_start(self, step, current_scene, obj=end.obj)
+        return {
+            "action": "transition",
+            "from": start.to_dict(),
+            "scene": end.to_dict(),
+            "steps": int(step.get("steps", 10)),
+            "duration": float(step.get("duration", 1.0)),
+            "easing": str(step.get("easing", "linear")),
+        }
 
     def _handle_sequence(
         self,
@@ -930,6 +1065,13 @@ def openapi_schema() -> dict[str, object]:
                     request_schema="ValidationRequest",
                 ),
             },
+            "/plan": {
+                "post": _operation(
+                    "Resolve a scene, preset, transition, or sequence without writes",
+                    "PlanResponse",
+                    request_schema="PlanRequest",
+                )
+            },
             "/discover-usb": {
                 "post": _operation(
                     "Run a bounded USB protocol discovery matrix",
@@ -1154,6 +1296,8 @@ def _openapi_schemas() -> dict[str, object]:
             ],
         },
         "Validation": {"type": "object", "additionalProperties": True},
+        "PlanRequest": {"type": "object", "additionalProperties": True},
+        "PlanResponse": {"type": "object", "additionalProperties": True},
         "UsbDiscovery": {"type": "object", "additionalProperties": True},
         "Presets": {"type": "object", "additionalProperties": True},
         "State": {"type": "object", "additionalProperties": True},
@@ -1354,6 +1498,24 @@ def capabilities_response(
                 "path": "/validate",
                 "requires_control": "allow_control request field",
                 "confirmation": "per-check validation report",
+            },
+            {
+                "name": "plan",
+                "method": "POST",
+                "path": "/plan",
+                "requires_control": False,
+                "fields": [
+                    "action",
+                    "scene",
+                    "preset",
+                    "name",
+                    "from",
+                    "to",
+                    "steps",
+                    "overrides",
+                    "control_mode",
+                ],
+                "confirmation": "dry-run scene resolution without hardware writes",
             },
             {
                 "name": "discover-usb",
@@ -1776,6 +1938,24 @@ def _sequence_preset_overrides(step: dict[str, object]) -> dict[str, object]:
         }
     )
     return overrides
+
+
+def _plan_action(body: dict[str, object]) -> str:
+    value = body.get("action")
+    if value is not None:
+        action = str(value).strip().lower()
+        if action not in {"scene", "preset", "transition", "sequence"}:
+            raise ValueError(
+                "plan action must be scene, preset, transition, or sequence"
+            )
+        return action
+    if "to" in body:
+        return "transition"
+    if isinstance(body.get("steps"), list):
+        return "sequence"
+    if "preset" in body or "name" in body:
+        return "preset"
+    return "scene"
 
 
 def _sequence_transition_start(
