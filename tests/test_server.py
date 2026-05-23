@@ -289,6 +289,21 @@ class ServerTests(unittest.TestCase):
             self.assertIn("/status", commands["get"])
             self.assertIn("/validate", commands["get"])
             self.assertIn("/validate", commands["post"])
+            self.assertIn("/capabilities", commands["get"])
+
+            capabilities = json.loads(
+                urlopen(f"{base}/capabilities", timeout=3).read()
+            )
+            self.assertFalse(capabilities["control_enabled"])
+            self.assertIn("sent_no_response", capabilities["evidence_statuses"])
+            self.assertIn("brightness", capabilities["scene_fields"])
+            primitives = {
+                primitive["name"]: primitive for primitive in capabilities["primitives"]
+            }
+            self.assertFalse(primitives["status"]["requires_control"])
+            self.assertTrue(primitives["brightness"]["requires_control"])
+            self.assertEqual(primitives["brightness"]["path"], "/brightness")
+            self.assertIn("control_mode", primitives["scene"]["fields"])
 
             status = json.loads(urlopen(f"{base}/status", timeout=3).read())
             self.assertTrue(status["connection_confirmed"])
@@ -411,10 +426,12 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(schema["openapi"], "3.1.0")
             self.assertIn("/scene", schema["paths"])
             self.assertIn("/status", schema["paths"])
+            self.assertIn("/capabilities", schema["paths"])
             self.assertIn("/frame", schema["paths"])
             self.assertIn("FrameRequest", schema["components"]["schemas"])
             self.assertIn("CommandResult", schema["components"]["schemas"])
             self.assertIn("Status", schema["components"]["schemas"])
+            self.assertIn("Capabilities", schema["components"]["schemas"])
 
             commands = json.loads(urlopen(f"{base}/commands", timeout=3).read())
             self.assertIn("/openapi.json", commands["get"])

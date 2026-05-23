@@ -68,6 +68,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/status",
                         "/validate",
                         "/commands",
+                        "/capabilities",
                         "/presets",
                         "/state",
                     ],
@@ -89,6 +90,16 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                     if self.server.preset_library
                     else [],
                 }
+            )
+            return
+        if path == "/capabilities":
+            self._json(
+                capabilities_response(
+                    allow_control=self.server.allow_control,
+                    presets=self.server.preset_library.names()
+                    if self.server.preset_library
+                    else [],
+                )
             )
             return
         if path == "/openapi.json":
@@ -413,6 +424,12 @@ def openapi_schema() -> dict[str, object]:
             "/commands": {
                 "get": _operation("List supported bridge endpoints", "Commands")
             },
+            "/capabilities": {
+                "get": _operation(
+                    "Describe control primitives and confirmation semantics",
+                    "Capabilities",
+                )
+            },
             "/probe": {"get": _operation("Probe the connected light", "Probe")},
             "/status": {
                 "get": _operation(
@@ -557,6 +574,7 @@ def _openapi_schemas() -> dict[str, object]:
             },
             "required": ["get", "post", "control_enabled", "presets"],
         },
+        "Capabilities": {"type": "object", "additionalProperties": True},
         "Probe": {
             "type": "object",
             "additionalProperties": True,
@@ -718,6 +736,147 @@ def _openapi_schemas() -> dict[str, object]:
     }
 
 
+def capabilities_response(
+    *,
+    allow_control: bool,
+    presets: list[str],
+) -> dict[str, object]:
+    return {
+        "api": "zhiyun-light-control",
+        "control_enabled": allow_control,
+        "scene_fields": list(_SCENE_FIELD_ORDER),
+        "presets": presets,
+        "evidence_statuses": [
+            "acknowledged",
+            "sent_no_response",
+            "echoed_write",
+            "response_without_matching_ack",
+        ],
+        "confirmation": {
+            "read_primitives": (
+                "ACK-backed status/probe results confirm command transport."
+            ),
+            "write_primitives": (
+                "Control writes are considered applied only when every returned "
+                "CommandResult is acknowledged."
+            ),
+            "state_applied": (
+                "GET /state applied=true means the last scene request had only "
+                "acknowledged command results."
+            ),
+        },
+        "primitives": [
+            {
+                "name": "probe",
+                "method": "GET",
+                "path": "/probe",
+                "requires_control": False,
+                "confirmation": "acknowledged identity/status frames",
+            },
+            {
+                "name": "status",
+                "method": "GET",
+                "path": "/status",
+                "requires_control": False,
+                "confirmation": "acknowledged read-only status frames",
+            },
+            {
+                "name": "validate",
+                "method": "POST",
+                "path": "/validate",
+                "requires_control": "allow_control request field",
+                "confirmation": "per-check validation report",
+            },
+            {
+                "name": "register",
+                "method": "POST",
+                "path": "/register",
+                "requires_control": True,
+                "fields": ["device_id"],
+                "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "brightness",
+                "method": "POST",
+                "path": "/brightness",
+                "requires_control": True,
+                "fields": ["obj", "value", "control_mode"],
+                "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "cct",
+                "method": "POST",
+                "path": "/cct",
+                "requires_control": True,
+                "fields": ["obj", "kelvin", "control_mode"],
+                "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "sleep",
+                "method": "POST",
+                "path": "/sleep",
+                "requires_control": True,
+                "fields": ["obj", "value", "control_mode"],
+                "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "rgb",
+                "method": "POST",
+                "path": "/rgb",
+                "requires_control": True,
+                "fields": ["obj", "red", "green", "blue", "control_mode"],
+                "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "hsi",
+                "method": "POST",
+                "path": "/hsi",
+                "requires_control": True,
+                "fields": [
+                    "obj",
+                    "hue",
+                    "saturation",
+                    "intensity",
+                    "control_mode",
+                ],
+                "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "frame",
+                "method": "POST",
+                "path": "/frame",
+                "requires_control": True,
+                "fields": ["first_word", "command", "payload_hex", "timeout"],
+                "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "scene",
+                "method": "POST",
+                "path": "/scene",
+                "requires_control": True,
+                "fields": list(_SCENE_FIELD_ORDER) + ["control_mode"],
+                "confirmation": "all results acknowledged",
+            },
+            {
+                "name": "transition",
+                "method": "POST",
+                "path": "/transition",
+                "requires_control": True,
+                "fields": ["from", "to", "steps", "duration", "easing"],
+                "confirmation": "all batch results acknowledged",
+            },
+            {
+                "name": "preset",
+                "method": "POST",
+                "path": "/preset",
+                "requires_control": True,
+                "fields": ["name", *list(_SCENE_FIELD_ORDER), "control_mode"],
+                "confirmation": "all results acknowledged",
+            },
+        ],
+    }
+
+
 def serve(
     *,
     host: str = "127.0.0.1",
@@ -787,7 +946,8 @@ def _payload_hex(body: dict[str, object]) -> bytes:
     return bytes.fromhex(payload)
 
 
-_SCENE_FIELDS = {field.name for field in fields(Scene)}
+_SCENE_FIELD_ORDER = tuple(field.name for field in fields(Scene))
+_SCENE_FIELDS = set(_SCENE_FIELD_ORDER)
 
 
 def _scene_fields_from_body(body: dict[str, object]) -> dict[str, object]:
