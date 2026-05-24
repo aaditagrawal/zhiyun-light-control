@@ -7,6 +7,8 @@ from zhiyun_light_control.mesh import (
     PROVISIONING_INVITE,
     aes_cmac,
     build_config_app_key_add_params,
+    build_mesh_config_proxy_pdu_sequence,
+    build_mesh_config_proxy_pdus,
     build_mesh_config_sequence_plan,
     build_mesh_proxy_pdu,
     build_provisioner_confirmation,
@@ -21,6 +23,7 @@ from zhiyun_light_control.mesh import (
     generate_application_key,
     generate_network_key,
     mesh_k1,
+    mesh_k2,
     mesh_salt,
     pack_mesh_key_indexes,
     parse_mesh_proxy_pdu,
@@ -268,6 +271,55 @@ class MeshProvisioningTests(unittest.TestCase):
         self.assertEqual(
             build_config_app_key_add_params(bytes(range(16))),
             bytes.fromhex("000000") + bytes(range(16)),
+        )
+
+    def test_mesh_k2_matches_nordic_derivation_shape(self) -> None:
+        k2 = mesh_k2(bytes(range(16)))
+
+        self.assertEqual(k2.nid, 0x1C)
+        self.assertEqual(k2.encryption_key.hex(), "ebb3671521d99c588214ad341f7337df")
+        self.assertEqual(k2.privacy_key.hex(), "3e6fb134d2e09513bc0fbd0cffff53d5")
+
+    def test_mesh_config_proxy_pdus_encrypt_unsegmented_access_message(self) -> None:
+        proxy_pdus = build_mesh_config_proxy_pdus(
+            bytes.fromhex("8008ff"),
+            network_key=bytes(range(16)),
+            device_key=bytes(range(16, 32)),
+            sequence_number=1,
+            iv_index=0,
+            ttl=5,
+        )
+
+        self.assertEqual(
+            [pdu.hex() for pdu in proxy_pdus],
+            ["001c86b46ce1173bca883ea0f50448b3659d2b7f88bf"],
+        )
+
+    def test_mesh_config_proxy_sequence_segments_app_key_add(self) -> None:
+        config_sequence = build_mesh_config_sequence_plan(bytes(range(32, 48)))
+        proxy_sequence = build_mesh_config_proxy_pdu_sequence(
+            config_sequence,
+            network_key=bytes(range(16)),
+            device_key=bytes(range(16, 32)),
+            sequence_number=1,
+            iv_index=0,
+            ttl=5,
+        )
+
+        self.assertEqual(
+            [step.sequence_number for step in proxy_sequence],
+            [1, 2, 3, 4],
+        )
+        self.assertEqual(
+            [len(step.proxy_pdus) for step in proxy_sequence],
+            [1, 1, 1, 2],
+        )
+        self.assertEqual(
+            proxy_sequence[-1].to_dict()["proxy_pdu_hexes"],
+            [
+                "001cc836e3cd4e728d60be82defb40109012911ecb66b362bd1063c2ab68",
+                "001c2d97aad2f6b5b3dba20cc931f945d34c8b8cda9eaa478ba9cb5945fd",
+            ],
         )
 
     def test_mesh_crypto_helpers_match_known_shapes(self) -> None:

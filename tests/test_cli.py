@@ -2333,6 +2333,8 @@ class CliTests(unittest.TestCase):
                     (b"n" * 16).hex(),
                     "--app-key-hex",
                     (b"a" * 16).hex(),
+                    "--device-key-hex",
+                    (b"d" * 16).hex(),
                     "--json",
                 ]
             )
@@ -2350,6 +2352,10 @@ class CliTests(unittest.TestCase):
                 "80240a",
                 "00000000" + (b"a" * 16).hex(),
             ],
+        )
+        self.assertEqual(
+            [step["proxy_pdu_count"] for step in payload["proxy_pdu_sequence"]],
+            [1, 1, 1, 2],
         )
 
     def test_ble_helper_reports_helper_and_opens_settings(self) -> None:

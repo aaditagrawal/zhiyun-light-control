@@ -128,8 +128,11 @@ verify the exact PDU before any persistent mesh setup command is added.
 hardware: generated mesh UUID/network key/app key, Vega's provisioner UUID and
 device key defaults, a CDB skeleton, and the access-message payloads for
 composition data get, default TTL get, network transmit set, and app key add.
-This keeps the instruction model explicit while the remaining sender work is
-implemented for Mesh Proxy service `1828`.
+When supplied with the provisioned light's device key, it also derives K2
+network material, encrypts device-key config access messages, handles
+unsegmented and segmented lower transport frames, and emits complete Mesh Proxy
+Network PDUs. The remaining live requirement is a BLE backend authorized to
+write those PDUs to Mesh Proxy service `1828`.
 
 ## Planning and Transitions
 

@@ -240,6 +240,17 @@ add `00 + key-index-pack + app-key`. Those payloads still need to be encrypted
 and sent over the Mesh Proxy bearer `1828/2ADD/2ADE`; the command does not
 mutate the light.
 
+If the provisioning transcript has produced a light device key, pass it back in:
+
+```sh
+uv run zlight mesh-setup-plan --device-key-hex "$DEVICE_KEY_HEX" --json
+```
+
+The output then includes `proxy_pdu_sequence`: complete Mesh Proxy Network PDUs
+for the config messages, including the segmented app-key-add message. These are
+ready for the `1828/2ADD` write characteristic once the light advertises Mesh
+Proxy and the local BLE backend is authorized.
+
 If `mesh-session` cannot find the light, run:
 
 ```sh

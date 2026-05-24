@@ -256,6 +256,11 @@ get, default TTL get, network transmit set, and app key add. It is also
 non-mutating; it proves the SDK can construct the next control-plane
 instructions before a sender for `1828/2ADD/2ADE` is added.
 
+After a real provisioning session has produced a light `device_key_hex`,
+`mesh-setup-plan --device-key-hex ...` also emits encrypted Mesh Proxy Network
+PDUs for `1828/2ADD`. Those PDUs are still offline artifacts until they are sent
+over an authorized BLE Mesh Proxy connection.
+
 When BLE discovery unexpectedly returns no Zhiyun devices on macOS, widen the
 scan before changing protocol code:
 

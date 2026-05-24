@@ -53,6 +53,7 @@ from .macos_ble_app import (
     open_macos_bluetooth_settings,
 )
 from .mesh import (
+    build_mesh_config_proxy_pdu_sequence,
     build_mesh_config_sequence_plan,
     build_provisioner_confirmation,
     build_provisioner_random,
@@ -571,6 +572,26 @@ def build_parser() -> argparse.ArgumentParser:
     mesh_setup_plan.add_argument("--app-key-index", type=parse_int, default=0)
     mesh_setup_plan.add_argument("--flags", type=parse_int, default=0)
     mesh_setup_plan.add_argument("--iv-index", type=parse_int, default=0)
+    mesh_setup_plan.add_argument(
+        "--device-key-hex",
+        type=parse_hex_bytes,
+        help=(
+            "16-byte provisioned light device key. When supplied, encrypted "
+            "Mesh Proxy network PDUs are included."
+        ),
+    )
+    mesh_setup_plan.add_argument(
+        "--sequence-number",
+        type=parse_int,
+        default=1,
+        help="Initial 24-bit mesh sequence number for generated proxy PDUs.",
+    )
+    mesh_setup_plan.add_argument(
+        "--ttl",
+        type=parse_int,
+        default=5,
+        help="Network TTL for generated proxy PDUs.",
+    )
     mesh_setup_plan.add_argument(
         "--unicast-address",
         type=parse_int,
@@ -1634,6 +1655,18 @@ def cmd_mesh_setup_plan(args: argparse.Namespace) -> int:
             net_key_index=plan.key_index,
             app_key_index=plan.app_key_index,
         )
+        proxy_pdu_sequence = ()
+        if args.device_key_hex is not None:
+            proxy_pdu_sequence = build_mesh_config_proxy_pdu_sequence(
+                config_sequence,
+                network_key=plan.network_key,
+                device_key=args.device_key_hex,
+                src=plan.provisioner_unicast_address,
+                dst=plan.light_unicast_address,
+                iv_index=plan.iv_index,
+                sequence_number=args.sequence_number,
+                ttl=args.ttl,
+            )
     except ValueError as exc:
         payload = {
             "ok": False,
@@ -1658,6 +1691,7 @@ def cmd_mesh_setup_plan(args: argparse.Namespace) -> int:
         "network": plan.to_dict(),
         "cdb": plan.to_cdb_dict(),
         "config_sequence": [step.to_dict() for step in config_sequence],
+        "proxy_pdu_sequence": [step.to_dict() for step in proxy_pdu_sequence],
     }
     print_json(payload, compact=args.json)
     return 0

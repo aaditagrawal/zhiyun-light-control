@@ -22,10 +22,12 @@ FIPS_P256_ECDH_ALGORITHM = 0
 NO_OOB_AUTHENTICATION = 0
 NO_OOB_AUTH_VALUE = b"\x00" * 16
 ZERO_AES_KEY = b"\x00" * 16
+K2_MASTER_INPUT = b"\x00"
 PRCK = b"prck"
 PRSK = b"prsk"
 PRSN = b"prsn"
 PRDK = b"prdk"
+SMK2 = b"smk2"
 
 ZY_MESH_NAME = "ZY Mesh Network"
 ZY_MESH_PROVISIONER_UUID = bytes.fromhex("9ee44bef29fc41e89e53ee567a2118df")
@@ -185,6 +187,39 @@ class MeshConfigAccessMessagePlan:
             "expected_status_opcode": self.expected_status_opcode,
             "expected_status_opcode_hex": f"0x{self.expected_status_opcode:04x}",
             "delay_after_status_ms": self.delay_after_status_ms,
+        }
+
+
+@dataclass(frozen=True)
+class MeshK2Output:
+    nid: int
+    encryption_key: bytes
+    privacy_key: bytes
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "nid": self.nid,
+            "nid_hex": f"0x{self.nid:02x}",
+            "encryption_key_hex": self.encryption_key.hex(),
+            "privacy_key_hex": self.privacy_key.hex(),
+        }
+
+
+@dataclass(frozen=True)
+class MeshNetworkPduPlan:
+    name: str
+    access_payload: bytes
+    sequence_number: int
+    proxy_pdus: tuple[bytes, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "access_payload_hex": self.access_payload.hex(),
+            "sequence_number": self.sequence_number,
+            "sequence_number_hex": f"0x{self.sequence_number:06x}",
+            "proxy_pdu_count": len(self.proxy_pdus),
+            "proxy_pdu_hexes": [pdu.hex() for pdu in self.proxy_pdus],
         }
 
 
@@ -627,6 +662,97 @@ def build_mesh_config_sequence_plan(
     )
 
 
+def build_mesh_config_proxy_pdu_sequence(
+    config_sequence: tuple[MeshConfigAccessMessagePlan, ...],
+    *,
+    network_key: bytes,
+    device_key: bytes,
+    src: int = ZY_MESH_PROVISIONER_UNICAST_ADDRESS,
+    dst: int = ZY_MESH_LIGHT_UNICAST_ADDRESS,
+    iv_index: int = 0,
+    sequence_number: int = 1,
+    ttl: int = 5,
+) -> tuple[MeshNetworkPduPlan, ...]:
+    _validate_key("network_key", network_key)
+    _validate_key("device_key", device_key)
+    _validate_u16("src", src)
+    _validate_u16("dst", dst)
+    _validate_u32("iv_index", iv_index)
+    _validate_sequence_number(sequence_number)
+    _validate_ttl(ttl)
+    plans: list[MeshNetworkPduPlan] = []
+    next_sequence = sequence_number
+    for step in config_sequence:
+        proxy_pdus = build_mesh_config_proxy_pdus(
+            step.access_payload,
+            network_key=network_key,
+            device_key=device_key,
+            src=src,
+            dst=dst,
+            iv_index=iv_index,
+            sequence_number=next_sequence,
+            ttl=ttl,
+        )
+        plans.append(
+            MeshNetworkPduPlan(
+                name=step.name,
+                access_payload=step.access_payload,
+                sequence_number=next_sequence,
+                proxy_pdus=proxy_pdus,
+            )
+        )
+        next_sequence += len(proxy_pdus)
+        _validate_sequence_number(next_sequence)
+    return tuple(plans)
+
+
+def build_mesh_config_proxy_pdus(
+    access_payload: bytes,
+    *,
+    network_key: bytes,
+    device_key: bytes,
+    src: int = ZY_MESH_PROVISIONER_UNICAST_ADDRESS,
+    dst: int = ZY_MESH_LIGHT_UNICAST_ADDRESS,
+    iv_index: int = 0,
+    sequence_number: int = 1,
+    ttl: int = 5,
+) -> tuple[bytes, ...]:
+    if not access_payload:
+        raise ValueError("access_payload is required")
+    _validate_key("network_key", network_key)
+    _validate_key("device_key", device_key)
+    _validate_u16("src", src)
+    _validate_u16("dst", dst)
+    _validate_u32("iv_index", iv_index)
+    _validate_sequence_number(sequence_number)
+    _validate_ttl(ttl)
+    upper_transport_pdu = _mesh_encrypt_upper_transport_device_key(
+        access_payload,
+        device_key=device_key,
+        sequence_number=sequence_number,
+        src=src,
+        dst=dst,
+        iv_index=iv_index,
+    )
+    lower_transport_pdus = _mesh_lower_transport_access_pdus(
+        upper_transport_pdu,
+        sequence_number=sequence_number,
+    )
+    k2 = mesh_k2(network_key)
+    return tuple(
+        _mesh_network_proxy_pdu(
+            lower_transport_pdu,
+            k2=k2,
+            src=src,
+            dst=dst,
+            iv_index=iv_index,
+            sequence_number=sequence_number + index,
+            ttl=ttl,
+        )
+        for index, lower_transport_pdu in enumerate(lower_transport_pdus)
+    )
+
+
 def generate_provisioner_keypair() -> ProvisionerKeypair:
     try:
         from cryptography.hazmat.primitives.asymmetric import ec
@@ -786,6 +912,118 @@ def _mesh_access_opcode_bytes(opcode: int) -> bytes:
     return opcode.to_bytes(2, "big")
 
 
+def _mesh_encrypt_upper_transport_device_key(
+    access_payload: bytes,
+    *,
+    device_key: bytes,
+    sequence_number: int,
+    src: int,
+    dst: int,
+    iv_index: int,
+) -> bytes:
+    nonce = _mesh_device_nonce(
+        sequence_number=sequence_number,
+        src=src,
+        dst=dst,
+        iv_index=iv_index,
+    )
+    return aes_ccm_encrypt(access_payload, key=device_key, nonce=nonce, mic_size=4)
+
+
+def _mesh_lower_transport_access_pdus(
+    upper_transport_pdu: bytes,
+    *,
+    sequence_number: int,
+) -> tuple[bytes, ...]:
+    if len(upper_transport_pdu) <= 12:
+        return (b"\x00" + upper_transport_pdu,)
+    seq_zero = sequence_number & 0x1FFF
+    chunks = tuple(
+        upper_transport_pdu[index : index + 12]
+        for index in range(0, len(upper_transport_pdu), 12)
+    )
+    seg_n = len(chunks) - 1
+    return tuple(
+        bytes(
+            (
+                0x80,
+                (seq_zero >> 6) & 0x7F,
+                ((seq_zero << 2) & 0xFC) | ((seg_o >> 3) & 0x03),
+                ((seg_o << 5) & 0xE0) | (seg_n & 0x1F),
+            )
+        )
+        + chunk
+        for seg_o, chunk in enumerate(chunks)
+    )
+
+
+def _mesh_network_proxy_pdu(
+    lower_transport_pdu: bytes,
+    *,
+    k2: MeshK2Output,
+    src: int,
+    dst: int,
+    iv_index: int,
+    sequence_number: int,
+    ttl: int,
+) -> bytes:
+    sequence = sequence_number.to_bytes(3, "big")
+    iv = iv_index.to_bytes(4, "big")
+    ctl_ttl = ttl & 0x7F
+    encrypted_payload = aes_ccm_encrypt(
+        dst.to_bytes(2, "big") + lower_transport_pdu,
+        key=k2.encryption_key,
+        nonce=_mesh_network_nonce(
+            ctl_ttl=ctl_ttl,
+            sequence=sequence,
+            src=src,
+            iv_index=iv_index,
+        ),
+        mic_size=4,
+    )
+    privacy_random = encrypted_payload[:7]
+    pecb = aes_ecb_encrypt(b"\x00" * 5 + iv + privacy_random, k2.privacy_key)
+    header = bytes((ctl_ttl,)) + sequence + src.to_bytes(2, "big")
+    obfuscated_header = bytes(
+        left ^ right for left, right in zip(header, pecb, strict=False)
+    )
+    ivi_nid = ((iv_index & 1) << 7) | (k2.nid & 0x7F)
+    return b"\x00" + bytes((ivi_nid,)) + obfuscated_header + encrypted_payload
+
+
+def _mesh_device_nonce(
+    *,
+    sequence_number: int,
+    src: int,
+    dst: int,
+    iv_index: int,
+) -> bytes:
+    return (
+        b"\x02\x00"
+        + sequence_number.to_bytes(3, "big")
+        + src.to_bytes(2, "big")
+        + dst.to_bytes(2, "big")
+        + iv_index.to_bytes(4, "big")
+    )
+
+
+def _mesh_network_nonce(
+    *,
+    ctl_ttl: int,
+    sequence: bytes,
+    src: int,
+    iv_index: int,
+) -> bytes:
+    return (
+        b"\x00"
+        + bytes((ctl_ttl,))
+        + sequence
+        + src.to_bytes(2, "big")
+        + b"\x00\x00"
+        + iv_index.to_bytes(4, "big")
+    )
+
+
 def _validate_key(name: str, value: bytes) -> None:
     if len(value) != 16:
         raise ValueError(f"{name} must be 16 bytes")
@@ -811,12 +1049,37 @@ def _validate_u32(name: str, value: int) -> None:
         raise ValueError(f"{name} must fit in four bytes")
 
 
+def _validate_sequence_number(value: int) -> None:
+    if not 0 <= value <= 0xFFFFFF:
+        raise ValueError("sequence_number must fit in 24 bits")
+
+
+def _validate_ttl(value: int) -> None:
+    if not 0 <= value <= 0x7F:
+        raise ValueError("ttl must fit in seven bits")
+
+
 def mesh_salt(data: bytes) -> bytes:
     return aes_cmac(data, ZERO_AES_KEY)
 
 
 def mesh_k1(data: bytes, salt: bytes, text: bytes) -> bytes:
     return aes_cmac(text, aes_cmac(data, salt))
+
+
+def mesh_k2(data: bytes, p: bytes = K2_MASTER_INPUT) -> MeshK2Output:
+    if len(data) != 16:
+        raise ValueError("k2 input key must be 16 bytes")
+    salt = mesh_salt(SMK2)
+    t = aes_cmac(data, salt)
+    t1 = aes_cmac(p + b"\x01", t)
+    t2 = aes_cmac(t1 + p + b"\x02", t)
+    t3 = aes_cmac(t2 + p + b"\x03", t)
+    return MeshK2Output(
+        nid=t1[-1] & 0x7F,
+        encryption_key=t2,
+        privacy_key=t3,
+    )
 
 
 def aes_cmac(data: bytes, key: bytes) -> bytes:
@@ -831,6 +1094,21 @@ def aes_cmac(data: bytes, key: bytes) -> bytes:
     cmac = CMAC(algorithms.AES(key))
     cmac.update(data)
     return cmac.finalize()
+
+
+def aes_ecb_encrypt(data: bytes, key: bytes) -> bytes:
+    if len(data) % 16 != 0:
+        raise ValueError("AES ECB input must be block aligned")
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    except ImportError as exc:
+        raise RuntimeError(
+            "Bluetooth Mesh AES block encryption requires the 'mesh' extra: "
+            "uv run --extra mesh ..."
+        ) from exc
+
+    encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
+    return encryptor.update(data) + encryptor.finalize()
 
 
 def aes_ccm_encrypt(
