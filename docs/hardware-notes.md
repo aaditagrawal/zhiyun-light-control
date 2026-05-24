@@ -191,6 +191,13 @@ Bluetooth local.zhiyun-light-control.ble-scan` also failed, so the remaining
 permission repair is a macOS TCC state issue rather than a missing BLE endpoint
 implementation.
 
+The helper now signs the app with an explicit designated requirement
+`identifier "local.zhiyun-light-control.ble-scan"` even when using ad-hoc
+signing, so TCC has a stable requirement rather than only a changing code hash.
+The scan helper also reports a Bluetooth state error when CoreBluetooth never
+reaches `poweredOn`; earlier broad scans could report `ok=true` with zero
+devices even while authorization was still stuck at `not_determined`.
+
 Current local BLE scan validation:
 
 | Runtime | BLE stack | Result |

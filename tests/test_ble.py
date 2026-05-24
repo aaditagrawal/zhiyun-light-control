@@ -219,6 +219,11 @@ class SafeBleScanTests(unittest.TestCase):
                 sign_calls[0][:4],
                 ["/usr/bin/codesign", "--force", "--deep", "--sign"],
             )
+            self.assertIn("--requirements", sign_calls[0])
+            self.assertIn(
+                f'=designated => identifier "{APP_BUNDLE_ID}"',
+                sign_calls[0],
+            )
             self.assertEqual(sign_calls[0][-1], str(app_path))
             self.assertEqual(info["CFBundleIdentifier"], APP_BUNDLE_ID)
             self.assertNotIn("LSBackgroundOnly", info)

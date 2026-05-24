@@ -543,6 +543,8 @@ def _sign_app_bundle(app_path: Path) -> None:
             "--deep",
             "--sign",
             "-",
+            "--requirements",
+            f'=designated => identifier "{APP_BUNDLE_ID}"',
             str(app_path),
         ],
         capture_output=True,
@@ -1150,6 +1152,17 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         }}
         if mode == "authorize" {{
             return "Bluetooth authorization prompt timed out"
+        }}
+        if mode == "scan" {{
+            if central.state == .unknown || central.state == .resetting {{
+                let state = centralStateDescription(central.state)
+                return "Bluetooth state \\(state): \\(central.state.rawValue)"
+            }}
+            if central.state != .poweredOn {{
+                let state = centralStateDescription(central.state)
+                return "Bluetooth state \\(state): \\(central.state.rawValue)"
+            }}
+            return nil
         }}
         if mode == "inspect" {{
             if peripheral == nil {{
