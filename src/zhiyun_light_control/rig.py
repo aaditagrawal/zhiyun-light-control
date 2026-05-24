@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
@@ -1636,6 +1636,23 @@ class LightRig:
             }
         }
 
+    def state_events(
+        self,
+        name: str,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> Iterator[dict[str, object]]:
+        for event in self.controller(name).state_events(
+            after_version=after_version,
+            limit=limit,
+            timeout=timeout,
+            initial=initial,
+        ):
+            yield _fixture_state_event(name, event)
+
     def _selected_fixture_names(
         self,
         names: Iterable[str] | None,
@@ -3198,6 +3215,25 @@ class AsyncLightRig:
             }
         }
 
+    def state_events(
+        self,
+        name: str,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> AsyncIterator[dict[str, object]]:
+        return _async_fixture_state_events(
+            name,
+            self.controller(name).state_events(
+                after_version=after_version,
+                limit=limit,
+                timeout=timeout,
+                initial=initial,
+            ),
+        )
+
     def _selected_fixture_names(
         self,
         names: Iterable[str] | None,
@@ -4265,6 +4301,23 @@ def _state_version(snapshot: Mapping[str, object]) -> int:
 def _state_payload(snapshot: Mapping[str, object]) -> Mapping[str, object] | None:
     raw_state = snapshot.get("state")
     return raw_state if isinstance(raw_state, Mapping) else None
+
+
+def _fixture_state_event(
+    name: str,
+    event: Mapping[str, object],
+) -> dict[str, object]:
+    payload = {str(key): value for key, value in event.items()}
+    payload["fixture"] = name
+    return payload
+
+
+async def _async_fixture_state_events(
+    name: str,
+    events: AsyncIterator[dict[str, object]],
+) -> AsyncIterator[dict[str, object]]:
+    async for event in events:
+        yield _fixture_state_event(name, event)
 
 
 def _all_fixtures_applied(fixture_responses: Mapping[str, object]) -> bool:

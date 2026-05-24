@@ -1385,6 +1385,9 @@ snapshot = rig.snapshot_all(allow_control=True, include_ble_status=True)
 for name, item in snapshot["fixtures"].items():
     summary = item["snapshot"]["summary"]
     print(name, summary["ready_for"], summary["pending_action_ids"])
+
+for event in rig.state_events("key", after_version=0, limit=1):
+    print(event["fixture"], event["version"], event["state"])
 ```
 
 For event-loop based systems, use the async controller directly. This is the

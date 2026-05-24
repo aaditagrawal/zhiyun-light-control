@@ -929,6 +929,39 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(state["key"]["state"]["scene"]["brightness"], 35)
         self.assertEqual(state["fill"]["state"]["scene"]["obj"], 2)
 
+    def test_rig_iterates_fixture_state_events(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [LightFixture("key", obj=1)],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        initial = next(rig.state_events("key", limit=1, timeout=0.1))
+        self.assertEqual(
+            initial,
+            {
+                "fixture": "key",
+                "version": 0,
+                "state": {"scene": None},
+            },
+        )
+
+        rig.apply_scene("key", {"brightness": 10})
+        rig.apply_scene("key", {"brightness": 20})
+        events = list(
+            rig.state_events(
+                "key",
+                after_version=1,
+                limit=1,
+                timeout=0.1,
+                initial=False,
+            )
+        )
+
+        self.assertEqual(events[0]["fixture"], "key")
+        self.assertEqual(events[0]["version"], 2)
+        self.assertEqual(events[0]["state"]["scene"]["brightness"], 20)
+
     def test_apply_scene_map_can_stop_on_first_unconfirmed_fixture(self) -> None:
         key = FakeLight("key", acknowledged=False)
         fill = FakeLight("fill")
@@ -1847,6 +1880,49 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(key.scenes[0].obj, 1)
         self.assertEqual(fill.scenes[0].obj, 2)
         self.assertEqual(fill.scenes[0].brightness, 45)
+
+    async def test_async_rig_iterates_fixture_state_events(self) -> None:
+        key = AsyncFakeLight("key")
+        rig = AsyncLightRig(
+            [
+                LightFixture(
+                    "key",
+                    LightConnectionConfig(transport="ble", name_contains="KEY"),
+                    obj=1,
+                )
+            ],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        initial_events: list[dict[str, object]] = []
+        async for event in rig.state_events("key", limit=1, timeout=0.1):
+            initial_events.append(event)
+        self.assertEqual(
+            initial_events,
+            [
+                {
+                    "fixture": "key",
+                    "version": 0,
+                    "state": {"scene": None},
+                }
+            ],
+        )
+
+        await rig.apply_scene("key", {"brightness": 10})
+        await rig.apply_scene("key", {"brightness": 20})
+        events: list[dict[str, object]] = []
+        async for event in rig.state_events(
+            "key",
+            after_version=1,
+            limit=1,
+            timeout=0.1,
+            initial=False,
+        ):
+            events.append(event)
+
+        self.assertEqual(events[0]["fixture"], "key")
+        self.assertEqual(events[0]["version"], 2)
+        self.assertEqual(events[0]["state"]["scene"]["brightness"], 20)
 
     async def test_async_rig_direct_primitives_use_fixture_object_ids(self) -> None:
         key = AsyncFakeLight("key")
