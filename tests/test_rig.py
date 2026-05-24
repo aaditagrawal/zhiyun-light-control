@@ -1256,6 +1256,91 @@ class LightRigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "profile_dir must be a relative path"):
             rig_profile_bundle_mapping(rig, profile_dir="/tmp/profiles")
 
+    def test_save_setup_profile_bundle_runs_full_setup_flow(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "usb",
+                        "port": "/dev/cu.key",
+                        "obj": 2,
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "obj": 3,
+                        "tags": ["set"],
+                    },
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        calls: list[tuple[LightConnectionConfig, dict[str, object]]] = []
+
+        def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            calls.append((config, dict(kwargs)))
+            return {
+                "ok": True,
+                "config": config.to_dict(),
+                "route_confirmed": True,
+                "require_confirmed_route": True,
+                "status_ok": True,
+                "status_error": None,
+                "ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_unconfirmed": ["set_brightness"],
+                "summary": {"ok": True, "errors": []},
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch(
+                "zhiyun_light_control.integration.local_setup_report",
+                side_effect=fake_report,
+            ):
+                output = rig.save_setup_profile_bundle(
+                    root / "show" / "rig.json",
+                    tag="set",
+                    include_ble=True,
+                    persistent=True,
+                    profile_dir="setup",
+                    require_setup_profile_controls=True,
+                )
+            restored = load_rig(output["rig_path"])
+
+        self.assertEqual(
+            [config.transport for config, _kwargs in calls],
+            ["usb", "ble"],
+        )
+        self.assertTrue(all(kwargs["include_ble"] for _config, kwargs in calls))
+        self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
+        self.assertTrue(restored.require_setup_profile_controls)
+        self.assertTrue(restored.require_setup_profile("key", "read_status").ok)
+        self.assertTrue(restored.require_setup_profile("fill", "read_status").ok)
+        self.assertEqual(
+            output["mapping"]["fixtures"][0]["profile_path"],
+            "setup/key.json",
+        )
+        self.assertEqual(
+            output["mapping"]["fixtures"][1]["profile_path"],
+            "setup/fill.json",
+        )
+
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):
             LightRig([{"name": "key"}, {"name": "key"}])
@@ -1938,6 +2023,81 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(profiled.fixture("fill").config.name_contains, "FILL")
         self.assertEqual(profiled.fixture("key").obj, 4)
         self.assertTrue(profiled.require_setup_profile("key", "read_status").ok)
+
+    async def test_async_setup_profile_bundle_runs_full_setup_flow(
+        self,
+    ) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "ble",
+                        "name_contains": "KEY",
+                        "obj": 4,
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "obj": 5,
+                        "tags": ["set"],
+                    },
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        calls: list[tuple[LightConnectionConfig, dict[str, object]]] = []
+
+        async def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            calls.append((config, dict(kwargs)))
+            return {
+                "ok": True,
+                "config": config.to_dict(),
+                "route_confirmed": True,
+                "require_confirmed_route": True,
+                "status_ok": True,
+                "status_error": None,
+                "ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_unconfirmed": ["set_brightness"],
+                "summary": {"ok": True, "errors": []},
+            }
+
+        with patch(
+            "zhiyun_light_control.integration.local_async_setup_report",
+            side_effect=fake_report,
+        ):
+            bundle = await rig.setup_profile_bundle(
+                tag="set",
+                include_ble=True,
+                persistent=True,
+                profile_dir="setup",
+                require_setup_profile_controls=True,
+            )
+
+        self.assertEqual(
+            [config.name_contains for config, _kwargs in calls],
+            ["KEY", "FILL"],
+        )
+        self.assertTrue(all(kwargs["include_ble"] for _config, kwargs in calls))
+        self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
+        self.assertTrue(bundle["require_setup_profile_controls"])
+        self.assertEqual(bundle["fixtures"][0]["profile_path"], "setup/key.json")
+        self.assertEqual(bundle["fixtures"][1]["profile_path"], "setup/fill.json")
 
 
 def _result(

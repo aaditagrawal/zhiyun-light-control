@@ -1228,6 +1228,9 @@ show runs.
 For repository-friendly project files, `rig_profile_bundle_mapping(...)` and
 `save_rig_profile_bundle(...)` write `rig.json` with relative `profile_path`
 entries plus one profile JSON per fixture.
+For a single setup call that also performs discovery/validation, use
+`rig.setup_profile_bundle(...)` or `rig.save_setup_profile_bundle(...)`; async
+rigs expose the same methods.
 
 Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_transition()`, `plan_sequence()`, `plan_named_cue()`, `plan_all()`,

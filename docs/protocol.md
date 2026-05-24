@@ -358,6 +358,9 @@ profiled rig definition.
 `rig_profile_bundle_mapping(...)` and `save_rig_profile_bundle(...)` produce the
 split-file variant: a rig JSON document with relative `profile_path` entries and
 separate profile JSON files beside it.
+`setup_profile_bundle(...)` and `save_setup_profile_bundle(...)` are the one-call
+setup variants on sync and async rigs: collect evidence, materialize profiles,
+attach them to the rig, and optionally write the split-file bundle.
 Rig planning helpers (`plan_scene`, `plan_preset`, `plan_transition`,
 `plan_sequence`, `plan_named_cue`, and their group variants) also run without
 opening USB/BLE and return exact per-fixture command plans. `execute_plan` sends
