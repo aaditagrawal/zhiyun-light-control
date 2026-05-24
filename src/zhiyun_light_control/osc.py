@@ -234,6 +234,38 @@ class OscLightDispatcher:
                 action="scene",
                 result={"scene": scene.to_dict(), "results": results},
             )
+        if address in {"/zhiyun/transition", "/light/transition"}:
+            scene = _transition_scene_from_args(args, obj=1)
+            start = self._transition_start(scene)
+            steps = _optional_int(args, 4) or 10
+            duration = _optional_number(args, 3)
+            easing = _optional_string(args, 5) or "linear"
+            batches = light.transition_scene(
+                start,
+                scene,
+                steps=steps,
+                duration=1.0 if duration is None else duration,
+                easing=easing,
+            )
+            results = [result for batch in batches for result in batch]
+            self._record_scene(scene, "transition", results)
+            applied = results_confirmed(results)
+            return OscDispatchResult(
+                message=message,
+                action="transition",
+                result={
+                    "from": start.to_dict(),
+                    "scene": scene.to_dict(),
+                    "steps": steps,
+                    "duration": 1.0 if duration is None else duration,
+                    "easing": easing,
+                    "batches": [
+                        [result.to_dict() for result in batch] for batch in batches
+                    ],
+                    "applied": applied,
+                    "reason": None if applied else unconfirmed_results_reason(results),
+                },
+            )
         if address in {"/zhiyun/preset", "/light/preset"}:
             if self.preset_library is None:
                 raise ValueError("no preset file loaded")
@@ -431,6 +463,12 @@ class OscLightDispatcher:
             results=results,
         )
 
+    def _transition_start(self, end: Scene) -> Scene:
+        snapshot = self.state_tracker.snapshot()
+        if snapshot is not None and snapshot.scene.obj == end.obj:
+            return snapshot.scene
+        return Scene(obj=end.obj)
+
 
 def serve_osc(
     *,
@@ -533,6 +571,11 @@ def _scene_from_args(args: tuple[OscArg, ...], *, obj: int) -> Scene:
     return Scene(obj=obj, brightness=brightness, kelvin=kelvin, sleep=sleep)
 
 
+def _transition_scene_from_args(args: tuple[OscArg, ...], *, obj: int) -> Scene:
+    scene_obj = _optional_int(args, 6) or obj
+    return _scene_from_args(args, obj=scene_obj)
+
+
 def _scene_from_step(step: Mapping[str, object], *, obj: int) -> Scene:
     scene_data = step.get("scene", step)
     if not isinstance(scene_data, Mapping):
@@ -556,6 +599,12 @@ def _optional_number(args: tuple[OscArg, ...], index: int) -> float | None:
 def _optional_int(args: tuple[OscArg, ...], index: int) -> int | None:
     value = _optional_number(args, index)
     return int(value) if value is not None else None
+
+
+def _optional_string(args: tuple[OscArg, ...], index: int) -> str | None:
+    if len(args) <= index or args[index] is None:
+        return None
+    return _string_arg(args, index)
 
 
 def _command_result(

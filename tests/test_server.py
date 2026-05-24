@@ -718,6 +718,7 @@ class ServerTests(unittest.TestCase):
                 manifest["setup"]["ble_authorization"]["status_command"],
                 "zlight ble-helper --status --json",
             )
+            self.assertIn("/zhiyun/transition", manifest["osc"]["addresses"])
             self.assertIn("/zhiyun/cue", manifest["osc"]["addresses"])
             self.assertEqual(manifest["dmx"]["artnet"]["default_universe"], 0)
             self.assertIn("sent_no_response", manifest["evidence"]["statuses"])

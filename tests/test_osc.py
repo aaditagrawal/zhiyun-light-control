@@ -22,6 +22,7 @@ class FakeProbe:
 class FakeLight:
     def __init__(self) -> None:
         self.commands: list[int] = []
+        self.transition_calls = []
 
     def __enter__(self) -> FakeLight:
         return self
@@ -52,14 +53,14 @@ class FakeLight:
 
     def transition_scene(
         self,
-        _start,
+        start,
         end,
         *,
         steps: int = 10,
         duration: float = 1.0,
         easing: str = "linear",
     ):
-        del duration, easing
+        self.transition_calls.append((start, end, steps, duration, easing))
         return [self.apply_scene(end) for _ in range(steps)]
 
 
@@ -238,6 +239,48 @@ class OscTests(unittest.TestCase):
         self.assertEqual(state["action"], "cue")
         self.assertFalse(state["applied"])
         self.assertEqual(state["reason"], "sent_no_response")
+
+    def test_dispatch_transition_uses_last_requested_scene_as_start(self) -> None:
+        light = FakeLight()
+        tracker = SceneStateTracker()
+        dispatcher = OscLightDispatcher(
+            lambda: light,
+            allow_control=True,
+            state_tracker=tracker,
+        )
+        dispatcher.dispatch(decode_message(encode_message("/zhiyun/scene", 10.0)))
+
+        result = dispatcher.dispatch(
+            decode_message(
+                encode_message(
+                    "/zhiyun/transition",
+                    40.0,
+                    5600,
+                    None,
+                    0.2,
+                    3,
+                    "ease-in-out",
+                )
+            )
+        )
+
+        self.assertEqual(result.action, "transition")
+        self.assertTrue(result.result["applied"])
+        self.assertEqual(result.result["from"]["brightness"], 10.0)
+        self.assertEqual(result.result["scene"]["kelvin"], 5600)
+        self.assertEqual(result.result["steps"], 3)
+        self.assertAlmostEqual(result.result["duration"], 0.2)
+        self.assertEqual(result.result["easing"], "ease-in-out")
+        start, end, steps, duration, easing = light.transition_calls[0]
+        self.assertEqual(start.brightness, 10.0)
+        self.assertEqual(end.brightness, 40.0)
+        self.assertEqual(steps, 3)
+        self.assertAlmostEqual(duration, 0.2)
+        self.assertEqual(easing, "ease-in-out")
+        state = tracker.to_dict()
+        self.assertEqual(state["action"], "transition")
+        self.assertEqual(state["scene"]["brightness"], 40.0)
+        self.assertTrue(state["applied"])
 
 
 if __name__ == "__main__":

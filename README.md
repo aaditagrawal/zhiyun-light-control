@@ -553,13 +553,16 @@ Supported OSC addresses:
 /zhiyun/rgb          i:red i:green i:blue [i:obj]
 /zhiyun/hsi          f:hue f:saturation i:intensity [i:obj]
 /zhiyun/scene        f:brightness i:kelvin i:sleep [i:obj]
+/zhiyun/transition   f:brightness i:kelvin i:sleep f:duration i:steps s:easing i:obj
 /zhiyun/preset       s:name [i:obj]
 /zhiyun/cue          s:name [i:obj]
 ```
 
 The `/light/...` prefix is accepted as an alias. `/zhiyun/cue` runs a named cue
 loaded by `--cue-file` and records requested state with the same ACK evidence as
-the HTTP cue endpoints.
+the HTTP cue endpoints. `/zhiyun/transition` uses the last requested OSC scene
+for the same object as its start scene when available; pass OSC `nil` for target
+fields you want to leave unspecified.
 
 Art-Net bridge:
 

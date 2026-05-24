@@ -1975,6 +1975,7 @@ def integration_manifest_response(
                 "/zhiyun/rgb",
                 "/zhiyun/hsi",
                 "/zhiyun/scene",
+                "/zhiyun/transition",
                 "/zhiyun/preset",
                 "/zhiyun/cue",
             ],
