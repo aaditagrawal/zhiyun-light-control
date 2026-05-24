@@ -191,6 +191,18 @@ between provisioning sessions. The command stops before provisioning data by
 default; sending provisioning data is persistent mesh setup and should be a
 separate, explicit operation.
 
+Once a session completes, save the JSON output and build the next send artifact
+offline:
+
+```sh
+uv run --extra mesh zlight mesh-provision-plan --session-json session.json --json
+```
+
+The output includes `provisioning_data_pdu_hex`, generated or supplied
+`network_key_hex`, the unicast address, and the derived session/device keys.
+This command is intentionally non-mutating; it only proves the next instruction
+can be constructed from the live session transcript.
+
 If `mesh-session` cannot find the light, run:
 
 ```sh

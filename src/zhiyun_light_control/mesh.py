@@ -121,6 +121,32 @@ class ProvisioningSessionSecrets:
 
 
 @dataclass(frozen=True)
+class ProvisioningDataPlan:
+    pdu: bytes
+    network_key: bytes
+    key_index: int
+    flags: int
+    iv_index: int
+    unicast_address: int
+    secrets: ProvisioningSessionSecrets
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "provisioning_data_pdu_hex": self.pdu.hex(),
+            "network_key_hex": self.network_key.hex(),
+            "key_index": self.key_index,
+            "key_index_hex": f"0x{self.key_index:03x}",
+            "flags": self.flags,
+            "flags_hex": f"0x{self.flags:02x}",
+            "iv_index": self.iv_index,
+            "iv_index_hex": f"0x{self.iv_index:08x}",
+            "unicast_address": self.unicast_address,
+            "unicast_address_hex": f"0x{self.unicast_address:04x}",
+            "session_secrets": self.secrets.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class ProvisioningFailure:
     code: int
 
@@ -287,6 +313,44 @@ def build_provisioning_data(
         bytes([PROVISIONING_DATA]) + encrypted,
     )
     return pdu, secrets
+
+
+def build_provisioning_data_plan(
+    *,
+    shared_secret: bytes,
+    confirmation_inputs: bytes,
+    provisioner_random: bytes,
+    provisionee_random: bytes,
+    network_key: bytes,
+    key_index: int = 0,
+    flags: int = 0,
+    iv_index: int = 0,
+    unicast_address: int = 0x0005,
+) -> ProvisioningDataPlan:
+    pdu, secrets = build_provisioning_data(
+        shared_secret=shared_secret,
+        confirmation_inputs=confirmation_inputs,
+        provisioner_random=provisioner_random,
+        provisionee_random=provisionee_random,
+        network_key=network_key,
+        key_index=key_index,
+        flags=flags,
+        iv_index=iv_index,
+        unicast_address=unicast_address,
+    )
+    return ProvisioningDataPlan(
+        pdu=pdu,
+        network_key=network_key,
+        key_index=key_index,
+        flags=flags,
+        iv_index=iv_index,
+        unicast_address=unicast_address,
+        secrets=secrets,
+    )
+
+
+def generate_network_key() -> bytes:
+    return os.urandom(16)
 
 
 def generate_provisioner_keypair() -> ProvisionerKeypair:

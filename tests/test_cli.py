@@ -2245,7 +2245,81 @@ class CliTests(unittest.TestCase):
         self.assertTrue(payload["confirmation_verified"])
         self.assertEqual(len(fake_session.tx), 5)
         self.assertEqual(payload["provisionee_random_hex"], (b"r" * 16).hex())
+        self.assertEqual(len(payload["confirmation_inputs_hex"]), 290)
         open_session.assert_called_once()
+
+    def test_mesh_provision_plan_builds_offline_pdu_from_session_json(self) -> None:
+        session = {
+            "shared_ecdh_secret_hex": (b"s" * 32).hex(),
+            "confirmation_inputs_hex": bytes(range(145)).hex(),
+            "provisioner_random_hex": (b"q" * 16).hex(),
+            "provisionee_random_hex": (b"r" * 16).hex(),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            path.write_text(json.dumps(session), encoding="utf-8")
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = main(
+                    [
+                        "mesh-provision-plan",
+                        "--session-json",
+                        str(path),
+                        "--network-key-hex",
+                        (b"n" * 16).hex(),
+                        "--key-index",
+                        "1",
+                        "--flags",
+                        "2",
+                        "--iv-index",
+                        "3",
+                        "--unicast-address",
+                        "4",
+                        "--json",
+                    ]
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertTrue(payload["offline"])
+        self.assertEqual(payload["plan"]["network_key_hex"], (b"n" * 16).hex())
+        self.assertEqual(payload["plan"]["key_index"], 1)
+        self.assertEqual(payload["plan"]["flags"], 2)
+        self.assertEqual(payload["plan"]["iv_index"], 3)
+        self.assertEqual(payload["plan"]["unicast_address"], 4)
+        self.assertTrue(payload["plan"]["provisioning_data_pdu_hex"].startswith("0307"))
+
+    def test_mesh_provision_plan_requires_new_session_transcript_field(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "session.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "shared_ecdh_secret_hex": (b"s" * 32).hex(),
+                        "provisioner_random_hex": (b"q" * 16).hex(),
+                        "provisionee_random_hex": (b"r" * 16).hex(),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with contextlib.redirect_stdout(stdout):
+                code = main(
+                    [
+                        "mesh-provision-plan",
+                        "--session-json",
+                        str(path),
+                        "--network-key-hex",
+                        (b"n" * 16).hex(),
+                        "--json",
+                    ]
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 2)
+        self.assertFalse(payload["ok"])
+        self.assertIn("confirmation_inputs_hex", payload["error"])
 
     def test_ble_helper_reports_helper_and_opens_settings(self) -> None:
         stdout = io.StringIO()

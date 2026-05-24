@@ -121,7 +121,9 @@ can compute confirmation/random frames from the live provisionee public key
 without dropping the BLE bearer. `mesh.py` owns the Bluetooth Mesh provisioning
 crypto needed for the next state transition: confirmation inputs, AES-CMAC
 based salts/keys, provisioner confirmation/random, session nonce/key, device
-key, and encrypted provisioning data.
+key, and encrypted provisioning data. `mesh-provision-plan` exposes the
+encrypted provisioning-data step as an offline artifact builder so the SDK can
+verify the exact PDU before any persistent mesh setup command is added.
 
 ## Planning and Transitions
 

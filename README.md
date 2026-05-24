@@ -215,6 +215,7 @@ uv run zlight test-ble-endpoints --name-contains MOLUS --json
 uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
 uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
 uv run --extra mesh zlight mesh-session --name-contains PL103 --json
+uv run --extra mesh zlight mesh-provision-plan --session-json session.json --json
 ```
 
 `mesh-probe` sends a Bluetooth Mesh provisioning invite on `1827/2ADB` and
@@ -232,6 +233,11 @@ not a finished light-output command.
 frames, computed after the G60 returns its public key and sent on the same BLE
 connection. It intentionally stops before provisioning data, so it does not
 persistently add the light to a generated mesh network.
+
+`mesh-provision-plan` is the next offline builder: it consumes a complete
+`mesh-session` JSON transcript and derives the encrypted provisioning-data PDU,
+network key metadata, session nonce/key, and device key. It does not send
+anything to the light; sending that PDU is a later explicit provisioning step.
 
 When BLE discovery unexpectedly returns no Zhiyun devices on macOS, widen the
 scan before changing protocol code:

@@ -54,11 +54,13 @@ from .macos_ble_app import (
 from .mesh import (
     build_provisioner_confirmation,
     build_provisioner_random,
+    build_provisioning_data_plan,
     build_provisioning_invite,
     build_provisioning_public_key,
     build_provisioning_start_no_oob,
     confirmation_inputs,
     derive_shared_ecdh_secret,
+    generate_network_key,
     generate_provisioner_keypair,
     generate_provisioning_random,
     parse_provisioning_capabilities,
@@ -513,6 +515,35 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print compact JSON.",
     )
     mesh_session.set_defaults(func=cmd_mesh_session)
+
+    mesh_provision_plan = sub.add_parser(
+        "mesh-provision-plan",
+        help="Build the next BLE Mesh provisioning-data PDU without sending it.",
+    )
+    mesh_provision_plan.add_argument(
+        "--session-json",
+        required=True,
+        help="mesh-session JSON path, or '-' to read from stdin.",
+    )
+    mesh_provision_plan.add_argument(
+        "--network-key-hex",
+        type=parse_hex_bytes,
+        help="16-byte Bluetooth Mesh network key. Generated if omitted.",
+    )
+    mesh_provision_plan.add_argument("--key-index", type=parse_int, default=0)
+    mesh_provision_plan.add_argument("--flags", type=parse_int, default=0)
+    mesh_provision_plan.add_argument("--iv-index", type=parse_int, default=0)
+    mesh_provision_plan.add_argument(
+        "--unicast-address",
+        type=parse_int,
+        default=0x0005,
+    )
+    mesh_provision_plan.add_argument(
+        "--json",
+        action="store_true",
+        help="Print compact JSON.",
+    )
+    mesh_provision_plan.set_defaults(func=cmd_mesh_provision_plan)
 
     helper = sub.add_parser(
         "ble-helper",
@@ -1470,6 +1501,7 @@ def cmd_mesh_session(args: argparse.Namespace) -> int:
         "capabilities": capabilities,
         "provisionee_public_key": provisionee_public_key,
         "shared_ecdh_secret_hex": shared_secret.hex() if shared_secret else None,
+        "confirmation_inputs_hex": inputs.hex() if inputs else None,
         "provisionee_confirmation_hex": (
             provisionee_confirmation.hex() if provisionee_confirmation else None
         ),
@@ -1486,6 +1518,73 @@ def cmd_mesh_session(args: argparse.Namespace) -> int:
     }
     print_json(payload, compact=args.json)
     return 0 if payload["ok"] else 2
+
+
+def cmd_mesh_provision_plan(args: argparse.Namespace) -> int:
+    try:
+        session = load_mesh_session_payload(args.session_json)
+        shared_secret = required_hex_field(session, "shared_ecdh_secret_hex")
+        inputs = required_hex_field(session, "confirmation_inputs_hex")
+        provisioner_random = required_hex_field(session, "provisioner_random_hex")
+        provisionee_random = required_hex_field(session, "provisionee_random_hex")
+        network_key = args.network_key_hex or generate_network_key()
+        plan = build_provisioning_data_plan(
+            shared_secret=shared_secret,
+            confirmation_inputs=inputs,
+            provisioner_random=provisioner_random,
+            provisionee_random=provisionee_random,
+            network_key=network_key,
+            key_index=args.key_index,
+            flags=args.flags,
+            iv_index=args.iv_index,
+            unicast_address=args.unicast_address,
+        )
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        payload = {
+            "ok": False,
+            "error": str(exc),
+            "hint": (
+                "Run mesh-session with this SDK version and pass its complete "
+                "JSON output to --session-json."
+            ),
+        }
+        print_json(payload, compact=args.json)
+        return 2
+
+    payload = {
+        "ok": True,
+        "action": "mesh_provision_plan",
+        "offline": True,
+        "send_warning": (
+            "This PDU is persistent only if it is sent to the provisioning "
+            "characteristic; this command does not send it."
+        ),
+        "plan": plan.to_dict(),
+    }
+    print_json(payload, compact=args.json)
+    return 0
+
+
+def load_mesh_session_payload(path: str) -> dict[str, object]:
+    if path == "-":
+        text = sys.stdin.read()
+    else:
+        with open(path, encoding="utf-8") as stream:
+            text = stream.read()
+    payload = json.loads(text)
+    if not isinstance(payload, dict):
+        raise ValueError("mesh-session JSON must be an object")
+    return payload
+
+
+def required_hex_field(payload: dict[str, object], name: str) -> bytes:
+    value = payload.get(name)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"mesh-session JSON is missing {name}")
+    try:
+        return bytes.fromhex(value)
+    except ValueError as exc:
+        raise ValueError(f"mesh-session field {name} is not valid hex") from exc
 
 
 def cmd_devices(args: argparse.Namespace) -> int:

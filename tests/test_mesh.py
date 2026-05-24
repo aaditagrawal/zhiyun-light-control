@@ -10,10 +10,12 @@ from zhiyun_light_control.mesh import (
     build_provisioner_confirmation,
     build_provisioner_random,
     build_provisioning_data,
+    build_provisioning_data_plan,
     build_provisioning_invite,
     build_provisioning_public_key,
     build_provisioning_start_no_oob,
     confirmation_inputs,
+    generate_network_key,
     mesh_k1,
     mesh_salt,
     parse_mesh_proxy_pdu,
@@ -178,6 +180,31 @@ class MeshProvisioningTests(unittest.TestCase):
             ),
             secrets,
         )
+
+    def test_provisioning_data_plan_serializes_offline_send_artifact(self) -> None:
+        plan = build_provisioning_data_plan(
+            shared_secret=bytes(range(32)),
+            confirmation_inputs=bytes(range(145)),
+            provisioner_random=bytes(range(16)),
+            provisionee_random=bytes(range(16, 32)),
+            network_key=bytes(range(32, 48)),
+            key_index=1,
+            flags=2,
+            iv_index=3,
+            unicast_address=4,
+        )
+
+        payload = plan.to_dict()
+        self.assertEqual(plan.pdu[:2], bytes.fromhex("0307"))
+        self.assertEqual(payload["network_key_hex"], bytes(range(32, 48)).hex())
+        self.assertEqual(payload["key_index_hex"], "0x001")
+        self.assertEqual(payload["flags_hex"], "0x02")
+        self.assertEqual(payload["iv_index_hex"], "0x00000003")
+        self.assertEqual(payload["unicast_address_hex"], "0x0004")
+        self.assertIn("session_key_hex", payload["session_secrets"])
+
+    def test_generate_network_key_returns_mesh_key_size(self) -> None:
+        self.assertEqual(len(generate_network_key()), 16)
 
     def test_mesh_crypto_helpers_match_known_shapes(self) -> None:
         self.assertEqual(len(aes_cmac(b"abc", b"\x00" * 16)), 16)
