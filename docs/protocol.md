@@ -361,6 +361,10 @@ separate profile JSON files beside it.
 `setup_profile_bundle(...)` and `save_setup_profile_bundle(...)` are the one-call
 setup variants on sync and async rigs: collect evidence, materialize profiles,
 attach them to the rig, and optionally write the split-file bundle.
+Rigs also expose direct named-fixture primitives (`register`, `read_brightness`,
+`read_cct`, `read_sleep`, `set_brightness`, `set_cct`, `set_sleep`, `set_rgb`,
+and `set_hsi`) plus group write helpers such as `set_brightness_all` and
+`set_sleep_all`; async rigs expose matching awaitable methods.
 Rig planning helpers (`plan_scene`, `plan_preset`, `plan_transition`,
 `plan_sequence`, `plan_named_cue`, and their group variants) also run without
 opening USB/BLE and return exact per-fixture command plans. `execute_plan` sends

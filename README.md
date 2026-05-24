@@ -1232,6 +1232,12 @@ For a single setup call that also performs discovery/validation, use
 `rig.setup_profile_bundle(...)` or `rig.save_setup_profile_bundle(...)`; async
 rigs expose the same methods.
 
+For direct named-fixture SDK control, rigs expose `register()`, `read_brightness()`,
+`read_cct()`, `read_sleep()`, `set_brightness()`, `set_cct()`, `set_sleep()`,
+`set_rgb()`, and `set_hsi()`. Group helpers such as `set_brightness_all()` and
+`set_sleep_all()` target selected fixture names or tags; async rigs expose the
+same primitives with `await`.
+
 Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_transition()`, `plan_sequence()`, `plan_named_cue()`, `plan_all()`,
 `plan_scene_map()`, or `plan_named_cue_all()` to preview exact per-fixture
@@ -1249,8 +1255,9 @@ profile evidence before opening the transport, or
 operation name. Pass `require_setup_profile_controls=True` to `LightRig`,
 `AsyncLightRig`, or the rig JSON root when all apply helpers should refuse
 unverified fixture control writes before opening USB or BLE. Individual
-`apply_scene()`, `apply_preset()`, `apply_all()`, `apply_scene_map()`, and
-`blackout()` calls also accept `require_setup_profile=True`.
+direct primitive, `apply_scene()`, `apply_preset()`, `apply_all()`,
+`apply_scene_map()`, and `blackout()` calls also accept
+`require_setup_profile=True`.
 
 For host applications that need one structured preflight payload for a full
 fixture group, use the rig snapshot API. It returns the same manifest,

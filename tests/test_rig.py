@@ -53,6 +53,7 @@ class FakeLight:
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.primitive_calls: list[tuple[str, int, object, int]] = []
         self.prebuilt_frames: list[bytes] = []
         self.payloads: list[tuple[int, bytes]] = []
 
@@ -74,6 +75,64 @@ class FakeLight:
         self.scenes.append(scene)
         self.control_modes.append(control_mode)
         return [_result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)]
+
+    def set_brightness(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("brightness", obj, value, control_mode))
+        return _result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)
+
+    def set_cct(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("cct", obj, kelvin, control_mode))
+        return _result(RuntimeCommand.CCT, acknowledged=self.acknowledged)
+
+    def set_sleep(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("sleep", obj, value, control_mode))
+        return _result(RuntimeCommand.SLEEP, acknowledged=self.acknowledged)
+
+    def set_rgb(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("rgb", obj, (red, green, blue), control_mode)
+        )
+        return _result(RuntimeCommand.RGB, acknowledged=self.acknowledged)
+
+    def set_hsi(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("hsi", obj, (hue, saturation, intensity), control_mode)
+        )
+        return _result(RuntimeCommand.HSI, acknowledged=self.acknowledged)
 
     def exchange_runtime(
         self,
@@ -118,6 +177,7 @@ class AsyncFakeLight:
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.primitive_calls: list[tuple[str, int, object, int]] = []
         self.prebuilt_frames: list[bytes] = []
         self.payloads: list[tuple[int, bytes]] = []
 
@@ -139,6 +199,64 @@ class AsyncFakeLight:
         self.scenes.append(scene)
         self.control_modes.append(control_mode)
         return [_result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)]
+
+    async def set_brightness(
+        self,
+        obj: int,
+        value: float,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("brightness", obj, value, control_mode))
+        return _result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)
+
+    async def set_cct(
+        self,
+        obj: int,
+        kelvin: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("cct", obj, kelvin, control_mode))
+        return _result(RuntimeCommand.CCT, acknowledged=self.acknowledged)
+
+    async def set_sleep(
+        self,
+        obj: int,
+        value: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(("sleep", obj, value, control_mode))
+        return _result(RuntimeCommand.SLEEP, acknowledged=self.acknowledged)
+
+    async def set_rgb(
+        self,
+        obj: int,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("rgb", obj, (red, green, blue), control_mode)
+        )
+        return _result(RuntimeCommand.RGB, acknowledged=self.acknowledged)
+
+    async def set_hsi(
+        self,
+        obj: int,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("hsi", obj, (hue, saturation, intensity), control_mode)
+        )
+        return _result(RuntimeCommand.HSI, acknowledged=self.acknowledged)
 
     async def exchange_runtime(
         self,
@@ -616,6 +734,8 @@ class LightRigTests(unittest.TestCase):
         with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
             rig.apply_scene("key", {"brightness": 35})
         with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            rig.set_brightness("key", 35)
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
             rig.apply_preset("key", "look")
         with self.assertRaisesRegex(RigConfigError, "no setup profile"):
             LightRig(
@@ -628,6 +748,71 @@ class LightRigTests(unittest.TestCase):
         self.assertTrue(mapped.require_setup_profile_controls)
         self.assertTrue(mapped.to_dict()["require_setup_profile_controls"])
         self.assertEqual(key.scenes, [])
+
+    def test_rig_direct_primitives_use_fixture_object_ids(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [LightFixture("key", obj=7)],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        register = rig.register("key", device_id=2, group_id=3)
+        brightness = rig.set_brightness("key", 35, control_mode=0x01)
+        cct = rig.set_cct("key", 5600, control_mode=0x01)
+        sleep = rig.set_sleep("key", 1, control_mode=0x01)
+        rgb = rig.set_rgb("key", 255, 180, 120, control_mode=0x01)
+        hsi = rig.set_hsi("key", 30.0, 0.5, 40, control_mode=0x01)
+        read = rig.read_brightness("key")
+
+        self.assertTrue(register["ok"])
+        self.assertEqual(brightness["fixture"], "key")
+        self.assertEqual(brightness["scene"]["obj"], 7)
+        self.assertTrue(cct["applied"])
+        self.assertEqual(sleep["scene"]["sleep"], 1)
+        self.assertEqual(rgb["action"], "set_rgb")
+        self.assertEqual(hsi["scene"]["hue"], 30.0)
+        self.assertTrue(read["ok"])
+        self.assertEqual(read["action"], "read_brightness")
+        self.assertEqual(
+            key.primitive_calls,
+            [
+                ("brightness", 7, 35, 0x01),
+                ("cct", 7, 5600, 0x01),
+                ("sleep", 7, 1, 0x01),
+                ("rgb", 7, (255, 180, 120), 0x01),
+                ("hsi", 7, (30.0, 0.5, 40), 0x01),
+            ],
+        )
+        self.assertEqual(
+            dict(key.payloads)[RuntimeCommand.BRIGHTNESS][:2],
+            b"\x07\x00",
+        )
+
+    def test_rig_direct_primitive_all_targets_tags_and_stops(self) -> None:
+        key = FakeLight("key", acknowledged=False)
+        fill = FakeLight("fill")
+        desk = FakeLight("desk")
+        rig = LightRig(
+            [
+                LightFixture("key", obj=1, tags=("stage",)),
+                LightFixture("fill", obj=2, tags=("stage",)),
+                LightFixture("desk", obj=3, tags=("desk",)),
+            ],
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+                "desk": FakeFactory(desk),
+            },
+        )
+
+        response = rig.set_sleep_all(1, tag="stage", stop_on_unconfirmed=True)
+
+        self.assertFalse(response["applied"])
+        self.assertTrue(response["stopped"])
+        self.assertEqual(response["reason"], "key:sent_no_response")
+        self.assertEqual(key.primitive_calls, [("sleep", 1, 1, 0x33)])
+        self.assertEqual(fill.primitive_calls, [])
+        self.assertEqual(desk.primitive_calls, [])
 
     def test_rig_apply_all_can_require_setup_profile_per_call(self) -> None:
         key = FakeLight("key")
@@ -1655,6 +1840,75 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(key.scenes[0].obj, 1)
         self.assertEqual(fill.scenes[0].obj, 2)
         self.assertEqual(fill.scenes[0].brightness, 45)
+
+    async def test_async_rig_direct_primitives_use_fixture_object_ids(self) -> None:
+        key = AsyncFakeLight("key")
+        rig = AsyncLightRig(
+            [LightFixture("key", obj=6)],
+            light_factories={"key": FakeFactory(key)},
+        )
+
+        register = await rig.register("key", device_id=2, group_id=3)
+        brightness = await rig.set_brightness("key", 35, control_mode=0x01)
+        cct = await rig.set_cct("key", 5600, control_mode=0x01)
+        sleep = await rig.set_sleep("key", 1, control_mode=0x01)
+        rgb = await rig.set_rgb("key", 255, 180, 120, control_mode=0x01)
+        hsi = await rig.set_hsi("key", 30.0, 0.5, 40, control_mode=0x01)
+        read = await rig.read_brightness("key")
+
+        self.assertTrue(register["ok"])
+        self.assertEqual(brightness["fixture"], "key")
+        self.assertEqual(brightness["scene"]["obj"], 6)
+        self.assertTrue(cct["applied"])
+        self.assertEqual(sleep["scene"]["sleep"], 1)
+        self.assertEqual(rgb["action"], "set_rgb")
+        self.assertEqual(hsi["scene"]["hue"], 30.0)
+        self.assertTrue(read["ok"])
+        self.assertEqual(read["action"], "read_brightness")
+        self.assertEqual(
+            key.primitive_calls,
+            [
+                ("brightness", 6, 35, 0x01),
+                ("cct", 6, 5600, 0x01),
+                ("sleep", 6, 1, 0x01),
+                ("rgb", 6, (255, 180, 120), 0x01),
+                ("hsi", 6, (30.0, 0.5, 40), 0x01),
+            ],
+        )
+        self.assertEqual(
+            dict(key.payloads)[RuntimeCommand.BRIGHTNESS][:2],
+            b"\x06\x00",
+        )
+
+    async def test_async_direct_primitive_all_targets_tags_and_stops(self) -> None:
+        key = AsyncFakeLight("key", acknowledged=False)
+        fill = AsyncFakeLight("fill")
+        desk = AsyncFakeLight("desk")
+        rig = AsyncLightRig(
+            [
+                LightFixture("key", obj=1, tags=("stage",)),
+                LightFixture("fill", obj=2, tags=("stage",)),
+                LightFixture("desk", obj=3, tags=("desk",)),
+            ],
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+                "desk": FakeFactory(desk),
+            },
+        )
+
+        response = await rig.set_sleep_all(
+            1,
+            tag="stage",
+            stop_on_unconfirmed=True,
+        )
+
+        self.assertFalse(response["applied"])
+        self.assertTrue(response["stopped"])
+        self.assertEqual(response["reason"], "key:sent_no_response")
+        self.assertEqual(key.primitive_calls, [("sleep", 1, 1, 0x33)])
+        self.assertEqual(fill.primitive_calls, [])
+        self.assertEqual(desk.primitive_calls, [])
 
     async def test_async_blackout_targets_tagged_fixtures(self) -> None:
         key = AsyncFakeLight("key")

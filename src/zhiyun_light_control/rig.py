@@ -1117,6 +1117,208 @@ class LightRig:
         )
         return {"fixture": name, **response}
 
+    def register(
+        self,
+        name: str,
+        device_id: int = 0,
+        group_id: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "register",
+            require_setup_profile,
+        )
+        response = self.controller(name).register(
+            device_id=device_id,
+            group_id=group_id,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    def read_brightness(
+        self,
+        name: str,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "read_brightness",
+            require_setup_profile,
+        )
+        response = self.controller(name).read_brightness(
+            obj=fixture.obj,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    def read_cct(
+        self,
+        name: str,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "read_cct",
+            require_setup_profile,
+        )
+        response = self.controller(name).read_cct(
+            obj=fixture.obj,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    def read_sleep(
+        self,
+        name: str,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "read_sleep",
+            require_setup_profile,
+        )
+        response = self.controller(name).read_sleep(
+            obj=fixture.obj,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    def set_brightness(
+        self,
+        name: str,
+        value: float,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_brightness",
+            require_setup_profile,
+        )
+        response = self.controller(name).set_brightness(
+            value,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    def set_cct(
+        self,
+        name: str,
+        kelvin: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_cct",
+            require_setup_profile,
+        )
+        response = self.controller(name).set_cct(
+            kelvin,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    def set_sleep(
+        self,
+        name: str,
+        value: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_sleep",
+            require_setup_profile,
+        )
+        response = self.controller(name).set_sleep(
+            value,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    def set_rgb(
+        self,
+        name: str,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_rgb",
+            require_setup_profile,
+        )
+        response = self.controller(name).set_rgb(
+            red,
+            green,
+            blue,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    def set_hsi(
+        self,
+        name: str,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_hsi",
+            require_setup_profile,
+        )
+        response = self.controller(name).set_hsi(
+            hue,
+            saturation,
+            intensity,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
     def apply_preset(
         self,
         name: str,
@@ -1188,6 +1390,149 @@ class LightRig:
                 stopped = True
                 break
         return _rig_response("rig_execute_plan_map", responses, stopped=stopped)
+
+    def set_brightness_all(
+        self,
+        value: float,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.set_brightness(
+                name,
+                value,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_brightness_all", responses, stopped=stopped)
+
+    def set_cct_all(
+        self,
+        kelvin: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.set_cct(
+                name,
+                kelvin,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_cct_all", responses, stopped=stopped)
+
+    def set_sleep_all(
+        self,
+        value: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.set_sleep(
+                name,
+                value,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_sleep_all", responses, stopped=stopped)
+
+    def set_rgb_all(
+        self,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.set_rgb(
+                name,
+                red,
+                green,
+                blue,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_rgb_all", responses, stopped=stopped)
+
+    def set_hsi_all(
+        self,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.set_hsi(
+                name,
+                hue,
+                saturation,
+                intensity,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_hsi_all", responses, stopped=stopped)
 
     def apply_all(
         self,
@@ -2333,6 +2678,208 @@ class AsyncLightRig:
         )
         return {"fixture": name, **response}
 
+    async def register(
+        self,
+        name: str,
+        device_id: int = 0,
+        group_id: int = 0,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "register",
+            require_setup_profile,
+        )
+        response = await self.controller(name).register(
+            device_id=device_id,
+            group_id=group_id,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    async def read_brightness(
+        self,
+        name: str,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "read_brightness",
+            require_setup_profile,
+        )
+        response = await self.controller(name).read_brightness(
+            obj=fixture.obj,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    async def read_cct(
+        self,
+        name: str,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "read_cct",
+            require_setup_profile,
+        )
+        response = await self.controller(name).read_cct(
+            obj=fixture.obj,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    async def read_sleep(
+        self,
+        name: str,
+        *,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "read_sleep",
+            require_setup_profile,
+        )
+        response = await self.controller(name).read_sleep(
+            obj=fixture.obj,
+            require_acknowledged=require_acknowledged,
+        )
+        return _fixture_command_response(name, response)
+
+    async def set_brightness(
+        self,
+        name: str,
+        value: float,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_brightness",
+            require_setup_profile,
+        )
+        response = await self.controller(name).set_brightness(
+            value,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    async def set_cct(
+        self,
+        name: str,
+        kelvin: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_cct",
+            require_setup_profile,
+        )
+        response = await self.controller(name).set_cct(
+            kelvin,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    async def set_sleep(
+        self,
+        name: str,
+        value: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_sleep",
+            require_setup_profile,
+        )
+        response = await self.controller(name).set_sleep(
+            value,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    async def set_rgb(
+        self,
+        name: str,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_rgb",
+            require_setup_profile,
+        )
+        response = await self.controller(name).set_rgb(
+            red,
+            green,
+            blue,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    async def set_hsi(
+        self,
+        name: str,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "set_hsi",
+            require_setup_profile,
+        )
+        response = await self.controller(name).set_hsi(
+            hue,
+            saturation,
+            intensity,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
     async def apply_preset(
         self,
         name: str,
@@ -2404,6 +2951,149 @@ class AsyncLightRig:
                 stopped = True
                 break
         return _rig_response("rig_execute_plan_map", responses, stopped=stopped)
+
+    async def set_brightness_all(
+        self,
+        value: float,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.set_brightness(
+                name,
+                value,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_brightness_all", responses, stopped=stopped)
+
+    async def set_cct_all(
+        self,
+        kelvin: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.set_cct(
+                name,
+                kelvin,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_cct_all", responses, stopped=stopped)
+
+    async def set_sleep_all(
+        self,
+        value: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.set_sleep(
+                name,
+                value,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_sleep_all", responses, stopped=stopped)
+
+    async def set_rgb_all(
+        self,
+        red: int,
+        green: int,
+        blue: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.set_rgb(
+                name,
+                red,
+                green,
+                blue,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_rgb_all", responses, stopped=stopped)
+
+    async def set_hsi_all(
+        self,
+        hue: float,
+        saturation: float,
+        intensity: int,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.set_hsi(
+                name,
+                hue,
+                saturation,
+                intensity,
+                control_mode=control_mode,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and _fixture_response_unconfirmed(response):
+                stopped = True
+                break
+        return _rig_response("rig_set_hsi_all", responses, stopped=stopped)
 
     async def apply_all(
         self,
@@ -3242,6 +3932,20 @@ def _rig_response(
     }
 
 
+def _fixture_command_response(
+    name: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    acknowledged = payload.get("acknowledged") is True
+    reason = payload.get("transport_status")
+    return {
+        "fixture": name,
+        **dict(payload),
+        "ok": acknowledged,
+        "reason": "acknowledged" if acknowledged else reason,
+    }
+
+
 def _fixture_plan_response(
     fixture: LightFixture,
     payload: Mapping[str, object],
@@ -3565,9 +4269,21 @@ def _fixture_response_applied(response: object) -> bool:
         return False
     if "applied" in response:
         return response.get("applied") is True
+    if "acknowledged" in response:
+        return response.get("acknowledged") is True
     if "probe" in response:
         return True
     return response.get("ok") is not False
+
+
+def _fixture_response_unconfirmed(response: object) -> bool:
+    if not isinstance(response, Mapping):
+        return True
+    if "applied" in response:
+        return response.get("applied") is not True
+    if "acknowledged" in response:
+        return response.get("acknowledged") is not True
+    return response.get("ok") is False
 
 
 def _rig_reason(fixture_responses: Mapping[str, object]) -> str:
