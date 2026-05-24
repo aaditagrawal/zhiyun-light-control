@@ -822,6 +822,9 @@ into a host integration while requiring capabilities up front. Integrations
 created this way retain the profile evidence as `setup_profile_evidence` and
 expose `setup_profile_primitive_ready()` plus
 `require_setup_profile_primitive()` for fail-fast show-control guards.
+Pass `require_controls=True` to `from_setup_profile()` or
+`with_setup_profile()` when all direct SDK primitive helpers should use that
+saved profile gate before opening USB or BLE.
 The integration facade also exposes direct control helpers:
 `register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
 `set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,
@@ -832,8 +835,10 @@ The integration facade also exposes direct control helpers:
 readiness preflight. Pass `require_setup_profile=True` when an integration was
 created from `with_setup_profile()` or `from_setup_profile()` and the helper
 should fail before opening USB/BLE unless the saved setup evidence permits that
-primitive. Missing profile evidence raises `SetupProfileMissing`; unready
-primitive evidence raises `SetupProfileNotReady`.
+primitive, or use `require_controls=True` when attaching the profile to make
+that check the default for all primitive helpers. Missing profile evidence
+raises `SetupProfileMissing`; unready primitive evidence raises
+`SetupProfileNotReady`.
 Primitive read responses include decoded `value`, `obj`, and `operation` fields
 when an ACK contains a parseable functional payload, while the raw
 `CommandResult` evidence remains available under `result`. Direct integration
@@ -917,6 +922,7 @@ print(restored_profile.primitive_ready("set_brightness"))
 restored_integration = LightIntegration.from_setup_profile(
     restored_profile,
     require="read_status",
+    require_controls=True,
 )
 print(restored_integration.config.to_dict())
 restored_integration.require_setup_profile_primitive("status")
@@ -924,7 +930,6 @@ if restored_profile.primitive_ready("set_brightness"):
     restored_integration.set_brightness(
         35,
         require_ready=True,
-        require_setup_profile=True,
     )
 
 result = integration.apply_scene(

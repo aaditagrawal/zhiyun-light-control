@@ -105,6 +105,7 @@ class LightIntegration:
     obj: int = 1
     state_tracker: SceneStateTracker = field(default_factory=SceneStateTracker)
     setup_profile_evidence: LightSetupProfile | None = None
+    require_setup_profile_controls: bool = False
 
     def status(self) -> StatusSnapshot:
         return local_status_snapshot(
@@ -118,12 +119,14 @@ class LightIntegration:
         profile: LightSetupProfile,
         *,
         require: str | Iterable[str] = (),
+        require_controls: bool = False,
         **options: object,
     ) -> LightIntegration:
         profile.require_ready(*_profile_requirements(require))
         return cls(
             config=profile.config,
             setup_profile_evidence=profile,
+            require_setup_profile_controls=require_controls,
             **options,
         )
 
@@ -437,9 +440,19 @@ class LightIntegration:
         profile: LightSetupProfile,
         *,
         require: str | Iterable[str] = (),
+        require_controls: bool | None = None,
     ) -> LightIntegration:
         profile.require_ready(*_profile_requirements(require))
-        return replace(self, config=profile.config, setup_profile_evidence=profile)
+        return replace(
+            self,
+            config=profile.config,
+            setup_profile_evidence=profile,
+            require_setup_profile_controls=(
+                self.require_setup_profile_controls
+                if require_controls is None
+                else require_controls
+            ),
+        )
 
     def require_setup_profile(self, *capabilities: str) -> LightSetupProfile:
         if self.setup_profile_evidence is None:
@@ -1373,7 +1386,7 @@ class LightIntegration:
         primitive: str,
         require_setup_profile: bool,
     ) -> None:
-        if require_setup_profile:
+        if require_setup_profile or self.require_setup_profile_controls:
             self.require_setup_profile_primitive(primitive)
 
 
@@ -1393,6 +1406,7 @@ class AsyncLightIntegration:
     obj: int = 1
     state_tracker: SceneStateTracker = field(default_factory=SceneStateTracker)
     setup_profile_evidence: LightSetupProfile | None = None
+    require_setup_profile_controls: bool = False
 
     async def status(self) -> StatusSnapshot:
         return await local_async_status_snapshot(
@@ -1406,12 +1420,14 @@ class AsyncLightIntegration:
         profile: LightSetupProfile,
         *,
         require: str | Iterable[str] = (),
+        require_controls: bool = False,
         **options: object,
     ) -> AsyncLightIntegration:
         profile.require_ready(*_profile_requirements(require))
         return cls(
             config=profile.config,
             setup_profile_evidence=profile,
+            require_setup_profile_controls=require_controls,
             **options,
         )
 
@@ -1730,9 +1746,19 @@ class AsyncLightIntegration:
         profile: LightSetupProfile,
         *,
         require: str | Iterable[str] = (),
+        require_controls: bool | None = None,
     ) -> AsyncLightIntegration:
         profile.require_ready(*_profile_requirements(require))
-        return replace(self, config=profile.config, setup_profile_evidence=profile)
+        return replace(
+            self,
+            config=profile.config,
+            setup_profile_evidence=profile,
+            require_setup_profile_controls=(
+                self.require_setup_profile_controls
+                if require_controls is None
+                else require_controls
+            ),
+        )
 
     def require_setup_profile(self, *capabilities: str) -> LightSetupProfile:
         if self.setup_profile_evidence is None:
@@ -2666,7 +2692,7 @@ class AsyncLightIntegration:
         primitive: str,
         require_setup_profile: bool,
     ) -> None:
-        if require_setup_profile:
+        if require_setup_profile or self.require_setup_profile_controls:
             self.require_setup_profile_primitive(primitive)
 
 

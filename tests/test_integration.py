@@ -1230,6 +1230,33 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(register["acknowledged"])
         self.assertEqual(light.primitive_calls, [])
 
+    def test_light_integration_can_require_setup_profile_for_all_controls(
+        self,
+    ) -> None:
+        light = FakeControlStatusLight()
+        profile = setup_profile(
+            control_setup=True,
+            object_reads=False,
+            control_writes=False,
+        )
+        integration = LightIntegration(
+            light_factory=FakeFactory(light),
+            obj=2,
+        ).with_setup_profile(profile, require_controls=True)
+
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            integration.set_brightness(35)
+        with self.assertRaisesRegex(SetupProfileNotReady, "object_reads"):
+            integration.read_brightness()
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            integration.apply_scene({"brightness": 10})
+
+        register = integration.register(device_id=1, group_id=2)
+
+        self.assertTrue(integration.require_setup_profile_controls)
+        self.assertTrue(register["acknowledged"])
+        self.assertEqual(light.primitive_calls, [])
+
     def test_light_integration_setup_profile_guard_requires_evidence(self) -> None:
         integration = LightIntegration(
             config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
@@ -1238,6 +1265,14 @@ class IntegrationTests(unittest.TestCase):
 
         with self.assertRaises(SetupProfileMissing):
             integration.set_brightness(35, require_setup_profile=True)
+
+        required = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            light_factory=FakeFactory(FailingLight()),
+            require_setup_profile_controls=True,
+        )
+        with self.assertRaises(SetupProfileMissing):
+            required.set_brightness(35)
 
     def test_light_integration_closes_owned_persistent_controller_factory(self) -> None:
         light = CountingControlStatusLight()
@@ -1837,20 +1872,24 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         integration = LightIntegration.from_setup_profile(
             profile,
             require="read_status",
+            require_controls=True,
             allow_control=True,
             cue_names=("intro",),
         )
         configured = LightIntegration(obj=2).with_setup_profile(
             profile,
             require=("read_status",),
+            require_controls=True,
         )
 
         self.assertEqual(integration.config.port, "/dev/cu.usbmodem21301")
         self.assertIs(integration.setup_profile_evidence, profile)
+        self.assertTrue(integration.require_setup_profile_controls)
         self.assertTrue(integration.allow_control)
         self.assertEqual(integration.cue_names, ("intro",))
         self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
         self.assertIs(configured.setup_profile_evidence, profile)
+        self.assertTrue(configured.require_setup_profile_controls)
         self.assertEqual(configured.obj, 2)
         self.assertTrue(configured.setup_profile_primitive_ready("status"))
         self.assertFalse(
@@ -1945,18 +1984,22 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         integration = AsyncLightIntegration.from_setup_profile(
             profile,
             require="read_status",
+            require_controls=True,
             allow_control=True,
         )
         configured = AsyncLightIntegration(obj=3).with_setup_profile(
             profile,
             require=("read_status",),
+            require_controls=True,
         )
 
         self.assertEqual(integration.config.address, "UUID-1")
         self.assertIs(integration.setup_profile_evidence, profile)
+        self.assertTrue(integration.require_setup_profile_controls)
         self.assertTrue(integration.allow_control)
         self.assertEqual(configured.config.address, "UUID-1")
         self.assertIs(configured.setup_profile_evidence, profile)
+        self.assertTrue(configured.require_setup_profile_controls)
         self.assertEqual(configured.obj, 3)
         self.assertTrue(configured.setup_profile_ready("read_status"))
         self.assertFalse(configured.setup_profile_primitive_ready("read_brightness"))
@@ -2191,6 +2234,34 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(register["acknowledged"])
         self.assertEqual(light.primitive_calls, [])
 
+    async def test_async_light_integration_can_require_setup_profile_for_all_controls(
+        self,
+    ) -> None:
+        light = AsyncFakeControlStatusLight()
+        profile = setup_profile(
+            config=LightConnectionConfig.ble(name_contains="MOLUS"),
+            control_setup=True,
+            object_reads=False,
+            control_writes=False,
+        )
+        integration = AsyncLightIntegration(
+            light_factory=AsyncFakeFactory(light),
+            obj=2,
+        ).with_setup_profile(profile, require_controls=True)
+
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            await integration.set_brightness(35)
+        with self.assertRaisesRegex(SetupProfileNotReady, "object_reads"):
+            await integration.read_brightness()
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            await integration.apply_scene({"brightness": 10})
+
+        register = await integration.register(device_id=1, group_id=2)
+
+        self.assertTrue(integration.require_setup_profile_controls)
+        self.assertTrue(register["acknowledged"])
+        self.assertEqual(light.primitive_calls, [])
+
     async def test_async_light_integration_setup_profile_guard_requires_evidence(
         self,
     ) -> None:
@@ -2201,6 +2272,14 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(SetupProfileMissing):
             await integration.set_brightness(35, require_setup_profile=True)
+
+        required = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            light_factory=AsyncFakeFactory(AsyncFailingLight()),
+            require_setup_profile_controls=True,
+        )
+        with self.assertRaises(SetupProfileMissing):
+            await required.set_brightness(35)
 
     async def test_async_light_integration_runs_controls_directly(self) -> None:
         light = AsyncFakeControlStatusLight()

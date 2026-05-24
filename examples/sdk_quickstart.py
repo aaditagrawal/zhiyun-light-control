@@ -126,12 +126,10 @@ def main() -> None:
         register = integration.register(
             device_id=0,
             group_id=0,
-            require_setup_profile=True,
         )
         brightness = integration.set_brightness(
             args.brightness,
             require_ready=True,
-            require_setup_profile=True,
         )
         payload["register"] = {
             "acknowledged": register["acknowledged"],
@@ -161,7 +159,10 @@ def control_integration_from_setup(
     payload: Mapping[str, object],
     primitive: str,
 ) -> LightIntegration:
-    configured = integration.with_setup_profile(profile_from_setup(payload))
+    configured = integration.with_setup_profile(
+        profile_from_setup(payload),
+        require_controls=True,
+    )
     configured.require_setup_profile_primitive(primitive)
     return configured
 

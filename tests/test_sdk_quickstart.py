@@ -79,6 +79,7 @@ class SdkQuickstartTests(unittest.TestCase):
         )
 
         self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(configured.require_setup_profile_controls)
 
 
 def setup_report(*, control_writes: bool = False) -> dict[str, object]:
