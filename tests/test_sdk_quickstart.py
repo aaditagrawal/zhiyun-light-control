@@ -29,6 +29,15 @@ class SdkQuickstartTests(unittest.TestCase):
         self.assertEqual(config.port, "/dev/cu.usbmodem21301")
         self.assertTrue(config.persistent)
 
+    def test_builds_config_from_connection_report(self) -> None:
+        quickstart = load_quickstart()
+
+        config = quickstart.config_from_connection_report(connection_report())
+
+        self.assertEqual(config.transport, "usb")
+        self.assertEqual(config.port, "/dev/cu.usbmodem21301")
+        self.assertTrue(config.persistent)
+
     def test_builds_profile_from_setup_report(self) -> None:
         quickstart = load_quickstart()
 
@@ -61,6 +70,36 @@ class SdkQuickstartTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "config"):
             quickstart.config_from_setup({"ok": False})
 
+    def test_rejects_connection_report_without_selected_config(self) -> None:
+        quickstart = load_quickstart()
+
+        with self.assertRaisesRegex(ValueError, "selected_config"):
+            quickstart.config_from_connection_report({"ok": False})
+
+    def test_connection_summary_keeps_selected_route_and_summary(self) -> None:
+        quickstart = load_quickstart()
+
+        summary = quickstart.connection_summary(connection_report())
+
+        self.assertEqual(summary["summary"]["selected_transport"], "usb")
+        self.assertEqual(summary["selected"]["confidence"], "status-confirmed")
+
+    def test_setup_with_connection_evidence_preserves_confirmed_route(self) -> None:
+        quickstart = load_quickstart()
+
+        setup = quickstart.setup_with_connection_evidence(
+            setup_report(),
+            connection_report(),
+        )
+        profile = quickstart.profile_from_setup(setup)
+
+        self.assertTrue(setup["route_confirmed"])
+        self.assertTrue(setup["summary"]["route_confirmed"])
+        self.assertEqual(setup["selected_route"]["confidence"], "status-confirmed")
+        self.assertEqual(setup["routes"][0]["transport"], "usb")
+        self.assertEqual(setup["connection"]["summary"]["selected_transport"], "usb")
+        self.assertTrue(profile.route_confirmed)
+
     def test_control_integration_from_setup_requires_primitive(self) -> None:
         quickstart = load_quickstart()
         integration = LightIntegration()
@@ -80,6 +119,54 @@ class SdkQuickstartTests(unittest.TestCase):
 
         self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
         self.assertTrue(configured.require_setup_profile_controls)
+
+
+def connection_report() -> dict[str, object]:
+    return {
+        "ok": True,
+        "selected_config": {
+            "transport": "usb",
+            "port": "/dev/cu.usbmodem21301",
+            "persistent": True,
+        },
+        "selected": {
+            "transport": "usb",
+            "confidence": "status-confirmed",
+            "config": {
+                "transport": "usb",
+                "port": "/dev/cu.usbmodem21301",
+                "persistent": True,
+            },
+        },
+        "summary": {
+            "candidate_count": 1,
+            "confirmed_count": 1,
+            "selected_transport": "usb",
+            "usb_available": True,
+            "ble_blocked": True,
+            "ble_blocker": "Bluetooth state unauthorized: 3",
+        },
+        "candidates": [
+            {
+                "transport": "usb",
+                "confidence": "status-confirmed",
+                "config": {
+                    "transport": "usb",
+                    "port": "/dev/cu.usbmodem21301",
+                    "persistent": True,
+                },
+            }
+        ],
+        "best_confirmed": {
+            "transport": "usb",
+            "confidence": "status-confirmed",
+            "config": {
+                "transport": "usb",
+                "port": "/dev/cu.usbmodem21301",
+                "persistent": True,
+            },
+        },
+    }
 
 
 def setup_report(*, control_writes: bool = False) -> dict[str, object]:

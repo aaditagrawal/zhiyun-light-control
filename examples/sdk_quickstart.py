@@ -97,19 +97,29 @@ def main() -> None:
         save_profile_if_requested(setup, profile_path)
         setup_source = "saved"
     else:
-        setup = integration.setup_report(
+        connection = integration.connection_report(
             include_ble=args.include_ble,
             include_ble_status=True,
+            persistent=args.persistent,
+        )
+        if connection["ok"] is not True:
+            raise SystemExit(json.dumps(connection, indent=2, sort_keys=True))
+        config = config_from_connection_report(connection)
+        integration = integration.with_config(config)
+        setup = integration.setup_report(
+            include_usb=False,
+            include_ble=False,
+            include_ble_status=True,
+            require_confirmed_route=False,
             persistent=args.persistent,
             allow_control=args.allow_control,
             include_object_reads=args.include_object_reads,
         )
         if setup["ok"] is not True:
             raise SystemExit(json.dumps(setup, indent=2, sort_keys=True))
-        config = config_from_setup(setup)
+        setup = setup_with_connection_evidence(setup, connection)
         save_light_connection_config(config, config_path)
         save_profile_if_requested(setup, profile_path)
-        integration = integration.with_config(config)
         setup_source = "discovered"
 
     payload = dict(setup)
@@ -148,6 +158,46 @@ def config_from_setup(payload: Mapping[str, object]) -> LightConnectionConfig:
     if not isinstance(config, Mapping):
         raise ValueError("setup report is missing a config object")
     return LightConnectionConfig.from_mapping(config)
+
+
+def config_from_connection_report(
+    payload: Mapping[str, object],
+) -> LightConnectionConfig:
+    config = payload.get("selected_config")
+    if not isinstance(config, Mapping):
+        raise ValueError("connection report is missing a selected_config object")
+    return LightConnectionConfig.from_mapping(config)
+
+
+def connection_summary(payload: Mapping[str, object]) -> dict[str, object]:
+    summary = payload.get("summary")
+    selected = payload.get("selected")
+    return {
+        "summary": dict(summary) if isinstance(summary, Mapping) else {},
+        "selected": dict(selected) if isinstance(selected, Mapping) else None,
+    }
+
+
+def setup_with_connection_evidence(
+    setup: Mapping[str, object],
+    connection: Mapping[str, object],
+) -> dict[str, object]:
+    payload = dict(setup)
+    selected = connection.get("selected")
+    candidates = connection.get("candidates")
+    confirmed = connection.get("best_confirmed")
+    route_confirmed = isinstance(confirmed, Mapping)
+    payload["connection"] = connection_summary(connection)
+    payload["route_confirmed"] = route_confirmed
+    payload["selected_route"] = (
+        dict(selected) if isinstance(selected, Mapping) else None
+    )
+    payload["routes"] = list(candidates) if isinstance(candidates, list) else []
+    summary = payload.get("summary")
+    summary_payload = dict(summary) if isinstance(summary, Mapping) else {}
+    summary_payload["route_confirmed"] = route_confirmed
+    payload["summary"] = summary_payload
+    return payload
 
 
 def profile_from_setup(payload: Mapping[str, object]) -> LightSetupProfile:
