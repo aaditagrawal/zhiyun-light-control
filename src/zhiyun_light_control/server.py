@@ -11,7 +11,12 @@ from urllib.parse import parse_qs, urlparse
 
 from .bridge import close_light_factory
 from .client import ZhiyunLight
-from .commands import scene_command_plan, transition_command_plans
+from .commands import (
+    execute_serialized_frame_plan,
+    scene_command_plan,
+    serialized_plan_payload,
+    transition_command_plans,
+)
 from .cues import CueLibrary
 from .devices import (
     BLE_BACKENDS,
@@ -37,6 +42,7 @@ from .protocol import (
     RuntimeCommand,
     brightness_payload,
     cct_payload,
+    first_frame,
     hsi_payload,
     register_payload,
     rgb_payload,
@@ -126,6 +132,7 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                         "/rgb",
                         "/hsi",
                         "/frame",
+                        "/execute-plan",
                         "/scene",
                         "/transition",
                         "/preset",
@@ -373,13 +380,31 @@ class LightRequestHandler(BaseHTTPRequestHandler):
                 )
                 return result.to_dict()
             if path == "/frame":
-                result = light.exchange_frame(
-                    _body_int(body, "first_word", RUNTIME_TYPE),
-                    _body_int(body, "command"),
-                    _payload_hex(body),
-                    timeout=float(body.get("timeout", 0.8)),
-                )
+                if isinstance(body.get("frame_hex"), str):
+                    frame = _frame_hex(body)
+                    result = light.exchange_prebuilt_frame(
+                        frame,
+                        _prebuilt_frame_command(body, frame),
+                        timeout=float(body.get("timeout", 0.8)),
+                    )
+                else:
+                    result = light.exchange_frame(
+                        _body_int(body, "first_word", RUNTIME_TYPE),
+                        _body_int(body, "command"),
+                        _payload_hex(body),
+                        timeout=float(body.get("timeout", 0.8)),
+                    )
                 return result.to_dict()
+            if path == "/execute-plan":
+                return self._handle_execute_plan(
+                    light,
+                    body,
+                    timeout=(
+                        float(body["timeout"])
+                        if "timeout" in body and body["timeout"] is not None
+                        else None
+                    ),
+                )
             if path == "/scene":
                 scene = _scene_from_body(body, obj=obj)
                 results = light.apply_scene(scene, control_mode=control_mode)
@@ -502,6 +527,19 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             "first_word_hex": f"0x{first_word:04x}",
             **response,
         }
+
+    def _handle_execute_plan(
+        self,
+        light,
+        body: dict[str, object],
+        *,
+        timeout: float | None,
+    ) -> dict[str, object]:
+        plan = serialized_plan_payload(body)
+        results = execute_serialized_frame_plan(light, body, timeout=timeout)
+        response = _plan_execution_response(plan, results)
+        self._record_response_scene(response, "execute_plan", results)
+        return response
 
     def _handle_inspect_ble(self, body: dict[str, object]) -> dict[str, object]:
         backend = str(body.get("backend", self.server.ble_backend or "worker"))
@@ -1271,6 +1309,16 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             results=results,
         )
 
+    def _record_response_scene(
+        self,
+        response: Mapping[str, object],
+        action: str,
+        results,
+    ) -> None:
+        scene = _response_scene(response)
+        if scene is not None:
+            self._record_scene(scene, action=action, results=results)
+
     def _read_json(self) -> dict[str, object]:
         length = int(self.headers.get("content-length", "0"))
         if length == 0:
@@ -1466,6 +1514,13 @@ def openapi_schema() -> dict[str, object]:
                     "Exchange one raw frame",
                     "CommandResult",
                     request_schema="FrameRequest",
+                )
+            },
+            "/execute-plan": {
+                "post": _operation(
+                    "Execute serialized plan frames",
+                    "PlanExecutionResponse",
+                    request_schema="SerializedPlan",
                 )
             },
             "/scene": {
@@ -1747,10 +1802,12 @@ def _openapi_schemas() -> dict[str, object]:
                 "first_word": {"oneOf": [{"type": "integer"}, {"type": "string"}]},
                 "command": {"oneOf": [{"type": "integer"}, {"type": "string"}]},
                 "payload_hex": {"type": "string"},
+                "frame_hex": {"type": "string"},
                 "timeout": {"type": "number"},
             },
-            "required": ["command"],
         },
+        "SerializedPlan": {"type": "object", "additionalProperties": True},
+        "PlanExecutionResponse": {"type": "object", "additionalProperties": True},
         "Scene": {
             "type": "object",
             "properties": {
@@ -1876,6 +1933,7 @@ def integration_manifest_response(
                 {"name": "rgb", "method": "POST", "path": "/rgb"},
                 {"name": "hsi", "method": "POST", "path": "/hsi"},
                 {"name": "scene", "method": "POST", "path": "/scene"},
+                {"name": "execute-plan", "method": "POST", "path": "/execute-plan"},
                 {"name": "transition", "method": "POST", "path": "/transition"},
                 {"name": "preset", "method": "POST", "path": "/preset"},
                 {"name": "sequence", "method": "POST", "path": "/sequence"},
@@ -2343,6 +2401,18 @@ def request_templates_response() -> dict[str, object]:
                     "control_mode": control_mode,
                 },
             },
+            "execute_plan": {
+                "method": "POST",
+                "path": "/execute-plan",
+                "required_readiness": ["control_requests"],
+                "body": {
+                    "kind": "serialized-plan-bundle",
+                    "plan": {
+                        "action": "scene",
+                        "command_plan": {"frames": []},
+                    },
+                },
+            },
             "cue": {
                 "method": "POST",
                 "path": "/cue",
@@ -2623,8 +2693,22 @@ def capabilities_response(
                 "method": "POST",
                 "path": "/frame",
                 "requires_control": True,
-                "fields": ["first_word", "command", "payload_hex", "timeout"],
+                "fields": [
+                    "first_word",
+                    "command",
+                    "payload_hex",
+                    "frame_hex",
+                    "timeout",
+                ],
                 "confirmation": "CommandResult.acknowledged",
+            },
+            {
+                "name": "execute_plan",
+                "method": "POST",
+                "path": "/execute-plan",
+                "requires_control": True,
+                "fields": ["plan", "kind", "timeout"],
+                "confirmation": "all planned frame results acknowledged",
             },
             {
                 "name": "scene",
@@ -3055,6 +3139,36 @@ def _planned_next_seq(response: Mapping[str, object], default: int) -> int:
     return default
 
 
+def _plan_execution_response(
+    plan: Mapping[str, object],
+    results,
+) -> dict[str, object]:
+    result_items = list(results)
+    applied = results_confirmed(result_items)
+    response: dict[str, object] = {
+        "action": "execute_plan",
+        "planned_action": str(plan.get("action", "unknown")),
+        "plan": dict(plan),
+        "results": [result.to_dict() for result in result_items],
+        "applied": applied,
+        "reason": None if applied else unconfirmed_results_reason(result_items),
+    }
+    raw_scene = plan.get("scene")
+    if isinstance(raw_scene, Mapping):
+        response["scene"] = dict(raw_scene)
+    for key in ("preset", "cue"):
+        if key in plan:
+            response[key] = plan[key]
+    return response
+
+
+def _response_scene(response: Mapping[str, object]) -> Scene | None:
+    raw_scene = response.get("scene")
+    if not isinstance(raw_scene, dict):
+        return None
+    return _scene_from_body(raw_scene, obj=int(raw_scene.get("obj", 1)))
+
+
 def serve(
     *,
     host: str = "127.0.0.1",
@@ -3248,6 +3362,22 @@ def _payload_hex(body: dict[str, object]) -> bytes:
     if not isinstance(payload, str):
         raise ValueError("payload_hex must be a string")
     return bytes.fromhex(payload)
+
+
+def _frame_hex(body: dict[str, object]) -> bytes:
+    frame = body.get("frame_hex")
+    if not isinstance(frame, str) or not frame.strip():
+        raise ValueError("frame_hex must be a non-empty string")
+    return bytes.fromhex(frame)
+
+
+def _prebuilt_frame_command(body: dict[str, object], frame: bytes) -> int:
+    if "command" in body and body["command"] is not None:
+        return _body_int(body, "command")
+    parsed = first_frame(frame)
+    if parsed is None:
+        raise ValueError("frame_hex does not contain a parseable frame")
+    return parsed.cmd
 
 
 _SCENE_FIELD_ORDER = tuple(field.name for field in fields(Scene))

@@ -11,6 +11,10 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .bridge import LightConnectionConfig
+from .commands import (
+    SerializedPlanBundle,
+    serialized_plan_payload,
+)
 from .models import Scene
 from .profiles import (
     LightSetupProfile,
@@ -819,6 +823,26 @@ class LightBridgeClient:
             payload["timeout"] = timeout
         return self._post_control("/frame", payload)
 
+    def execute_plan(
+        self,
+        plan: SerializedPlanBundle | Mapping[str, object],
+        *,
+        timeout: float | None = None,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
+    ) -> dict[str, object]:
+        plan_payload = serialized_plan_payload(plan)
+        self._require_setup_profile_primitive_if_requested(
+            _plan_primitive_name(plan_payload),
+            require_setup_profile,
+        )
+        self._require_control_readiness(require_ready, required_readiness)
+        body = plan.to_dict() if isinstance(plan, SerializedPlanBundle) else dict(plan)
+        if timeout is not None:
+            body["timeout"] = timeout
+        return self._post_control("/execute-plan", body)
+
     def apply_scene(
         self,
         scene: Scene | Mapping[str, object],
@@ -1024,6 +1048,13 @@ def _scene_payload(scene: Scene | Mapping[str, object]) -> dict[str, object]:
     if isinstance(scene, Scene):
         return scene.to_dict()
     return dict(scene)
+
+
+def _plan_primitive_name(plan: Mapping[str, object]) -> str:
+    action = str(plan.get("action", "scene"))
+    if action in {"preset", "sequence", "cue", "run_named_cue", "transition"}:
+        return action
+    return "scene"
 
 
 def _setup_profile_requirements(require: str | Iterable[str]) -> tuple[str, ...]:

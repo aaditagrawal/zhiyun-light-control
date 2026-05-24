@@ -47,6 +47,7 @@ SETUP_PROFILE_PRIMITIVE_REQUIREMENTS = {
     "sequence": ("control_writes",),
     "cue": ("control_writes",),
     "frame": ("control_writes",),
+    "execute_plan": ("control_writes",),
     "apply_scene": ("control_writes",),
     "apply_preset": ("control_writes",),
     "run_sequence": ("control_writes",),

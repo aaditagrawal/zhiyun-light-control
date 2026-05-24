@@ -8,6 +8,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from zhiyun_light_control.commands import scene_command_plan, serialized_plan_bundle
 from zhiyun_light_control.cues import CueLibrary
 from zhiyun_light_control.models import CommandResult, Scene
 from zhiyun_light_control.presets import ScenePresetLibrary
@@ -40,6 +41,7 @@ class FakeLight:
         self.commands: list[int] = []
         self.payloads: list[tuple[int, bytes]] = []
         self.frame_exchanges: list[tuple[int, int, bytes, float]] = []
+        self.prebuilt_frame_exchanges: list[tuple[bytes, int, float]] = []
 
     def __enter__(self) -> FakeLight:
         return self
@@ -78,6 +80,20 @@ class FakeLight:
         rx = build_frame(first_word, 1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
+
+    def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 0.8,
+    ):
+        self.prebuilt_frame_exchanges.append((frame, command, timeout))
+        parsed = first_frame(frame)
+        assert parsed is not None
+        rx = build_frame(parsed.first_word, parsed.seq, command, b"\x00")
+        ack = first_frame(rx, cmd=command)
+        return CommandResult(command, frame, rx, (ack,), ack)
 
     def apply_scene(self, scene: Scene, *, control_mode: int = 0x33):
         results = []
@@ -1161,6 +1177,56 @@ class ServerTests(unittest.TestCase):
                 light.frame_exchanges,
                 [(0x0100, 0x2001, b"\x00\x01", 0.25)],
             )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_http_execute_plan_uses_exact_prebuilt_frames(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        plan = {
+            "action": "scene",
+            "scene": {"obj": 1, "brightness": 12},
+            "command_plan": scene_command_plan(
+                Scene(obj=1, brightness=12),
+                first_word=0x0301,
+                start_seq=17,
+            ).to_dict(),
+        }
+        bundle = serialized_plan_bundle(plan, created_at=123.0)
+        try:
+            request = Request(
+                f"{base}/execute-plan",
+                data=json.dumps(bundle.to_dict() | {"timeout": 0.25}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            result = json.loads(urlopen(request, timeout=3).read())
+
+            self.assertEqual(result["action"], "execute_plan")
+            self.assertEqual(result["planned_action"], "scene")
+            self.assertTrue(result["applied"])
+            self.assertEqual(result["scene"]["brightness"], 12)
+            self.assertEqual(
+                light.prebuilt_frame_exchanges,
+                [
+                    (
+                        bundle.frame_commands[0][0],
+                        RuntimeCommand.BRIGHTNESS,
+                        0.25,
+                    )
+                ],
+            )
+            state = json.loads(urlopen(f"{base}/state", timeout=3).read())
+            self.assertEqual(state["action"], "execute_plan")
+            self.assertEqual(state["scene"]["brightness"], 12)
         finally:
             server.shutdown()
             server.server_close()

@@ -161,6 +161,7 @@ The local HTTP bridge is intentionally small and JSON-only:
 | `POST` | `/inspect-ble` | Inspect BLE GATT services and characteristics |
 | `POST` | `/test-ble-endpoints` | Confirm suggested BLE endpoints with read-only `DEVICE_INFO` ACK probes |
 | `POST` | `/discover-usb` | Bounded USB primitive discovery matrix with per-attempt evidence |
+| `POST` | `/execute-plan` | Execute serialized scene/preset/transition/sequence plan frames |
 | `POST` | `/register` | Register default group |
 | `POST` | `/brightness` | Set brightness |
 | `POST` | `/cct` | Set color temperature |
@@ -247,6 +248,11 @@ sequence numbers without opening USB/BLE or requiring `--allow-control`.
 SDK callers can reach the same surface through `LightController.plan_scene()`,
 `plan_preset()`, `plan_transition()`, `plan_sequence()`, or the matching
 `LightBridgeClient` helpers when the HTTP bridge is the process boundary.
+`LightBridgeClient.execute_plan(...)` posts a raw serialized plan or
+`SerializedPlanBundle` to HTTP `/execute-plan`; the bridge then uses
+`exchange_prebuilt_frame` so the sequence number, first word, command, and
+payload bytes from the planner are the bytes sent over the configured USB or BLE
+transport.
 Embedded hosts that already use `LightIntegration` or `AsyncLightIntegration`
 can attach preset/cue libraries there and call the same `plan_*` helpers before
 opening USB or BLE. The same integration objects also expose direct primitive

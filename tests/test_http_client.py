@@ -55,6 +55,7 @@ from zhiyun_light_control import (
     request_template_required_readiness,
     request_templates,
     require_acknowledged_response,
+    serialized_plan_bundle,
     validation_category,
     validation_ready,
     validation_ready_for,
@@ -94,6 +95,7 @@ class FakeProbe:
 class FakeLight:
     def __init__(self) -> None:
         self.commands: list[tuple[int, bytes]] = []
+        self.prebuilt_frames: list[tuple[bytes, int, float]] = []
 
     def __enter__(self):
         return self
@@ -132,6 +134,20 @@ class FakeLight:
         rx = build_frame(first_word, 1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
         return CommandResult(cmd, tx, rx, (ack,), ack)
+
+    def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 0.8,
+    ):
+        self.prebuilt_frames.append((frame, command, timeout))
+        parsed = first_frame(frame)
+        assert parsed is not None
+        rx = build_frame(parsed.first_word, parsed.seq, command, b"\x00")
+        ack = first_frame(rx, cmd=command)
+        return CommandResult(command, frame, rx, (ack,), ack)
 
     def apply_scene(self, scene: Scene, *, control_mode: int = 0x33):
         results = []
@@ -422,6 +438,25 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(scene_plan["action"], "scene")
             self.assertEqual(scene_plan["scene"]["obj"], 2)
             self.assertEqual(scene_plan["first_word_hex"], "0x0301")
+            executed_plan = client.execute_plan(
+                serialized_plan_bundle(scene_plan, created_at=123.0),
+                timeout=0.25,
+                require_ready=True,
+            )
+            self.assertEqual(executed_plan["action"], "execute_plan")
+            self.assertTrue(executed_plan["applied"])
+            self.assertEqual(
+                light.prebuilt_frames,
+                [
+                    (
+                        bytes.fromhex(
+                            scene_plan["command_plan"]["frames"][0]["frame_hex"]
+                        ),
+                        RuntimeCommand.BRIGHTNESS,
+                        0.25,
+                    )
+                ],
+            )
             self.assertEqual(preset_plan["action"], "preset")
             self.assertEqual(preset_plan["scene"]["brightness"], 41.0)
             self.assertEqual(preset_plan["command_plan"]["start_seq"], 6)
@@ -476,7 +511,7 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(bridge_response_statuses(brightness), ["acknowledged"])
             self.assertEqual(light.commands[-1][1][2], 0x01)
             history = client.history(limit=1)
-            self.assertEqual(history["version"], 1)
+            self.assertEqual(history["version"], 2)
             self.assertEqual(history["events"][0]["state"]["action"], "brightness")
             self.assertEqual(
                 history["events"][0]["state"]["result_summaries"][0]["command"],

@@ -595,8 +595,11 @@ from zhiyun_light_control import (
     devices_ble_blocker,
     devices_selected_usb_port,
     connection_candidates_from_devices,
+    load_serialized_plan_bundle,
     load_light_setup_profile,
+    save_serialized_plan_bundle,
     save_light_setup_profile,
+    serialized_plan_bundle,
     setup_profile_primitive_readiness,
     setup_profile_primitive_ready_for,
     usb_config_from_devices,
@@ -651,6 +654,14 @@ ble_endpoint_report = bridge.test_ble_endpoints(
 ble_endpoint_config = ble_config_from_endpoint_report(ble_endpoint_report)
 print(ble_endpoint_config.to_dict())
 print(bridge.plan({"preset": "key", "overrides": {"brightness": 45}})["scene"])
+bridge_plan = bridge.plan_scene({"brightness": 25}, first_word="0x0301", start_seq=1)
+bridge_bundle = serialized_plan_bundle(bridge_plan)
+save_serialized_plan_bundle(bridge_bundle, "./bridge-plan.json")
+bridge_execution = bridge.execute_plan(
+    load_serialized_plan_bundle("./bridge-plan.json"),
+    require_ready=True,
+)
+print(bridge_execution["applied"], bridge_execution["planned_action"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(bridge_setup_report(bridge.integration(), validation=bridge.validate())["config"])
 print(next(bridge.state_events(limit=1))["state"])
@@ -1166,6 +1177,10 @@ When driving a running HTTP bridge from another process, the same dry-run
 planning surface is available through `LightBridgeClient.plan_scene()`,
 `plan_preset()`, `plan_transition()`, and `plan_sequence()`. These methods only
 resolve serialized runtime frames; they do not open the light or issue writes.
+`LightBridgeClient.execute_plan()` accepts the raw plan, a
+`SerializedPlanBundle`, or a loaded bundle mapping and POSTs it to the bridge's
+`/execute-plan` endpoint so the bridge sends the exact planned frame bytes over
+its configured USB or BLE transport.
 
 For multi-light setups, use named fixtures and a rig controller. Each fixture can
 use its own USB or BLE `LightConnectionConfig` or a saved `LightSetupProfile`,
