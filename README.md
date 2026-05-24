@@ -1211,6 +1211,10 @@ The report returns discovered USB/BLE devices, ranked route candidates,
 status-probed confirmation evidence, a selected SDK config, and explicit BLE
 blockers such as macOS Bluetooth authorization failures. This is the preferred
 setup-time handoff before saving a setup profile or calling `with_config()`.
+For multi-fixture setups, `rig.connection_report_all(include_ble=True)` and the
+async equivalent return the same route report per fixture, so a setup tool can
+show which lights are USB-confirmed, BLE-confirmed, or blocked before a show
+profile is saved.
 
 Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_transition()`, `plan_sequence()`, `plan_named_cue()`, `plan_all()`,

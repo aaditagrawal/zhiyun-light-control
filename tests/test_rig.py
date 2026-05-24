@@ -921,6 +921,91 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(rig.capabilities("key")["reason"], "available")
         self.assertEqual(snapshot["client"]["setup_profile"], {"present": False})
 
+    def test_connection_report_all_returns_per_fixture_route_reports(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "usb",
+                        "port": "/dev/cu.key",
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "tags": ["set"],
+                    },
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        calls: list[tuple[LightConnectionConfig, dict[str, object]]] = []
+
+        def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            calls.append((config, dict(kwargs)))
+            selected_config = config.to_dict() if config.transport == "usb" else None
+            return {
+                "ok": config.transport == "usb",
+                "selected_config": selected_config,
+                "summary": {
+                    "selected_transport": config.transport
+                    if config.transport == "usb"
+                    else None,
+                    "candidate_count": 1,
+                    "confirmed_count": 1 if config.transport == "usb" else 0,
+                    "ble_blocker": None
+                    if config.transport == "usb"
+                    else "Bluetooth state unauthorized: 3",
+                },
+                "selected": {"transport": config.transport}
+                if config.transport == "usb"
+                else None,
+                "best_confirmed": {"transport": config.transport}
+                if config.transport == "usb"
+                else None,
+            }
+
+        with patch(
+            "zhiyun_light_control.integration.local_connection_report",
+            side_effect=fake_report,
+        ):
+            response = rig.connection_report_all(
+                tag="set",
+                include_ble=True,
+                include_ble_status=True,
+                persistent=True,
+            )
+
+        self.assertEqual(response["action"], "rig_connection_report")
+        self.assertFalse(response["applied"])
+        self.assertEqual(response["fixtures"]["key"]["transport"], "usb")
+        self.assertEqual(
+            response["fixtures"]["key"]["config"]["port"],
+            "/dev/cu.key",
+        )
+        self.assertFalse(response["fixtures"]["fill"]["ok"])
+        self.assertEqual(
+            response["fixtures"]["fill"]["reason"],
+            "Bluetooth state unauthorized: 3",
+        )
+        self.assertEqual(
+            [config.transport for config, _kwargs in calls],
+            ["usb", "ble"],
+        )
+        self.assertTrue(all(kwargs["include_ble"] for _config, kwargs in calls))
+        self.assertTrue(
+            all(kwargs["include_ble_status"] for _config, kwargs in calls)
+        )
+        self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
+
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):
             LightRig([{"name": "key"}, {"name": "key"}])
@@ -1378,6 +1463,75 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(plan["scene"]["obj"], 3)
         self.assertEqual(plan["command_plan"]["start_seq"], 4)
         self.assertEqual(snapshot["client"]["setup_profile"], {"present": False})
+
+    async def test_async_connection_report_all_returns_fixture_reports(
+        self,
+    ) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "ble",
+                        "name_contains": "KEY",
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "tags": ["set"],
+                    },
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        calls: list[tuple[LightConnectionConfig, dict[str, object]]] = []
+
+        async def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            calls.append((config, dict(kwargs)))
+            return {
+                "ok": True,
+                "selected_config": config.to_dict(),
+                "summary": {
+                    "selected_transport": "ble",
+                    "candidate_count": 1,
+                    "confirmed_count": 1,
+                    "ble_blocker": None,
+                },
+                "selected": {"transport": "ble"},
+                "best_confirmed": {"transport": "ble"},
+            }
+
+        with patch(
+            "zhiyun_light_control.integration.local_async_connection_report",
+            side_effect=fake_report,
+        ):
+            response = await rig.connection_report_all(
+                tag="set",
+                include_ble=True,
+                persistent=True,
+            )
+
+        self.assertEqual(response["action"], "rig_connection_report")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["fixtures"]["key"]["transport"], "ble")
+        self.assertEqual(
+            response["fixtures"]["fill"]["config"]["name_contains"],
+            "FILL",
+        )
+        self.assertEqual(
+            [config.name_contains for config, _kwargs in calls],
+            ["KEY", "FILL"],
+        )
+        self.assertTrue(all(kwargs["include_ble"] for _config, kwargs in calls))
+        self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
 
 
 def _result(

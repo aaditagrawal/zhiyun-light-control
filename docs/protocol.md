@@ -345,6 +345,9 @@ helpers for hosts that only want this guard on selected cues.
 `setup_profile_summary_all(primitives=...)` gives hosts a no-I/O rig capability
 matrix from saved setup evidence, including missing profiles and unready
 primitive names per fixture.
+`connection_report_all(include_ble=true)` provides the same status-probed route
+report per fixture, including selected config and BLE blockers, for setup tools
+that need to arm or save a full multi-light rig.
 Rig planning helpers (`plan_scene`, `plan_preset`, `plan_transition`,
 `plan_sequence`, `plan_named_cue`, and their group variants) also run without
 opening USB/BLE and return exact per-fixture command plans. `execute_plan` sends

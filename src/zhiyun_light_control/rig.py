@@ -516,6 +516,58 @@ class LightRig:
                 break
         return _rig_response("rig_snapshot", responses, stopped=stopped)
 
+    def connection_report(
+        self,
+        name: str,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        probe_status: bool = True,
+        prefer_confirmed: bool = True,
+    ) -> dict[str, object]:
+        payload = self.integration(name).connection_report(
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            probe_status=probe_status,
+            prefer_confirmed=prefer_confirmed,
+        )
+        return _connection_report_response(name, payload)
+
+    def connection_report_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        probe_status: bool = True,
+        prefer_confirmed: bool = True,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.connection_report(
+                name,
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+                probe_status=probe_status,
+                prefer_confirmed=prefer_confirmed,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_connection_report", responses, stopped=stopped)
+
     def probe(self, name: str) -> dict[str, object]:
         result = self.controller(name).probe()
         return {"fixture": name, "probe": result.to_dict()}
@@ -1361,6 +1413,58 @@ class AsyncLightRig:
                 stopped = True
                 break
         return _rig_response("rig_snapshot", responses, stopped=stopped)
+
+    async def connection_report(
+        self,
+        name: str,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        probe_status: bool = True,
+        prefer_confirmed: bool = True,
+    ) -> dict[str, object]:
+        payload = await self.integration(name).connection_report(
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            probe_status=probe_status,
+            prefer_confirmed=prefer_confirmed,
+        )
+        return _connection_report_response(name, payload)
+
+    async def connection_report_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        probe_status: bool = True,
+        prefer_confirmed: bool = True,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.connection_report(
+                name,
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+                probe_status=probe_status,
+                prefer_confirmed=prefer_confirmed,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_connection_report", responses, stopped=stopped)
 
     async def probe(self, name: str) -> dict[str, object]:
         result = await self.controller(name).probe()
@@ -2485,6 +2589,37 @@ def _snapshot_response(
         "ok": connection_confirmed is True,
         "reason": _snapshot_reason(payload),
     }
+
+
+def _connection_report_response(
+    name: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    summary = payload.get("summary")
+    selected_transport = (
+        summary.get("selected_transport")
+        if isinstance(summary, Mapping)
+        else None
+    )
+    return {
+        "fixture": name,
+        "connection_report": dict(payload),
+        "ok": payload.get("ok") is True,
+        "transport": selected_transport,
+        "config": payload.get("selected_config"),
+        "reason": _connection_report_reason(payload),
+    }
+
+
+def _connection_report_reason(payload: Mapping[str, object]) -> str:
+    if payload.get("ok") is True:
+        return "route_selected"
+    summary = payload.get("summary")
+    if isinstance(summary, Mapping):
+        blocker = summary.get("ble_blocker")
+        if blocker:
+            return str(blocker)
+    return "no_route"
 
 
 def _readiness_reason(payload: Mapping[str, object]) -> str:
