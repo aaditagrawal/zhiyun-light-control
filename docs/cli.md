@@ -79,6 +79,14 @@ still reports `acknowledged: false`. A broad `0x0301` candidate pass was
 physically observed to reach `2700K` at `20%`, but the exact minimal
 brightness/CCT route is still under test.
 
+For the local post-provisioning BLE route, scene writes use the native `FEE9`
+legacy profile and return no ACK. Use `--accept-no-response` only when that
+write-only behavior is expected and you have separate physical/state evidence:
+
+```sh
+uv run zlight apply --transport ble --ble-backend macos-app --ble-profile legacy --obj 1 --sleep 0 --brightness 50 --kelvin 3200 --accept-no-response --yes
+```
+
 `zlight frame` exposes the lower-level `exchange_frame()` primitive for direct
 bench checks:
 

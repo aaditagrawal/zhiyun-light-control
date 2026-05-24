@@ -288,7 +288,7 @@ class BleSequenceExchangeResult:
 
 
 class BleWorkerError(RuntimeError):
-    def __init__(self, result: BleExchangeResult):
+    def __init__(self, result: BleExchangeResult | BleSequenceExchangeResult):
         super().__init__(result.error or "BLE worker failed")
         self.result = result
 
@@ -519,6 +519,7 @@ class MacosBleAppTransport:
             tx,
             address=self.address,
             name_contains=self.name_contains,
+            profile=self.profile,
             service_uuid=self.service_uuid,
             write_uuid=self.write_uuid,
             notify_uuid=self.notify_uuid,
@@ -529,6 +530,32 @@ class MacosBleAppTransport:
         if not result.ok:
             raise BleWorkerError(result)
         return result.rx
+
+    async def exchange_many(
+        self,
+        tx: Iterable[bytes],
+        timeout: float | None = None,
+    ) -> tuple[bytes, ...]:
+        effective_timeout = self.timeout if timeout is None else timeout
+        tx_items = tuple(tx)
+        result = await asyncio.to_thread(
+            exchange_zhiyun_ble_sequence_macos_app,
+            tx_items,
+            address=self.address,
+            name_contains=self.name_contains,
+            profile=self.profile,
+            service_uuid=self.service_uuid,
+            write_uuid=self.write_uuid,
+            notify_uuid=self.notify_uuid,
+            timeout=effective_timeout,
+        )
+        if result.address:
+            self.address = result.address
+        if not result.ok:
+            raise BleWorkerError(result)
+        if len(result.rx) >= len(tx_items):
+            return result.rx[: len(tx_items)]
+        return result.rx + tuple(b"" for _item in tx_items[len(result.rx) :])
 
 
 async def scan_zhiyun_devices(

@@ -215,8 +215,24 @@ A follow-up diagnostic added fresh helper identities via `--bundle-name`,
 changed the Swift helper to run a foreground `NSApplication` event loop. Fresh
 helpers such as `ZhiyunBleScanPrompt` still reported
 `authorization=not_determined` and `Bluetooth state unknown: 0` on the local
-Mac, so the current BLE blocker is still macOS authorization state rather than
-the built app identity.
+Mac, so the blocker at that point was macOS authorization state rather than the
+built app identity.
+
+Later on 2026-05-24, after the helper was allowed and the mesh
+provisioning/config path completed, the local G60 exposed both Mesh Proxy
+`1828/2ADD/2ADE` and native Zhiyun `FEE9` (`d44bc439...9600` write,
+`d44bc439...9601` notify). The native `FEE9` path ACKed read-only global
+status frames and accepted a three-frame scene sequence for object `1`:
+`sleep=0`, `brightness=50`, and `kelvin=3200` with operation byte `0x33`.
+Those control writes returned no notify data, so SDK evidence remains
+`sent_no_response`; the physical light was visually confirmed at `3200K` and
+`50%` after the sequence.
+
+Persistent helper IPC was tested for native `FEE9` reads and writes, but it
+could surface stale delayed responses and timed out on write-only scene frames.
+The reliable control primitive for this bench setup is therefore the
+single-connection `exchange-sequence` helper mode, exposed through
+`MacosBleAppTransport.exchange_many()` and `AsyncZhiyunLight.apply_scene()`.
 
 USB serial line-control settings were also checked with pyserial. Baud rates
 `9600` and `115200`, and all DTR/RTS combinations, still ACKed

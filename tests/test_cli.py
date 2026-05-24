@@ -1103,6 +1103,43 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(payload["results"][0]["transport_status"], "sent_no_response")
 
+    def test_apply_accept_no_response_allows_write_only_route_exit_zero(self) -> None:
+        class FakeLight:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def apply_scene(self, _scene, *, control_mode=0x33):
+                del control_mode
+                tx = build_runtime_frame(1, RuntimeCommand.BRIGHTNESS)
+                return [CommandResult(RuntimeCommand.BRIGHTNESS, tx, b"", (), None)]
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "apply",
+                    "--brightness",
+                    "35",
+                    "--accept-no-response",
+                    "--yes",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["accepted_no_response"])
+        self.assertFalse(payload["results"][0]["acknowledged"])
+        self.assertEqual(payload["results"][0]["transport_status"], "sent_no_response")
+
     def test_apply_can_use_custom_first_word_frame_route(self) -> None:
         class FakeLight:
             def __init__(self) -> None:

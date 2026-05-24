@@ -851,6 +851,9 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     private let txSequence: [Data]
     private let sessionDir: String?
     private let includeAllScan: Bool
+    private let callbackQueue = DispatchQueue(
+        label: "local.zhiyun-light-control.ble-helper"
+    )
     private var devices: [String: JsonDevice] = [:]
     private var peripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
@@ -876,8 +879,8 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         self.sessionDir = argument("--session-dir")
         self.includeAllScan = hasFlag("--include-all")
         super.init()
-        self.central = CBCentralManager(delegate: self, queue: DispatchQueue.main)
-        DispatchQueue.main.asyncAfter(deadline: .now() + self.timeout) {{
+        self.central = CBCentralManager(delegate: self, queue: callbackQueue)
+        callbackQueue.asyncAfter(deadline: .now() + self.timeout) {{
             self.finish(error: self.timeoutError())
         }}
     }}
@@ -1099,7 +1102,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             }}
             return
         }}
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {{
+        callbackQueue.asyncAfter(deadline: .now() + 0.05) {{
             self.waitForIpcWrite(peripheral, write)
         }}
     }}
@@ -1115,7 +1118,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             : .withResponse
         currentRx.removeAll()
         peripheral.writeValue(tx, for: write, type: writeType)
-        settleUntil = Date().addingTimeInterval(0.35)
+        settleUntil = Date().addingTimeInterval(0.90)
         scheduleSettleCheck()
     }}
 
@@ -1137,7 +1140,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     }}
 
     private func scheduleSettleCheck() {{
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.36) {{
+        callbackQueue.asyncAfter(deadline: .now() + 0.91) {{
             guard let settleUntil = self.settleUntil else {{
                 return
             }}
@@ -1356,6 +1359,6 @@ if mode == "exchange-ipc" && argument("--session-dir") == nil {{
 }}
 let tool = BleTool(mode: mode)
 withExtendedLifetime(tool) {{
-    NSApplication.shared.run()
+    RunLoop.main.run()
 }}
 """

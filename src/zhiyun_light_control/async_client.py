@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import itertools
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
+from inspect import isawaitable
 
 from .commands import (
     execute_async_command_plan,
+    execute_async_frame_plan,
     execute_async_transition_plans,
     scene_command_plan,
     transition_command_plans,
@@ -215,6 +218,40 @@ class AsyncZhiyunLight:
             frames=frames,
             ack=first_response_frame(rx, tx=frame, cmd=command),
         )
+
+    async def exchange_prebuilt_frames(
+        self,
+        frames: Iterable[tuple[bytes, int]],
+        *,
+        timeout: float = 1.5,
+    ) -> list[CommandResult]:
+        items = tuple(frames)
+        exchange_many = getattr(self.transport, "exchange_many", None)
+        if not callable(exchange_many):
+            return [
+                await self.exchange_prebuilt_frame(
+                    frame,
+                    command,
+                    timeout=timeout,
+                )
+                for frame, command in items
+            ]
+
+        result = exchange_many(
+            (frame for frame, _command in items),
+            timeout=timeout,
+        )
+        rx_items = await result if isawaitable(result) else result
+        return [
+            CommandResult(
+                command=command & 0xFFFF,
+                tx=frame,
+                rx=rx,
+                frames=tuple(iter_frames(rx)),
+                ack=first_response_frame(rx, tx=frame, cmd=command),
+            )
+            for (frame, command), rx in zip(items, rx_items, strict=True)
+        ]
 
     async def exchange_frame_confirmed(
         self,
@@ -509,6 +546,10 @@ class AsyncZhiyunLight:
         *,
         control_mode: int = DEFAULT_CONTROL_MODE,
     ) -> list[CommandResult]:
+        if callable(getattr(self.transport, "exchange_many", None)):
+            plan = self._batched_scene_command_plan(scene, control_mode=control_mode)
+            timeout = getattr(self.transport, "timeout", 1.5)
+            return await execute_async_frame_plan(self, plan, timeout=timeout)
         return await execute_async_command_plan(
             self,
             scene_command_plan(scene, control_mode=control_mode),
@@ -567,3 +608,19 @@ class AsyncZhiyunLight:
         )
         require_command_results(flatten_command_batches(batches), action="transition")
         return batches
+
+    def _batched_scene_command_plan(
+        self,
+        scene: Scene,
+        *,
+        control_mode: int,
+    ):
+        start_seq = next(self._seq)
+        plan = scene_command_plan(
+            scene,
+            control_mode=control_mode,
+            start_seq=start_seq,
+        )
+        for _frame in plan.frames[1:]:
+            next(self._seq)
+        return plan

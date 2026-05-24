@@ -742,8 +742,21 @@ async def execute_async_frame_plan(
 ) -> list[CommandResult]:
     """Execute a planned scene using exact serialized frames asynchronously."""
 
+    frame_items = tuple(plan.frames)
+    exchange_frames = getattr(light, "exchange_prebuilt_frames", None)
+    if callable(exchange_frames):
+        entries = tuple(
+            (frame.frame, frame.command.command)
+            for frame in frame_items
+        )
+        if timeout is None:
+            result = exchange_frames(entries)
+        else:
+            result = exchange_frames(entries, timeout=timeout)
+        return await result if isawaitable(result) else result
+
     results: list[CommandResult] = []
-    for frame in plan.frames:
+    for frame in frame_items:
         results.append(
             await _exchange_prebuilt_frame_async(light, frame, timeout=timeout)
         )

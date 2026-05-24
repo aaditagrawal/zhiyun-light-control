@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from collections.abc import Iterable
 
 from zhiyun_light_control import (
     AsyncProbeResult,
@@ -39,6 +40,25 @@ class AsyncTimeoutTransport:
     async def exchange(self, tx: bytes, timeout: float = 1.5) -> bytes:
         del tx, timeout
         return b""
+
+    async def close(self) -> None:
+        return
+
+
+class AsyncBatchTransport:
+    timeout = 2.5
+
+    def __init__(self) -> None:
+        self.sent_batches: list[tuple[tuple[bytes, ...], float | None]] = []
+
+    async def exchange_many(
+        self,
+        tx: Iterable[bytes],
+        timeout: float | None = None,
+    ) -> tuple[bytes, ...]:
+        frames = tuple(tx)
+        self.sent_batches.append((frames, timeout))
+        return tuple(b"" for _frame in frames)
 
     async def close(self) -> None:
         return
@@ -208,6 +228,31 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [first_frame(tx).payload[2] for tx in transport.sent],
             [0x33, 0x33, 0x33],
+        )
+
+    async def test_async_apply_scene_batches_when_transport_supports_it(self) -> None:
+        transport = AsyncBatchTransport()
+        light = AsyncZhiyunLight(transport)
+
+        results = await light.apply_scene(
+            Scene(obj=1, sleep=0, brightness=50, kelvin=3200)
+        )
+
+        self.assertEqual(len(transport.sent_batches), 1)
+        frames, timeout = transport.sent_batches[0]
+        self.assertEqual(timeout, 2.5)
+        self.assertEqual([first_frame(tx).seq for tx in frames], [1, 2, 3])
+        self.assertEqual(
+            [first_frame(tx).cmd for tx in frames],
+            [
+                RuntimeCommand.SLEEP,
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.CCT,
+            ],
+        )
+        self.assertEqual(
+            [result.transport_status for result in results],
+            ["sent_no_response", "sent_no_response", "sent_no_response"],
         )
 
     async def test_async_control_mode_can_use_legacy_operation_byte(self) -> None:

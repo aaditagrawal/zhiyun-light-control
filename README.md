@@ -197,6 +197,16 @@ echo route as an accepted transport result. Physical testing showed that a
 broad `0x0301` candidate pass reached `2700K` at `20%`; exact brightness/CCT
 control routing is still being narrowed down.
 
+For the local post-provisioning BLE path, native `FEE9` scene writes are
+write-only: the light changes state but does not ACK the control frames.
+
+```sh
+uv run zlight apply --transport ble --ble-backend macos-app --ble-profile legacy --obj 1 --sleep 0 --brightness 50 --kelvin 3200 --accept-no-response --yes
+```
+
+The JSON still reports each command as `sent_no_response`; the flag only lets
+shell automation accept the expected write-only transport result.
+
 For macOS BLE authorization diagnostics, the helper can use a fresh bundle
 identity:
 

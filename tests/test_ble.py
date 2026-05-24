@@ -39,6 +39,7 @@ from zhiyun_light_control.transports.ble import (
     BleExchangeResult,
     BleInspectResult,
     BleProfile,
+    BleSequenceExchangeResult,
     BleService,
     BleTransport,
     CrashIsolatedBleTransport,
@@ -1193,7 +1194,9 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(exchange.call_args.kwargs["python"], "python-test")
 
-    async def test_macos_app_transport_uses_native_exchange(self) -> None:
+    async def test_macos_app_transport_without_open_uses_native_exchange(
+        self,
+    ) -> None:
         tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
         rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
 
@@ -1201,12 +1204,12 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
             "zhiyun_light_control.transports.ble.exchange_zhiyun_ble_macos_app",
             return_value=BleExchangeResult(ok=True, tx=tx, rx=rx, address="UUID-1"),
         ) as exchange:
-            async with MacosBleAppTransport(
+            transport = MacosBleAppTransport(
                 address="UUID-1",
                 profile="legacy",
                 timeout=1.0,
-            ) as transport:
-                result = await transport.exchange(tx, timeout=1.0)
+            )
+            result = await transport.exchange(tx, timeout=1.0)
 
         self.assertEqual(result, rx)
         self.assertEqual(transport.address, "UUID-1")
@@ -1216,6 +1219,65 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
             exchange.call_args.kwargs["service_uuid"],
             LEGACY_ZY_SERVICE_UUID,
         )
+
+    async def test_macos_app_transport_exchange_many_uses_sequence_exchange(
+        self,
+    ) -> None:
+        first_tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+        second_tx = build_runtime_frame(2, RuntimeCommand.FIRMWARE)
+        first_rx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO, b"\x00")
+        second_rx = build_runtime_frame(2, RuntimeCommand.FIRMWARE, b"1.6.4\x00")
+
+        with patch(
+            "zhiyun_light_control.transports.ble."
+            "exchange_zhiyun_ble_sequence_macos_app",
+            return_value=BleSequenceExchangeResult(
+                ok=True,
+                tx=(first_tx, second_tx),
+                rx=(first_rx, second_rx),
+                address="UUID-1",
+            ),
+        ) as exchange:
+            transport = MacosBleAppTransport(
+                address="UUID-1",
+                profile="legacy",
+                timeout=1.0,
+            )
+            result = await transport.exchange_many(
+                (first_tx, second_tx),
+                timeout=2.0,
+            )
+
+        self.assertEqual(result, (first_rx, second_rx))
+        self.assertEqual(transport.address, "UUID-1")
+        exchange.assert_called_once()
+        self.assertEqual(exchange.call_args.args[0], (first_tx, second_tx))
+        self.assertEqual(exchange.call_args.kwargs["address"], "UUID-1")
+        self.assertEqual(exchange.call_args.kwargs["profile"], "legacy")
+        self.assertEqual(exchange.call_args.kwargs["timeout"], 2.0)
+        self.assertEqual(
+            exchange.call_args.kwargs["service_uuid"],
+            LEGACY_ZY_SERVICE_UUID,
+        )
+
+    async def test_macos_app_transport_exchange_many_pads_missing_rx(self) -> None:
+        first_tx = build_runtime_frame(1, RuntimeCommand.SLEEP, b"\x01")
+        second_tx = build_runtime_frame(2, RuntimeCommand.BRIGHTNESS, b"\x01")
+
+        with patch(
+            "zhiyun_light_control.transports.ble."
+            "exchange_zhiyun_ble_sequence_macos_app",
+            return_value=BleSequenceExchangeResult(
+                ok=True,
+                tx=(first_tx, second_tx),
+                rx=(),
+                address="UUID-1",
+            ),
+        ):
+            transport = MacosBleAppTransport(address="UUID-1", profile="legacy")
+            result = await transport.exchange_many((first_tx, second_tx))
+
+        self.assertEqual(result, (b"", b""))
 
 
 if __name__ == "__main__":

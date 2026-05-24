@@ -165,9 +165,36 @@ read-only `DEVICE_INFO` frame. The `1827/2ADB/2ADC` endpoint timed out for that
 same read-only probe.
 
 On the confirmed `FEE9` endpoint, global status reads ACKed for device info,
-firmware, voltage, and device id. Updater commands, object reads, register, and
-brightness/CCT/sleep writes timed out. That means the current BLE route is a
-confirmed identity/status route, not a confirmed control route.
+firmware, voltage, and device id. Before mesh provisioning and config, updater
+commands, object reads, register, and brightness/CCT/sleep writes timed out.
+After provisioning/config completed and Mesh Proxy `1828` appeared, native
+`FEE9` sequence writes physically controlled the attached G60. The verified
+local scene was object `1`, `sleep=0`, `brightness=50`, `kelvin=3200`, op byte
+`0x33`; the light was visually confirmed at `3200K` and `50%`.
+
+Those `FEE9` control writes are write-only on the local light: they return no
+notify data and therefore report `sent_no_response`, not `acknowledged`.
+Programmatic callers should treat that as transport evidence unless they have
+their own physical/state confirmation. CLI automation can opt into this known
+write-only route with:
+
+```sh
+uv run zlight apply \
+  --transport ble \
+  --ble-backend macos-app \
+  --address FF2162DD-19CF-467B-9521-4F695AE0BC25 \
+  --ble-profile legacy \
+  --timeout 25 \
+  --obj 1 --sleep 0 --brightness 50 --kelvin 3200 \
+  --accept-no-response --yes
+```
+
+The SDK route is `AsyncZhiyunLight.macos_ble_app(..., profile="legacy")`.
+`apply_scene()` batches scene frames through
+`MacosBleAppTransport.exchange_many()`, which uses the helper's
+`exchange-sequence` mode. Persistent helper IPC is not the default for scene
+writes because it can surface stale delayed responses and does not handle
+write-only control frames as reliably.
 
 ## Mesh Provisioning Breakpoint
 
@@ -182,9 +209,9 @@ Official ZY Vega `1.1.7` uses two BLE layers for PL-series lights:
    then sends native `ZYLightClient` control packets for brightness, CCT, sleep,
    RGB, HSI, and effects.
 
-The local G60 is currently at the first stage: it advertises `1827` and not
-`1828`. A raw runtime `DEVICE_INFO` frame is not valid on `1827`, which is why
-earlier endpoint tests timed out. The verified mesh handshake primitive is:
+The local G60 originally appeared at the first stage: it advertised `1827` and
+not `1828`. A raw runtime `DEVICE_INFO` frame is not valid on `1827`, which is
+why earlier endpoint tests timed out. The verified mesh handshake primitive is:
 
 ```sh
 uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json

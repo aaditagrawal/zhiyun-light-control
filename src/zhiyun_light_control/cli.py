@@ -836,6 +836,15 @@ def build_parser() -> argparse.ArgumentParser:
             "write echo. JSON output still reports acknowledged=false."
         ),
     )
+    apply.add_argument(
+        "--accept-no-response",
+        action="store_true",
+        help=(
+            "Return exit code 0 when every unacknowledged command was sent but "
+            "the endpoint did not respond. JSON output still reports "
+            "acknowledged=false."
+        ),
+    )
     apply.add_argument("--yes", action="store_true")
     apply.set_defaults(func=cmd_apply)
 
@@ -2229,10 +2238,15 @@ def cmd_apply(args: argparse.Namespace) -> int:
             "first_word": args.first_word,
             "first_word_hex": f"0x{args.first_word:04x}",
             "accepted_echo": args.accept_echo,
+            "accepted_no_response": args.accept_no_response,
             "results": [result.to_dict() for result in results],
         }
     )
-    return command_results_exit_code(results, accept_echo=args.accept_echo)
+    return command_results_exit_code(
+        results,
+        accept_echo=args.accept_echo,
+        accept_no_response=args.accept_no_response,
+    )
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -2385,9 +2399,17 @@ def command_results_exit_code(
     results: list[CommandResult],
     *,
     accept_echo: bool = False,
+    accept_no_response: bool = False,
 ) -> int:
     accepted = all(
-        result.acknowledged or (accept_echo and result.echoed) for result in results
+        result.acknowledged
+        or (accept_echo and result.echoed)
+        or (
+            accept_no_response
+            and result.sent
+            and result.transport_status == "sent_no_response"
+        )
+        for result in results
     )
     return 0 if accepted else 1
 
