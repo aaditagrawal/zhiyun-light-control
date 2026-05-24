@@ -20,6 +20,7 @@ from zhiyun_light_control import (
     setup_profile_primitive_requirements,
     setup_profile_primitive_requirements_map,
     setup_profile_ready,
+    setup_profile_summary,
     setup_profile_unready_capabilities,
     setup_profile_unready_primitive_capabilities,
 )
@@ -136,6 +137,18 @@ class SetupProfileTests(unittest.TestCase):
         self.assertEqual(
             setup_profile_primitive_requirements_map()["brightness"],
             ("control_writes",),
+        )
+        self.assertEqual(
+            setup_profile_summary(None),
+            {"present": False},
+        )
+        self.assertEqual(
+            setup_profile_summary(profile)["primitive_ready_for"]["brightness"],
+            False,
+        )
+        self.assertEqual(
+            setup_profile_summary(profile)["config"]["port"],
+            "/dev/cu.usbmodem21301",
         )
 
         payload = profile.to_dict()

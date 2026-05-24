@@ -825,6 +825,10 @@ expose `setup_profile_primitive_ready()` plus
 Pass `require_controls=True` to `from_setup_profile()` or
 `with_setup_profile()` when all direct SDK primitive helpers should use that
 saved profile gate before opening USB or BLE.
+`LightIntegration.snapshot()` and `AsyncLightIntegration.snapshot()` include a
+top-level `client` object with `require_setup_profile_controls` and a compact
+`setup_profile` summary, so a host dashboard can verify its guard mode from the
+same integration payload it uses for readiness and device discovery.
 The integration facade also exposes direct control helpers:
 `register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
 `set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,

@@ -21,6 +21,7 @@ from .profiles import (
     setup_profile_primitive_readiness_map,
     setup_profile_primitive_ready,
     setup_profile_primitive_ready_for,
+    setup_profile_summary,
     setup_profile_unready_primitive_capabilities,
 )
 
@@ -216,9 +217,7 @@ class LightBridgeClient:
             "require_setup_profile_controls": (
                 self.require_setup_profile_controls
             ),
-            "setup_profile": _client_setup_profile_summary(
-                self.setup_profile_evidence
-            ),
+            "setup_profile": setup_profile_summary(self.setup_profile_evidence),
         }
         return snapshot
 
@@ -1031,20 +1030,6 @@ def _setup_profile_requirements(require: str | Iterable[str]) -> tuple[str, ...]
     if isinstance(require, str):
         return (require,) if require else ()
     return tuple(str(item) for item in require)
-
-
-def _client_setup_profile_summary(
-    profile: LightSetupProfile | None,
-) -> dict[str, object]:
-    if profile is None:
-        return {"present": False}
-    return {
-        "present": True,
-        "ok": profile.ok,
-        "config": profile.config.to_dict(),
-        "capabilities": profile.capabilities,
-        "primitive_ready_for": profile.primitive_ready_for,
-    }
 
 
 def command_result_status(result: Mapping[str, object]) -> str:

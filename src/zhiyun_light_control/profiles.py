@@ -328,6 +328,20 @@ def setup_profile_primitive_readiness_map(
     }
 
 
+def setup_profile_summary(
+    profile: LightSetupProfile | None,
+) -> dict[str, object]:
+    if profile is None:
+        return {"present": False}
+    return {
+        "present": True,
+        "ok": profile.ok,
+        "config": profile.config.to_dict(),
+        "capabilities": profile.capabilities,
+        "primitive_ready_for": profile.primitive_ready_for,
+    }
+
+
 def light_setup_profile_from_mapping(
     payload: Mapping[str, object],
 ) -> LightSetupProfile:

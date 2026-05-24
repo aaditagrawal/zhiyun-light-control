@@ -611,6 +611,14 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(integration.capabilities()["cues"], ["intro"])
         self.assertTrue(readiness["connection_confirmed"])
         self.assertEqual(snapshot["payloads"]["manifest"]["presets"], ["key"])
+        self.assertEqual(
+            snapshot["client"],
+            {
+                "api": "LightIntegration",
+                "require_setup_profile_controls": False,
+                "setup_profile": {"present": False},
+            },
+        )
         self.assertTrue(devices.call_args_list[0].kwargs["include_ble_status"])
         self.assertTrue(devices.call_args_list[1].kwargs["include_ble"])
 
@@ -1252,10 +1260,25 @@ class IntegrationTests(unittest.TestCase):
             integration.apply_scene({"brightness": 10})
 
         register = integration.register(device_id=1, group_id=2)
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": True, "selected_port": "/dev/cu.test"},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            snapshot = integration.snapshot()
 
         self.assertTrue(integration.require_setup_profile_controls)
         self.assertTrue(register["acknowledged"])
         self.assertEqual(light.primitive_calls, [])
+        self.assertTrue(snapshot["client"]["require_setup_profile_controls"])
+        self.assertTrue(snapshot["client"]["setup_profile"]["present"])
+        self.assertFalse(
+            snapshot["client"]["setup_profile"]["primitive_ready_for"][
+                "brightness"
+            ]
+        )
 
     def test_light_integration_setup_profile_guard_requires_evidence(self) -> None:
         integration = LightIntegration(
@@ -1592,6 +1615,14 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(integration.capabilities()["cues"], ["intro"])
         self.assertTrue(readiness["connection_confirmed"])
         self.assertEqual(snapshot["payloads"]["manifest"]["presets"], ["key"])
+        self.assertEqual(
+            snapshot["client"],
+            {
+                "api": "AsyncLightIntegration",
+                "require_setup_profile_controls": False,
+                "setup_profile": {"present": False},
+            },
+        )
         self.assertTrue(devices.call_args_list[0].kwargs["include_ble_status"])
         self.assertTrue(devices.call_args_list[1].kwargs["include_ble"])
 
@@ -2257,10 +2288,25 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
             await integration.apply_scene({"brightness": 10})
 
         register = await integration.register(device_id=1, group_id=2)
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": False, "selected_port": None},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            snapshot = await integration.snapshot()
 
         self.assertTrue(integration.require_setup_profile_controls)
         self.assertTrue(register["acknowledged"])
         self.assertEqual(light.primitive_calls, [])
+        self.assertTrue(snapshot["client"]["require_setup_profile_controls"])
+        self.assertTrue(snapshot["client"]["setup_profile"]["present"])
+        self.assertFalse(
+            snapshot["client"]["setup_profile"]["primitive_ready_for"][
+                "brightness"
+            ]
+        )
 
     async def test_async_light_integration_setup_profile_guard_requires_evidence(
         self,

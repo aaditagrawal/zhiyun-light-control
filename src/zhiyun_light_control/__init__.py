@@ -203,6 +203,7 @@ from .profiles import (
     setup_profile_primitive_requirements,
     setup_profile_primitive_requirements_map,
     setup_profile_ready,
+    setup_profile_summary,
     setup_profile_unready_capabilities,
     setup_profile_unready_primitive_capabilities,
 )
@@ -502,6 +503,7 @@ __all__ = [
     "setup_profile_primitive_ready",
     "setup_profile_primitive_ready_for",
     "setup_profile_ready",
+    "setup_profile_summary",
     "setup_profile_unready_capabilities",
     "setup_profile_unready_primitive_capabilities",
     "bridge_setup_report",

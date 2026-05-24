@@ -309,6 +309,10 @@ direct primitive helpers also accept `require_setup_profile=true`, and
 the default before opening USB/BLE. This is the fail-closed path for production
 controllers that should not send a control primitive unless the setup profile
 proves the operation was validated on the selected transport.
+Embedded integration snapshots add a top-level `client` object containing the
+active guard mode and the same compact profile summary used by bridge clients.
+That lets a setup dashboard consume one snapshot and confirm whether the host is
+currently using saved setup evidence.
 When a host talks to a long-running HTTP bridge instead of embedding the
 transport directly, `LightBridgeClient.setup_report`,
 `LightBridgeClient.setup_profile`, and `LightBridgeClient.save_setup_profile`

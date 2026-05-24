@@ -53,6 +53,7 @@ from .profiles import (
     setup_profile_capabilities,
     setup_profile_primitive_readiness_map,
     setup_profile_primitive_ready_for,
+    setup_profile_summary,
 )
 from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .server import (
@@ -1276,7 +1277,7 @@ class LightIntegration:
             state_version=state_version,
             state=state,
         )
-        return local_integration_snapshot(
+        snapshot = local_integration_snapshot(
             self.config,
             allow_control=self.allow_control,
             include_ble=include_ble,
@@ -1287,6 +1288,12 @@ class LightIntegration:
             state=resolved_state,
             light_factory=self.light_factory,
         )
+        snapshot["client"] = _integration_client_summary(
+            self.setup_profile_evidence,
+            require_setup_profile_controls=self.require_setup_profile_controls,
+            api="LightIntegration",
+        )
+        return snapshot
 
     def validate(
         self,
@@ -2582,7 +2589,7 @@ class AsyncLightIntegration:
             state_version=state_version,
             state=state,
         )
-        return await local_async_integration_snapshot(
+        snapshot = await local_async_integration_snapshot(
             self.config,
             allow_control=self.allow_control,
             include_ble=include_ble,
@@ -2593,6 +2600,12 @@ class AsyncLightIntegration:
             state=resolved_state,
             light_factory=self.light_factory,
         )
+        snapshot["client"] = _integration_client_summary(
+            self.setup_profile_evidence,
+            require_setup_profile_controls=self.require_setup_profile_controls,
+            api="AsyncLightIntegration",
+        )
+        return snapshot
 
     async def validate(
         self,
@@ -2710,6 +2723,19 @@ def _integration_cue_names(
 ) -> tuple[str, ...]:
     explicit = tuple(names)
     return explicit if explicit else () if library is None else tuple(library.names())
+
+
+def _integration_client_summary(
+    profile: LightSetupProfile | None,
+    *,
+    require_setup_profile_controls: bool,
+    api: str,
+) -> dict[str, object]:
+    return {
+        "api": api,
+        "require_setup_profile_controls": require_setup_profile_controls,
+        "setup_profile": setup_profile_summary(profile),
+    }
 
 
 def _state_payload(version: int, state: SceneState | None) -> dict[str, object]:
