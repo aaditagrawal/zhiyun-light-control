@@ -105,5 +105,16 @@ public key in one CoreBluetooth connection. Treat this as setup progress only;
 actual brightness/CCT control still requires completing provisioning, proxy
 reconnect, app-key setup, and the Zhiyun native register/control stage.
 
+After the provisionee public key is available, use `zhiyun_light_control.mesh`
+helpers for confirmation inputs, provisioner confirmation/random, session
+secrets, device key, and encrypted provisioning data. Do not send those as
+separate helper invocations; provisioning state must stay on one BLE bearer
+connection.
+
+The G60 changes its provisionee public key between sessions. A stale
+confirmation replay returned `030904` (`confirmation_failed`), so the next agent
+step is a dynamic single-session provisioning controller, not static frame
+replay.
+
 For reusable agent workflows and interpretation details, read
 `references/control-workflows.md`.

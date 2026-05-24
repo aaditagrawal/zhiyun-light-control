@@ -227,6 +227,10 @@ extra for P-256 key generation. A complete response should include the
 provisionee public key and derived ECDH secret; this is still pre-control setup,
 not a finished light-output command.
 
+For lower-level provisioning work, import from `zhiyun_light_control.mesh`.
+The module includes confirmation/random helpers and encrypted provisioning-data
+builders that match the Nordic Mesh flow used by Zhiyun Vega.
+
 ## Local Bridges
 
 Run a JSON HTTP bridge:

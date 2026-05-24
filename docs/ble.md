@@ -178,6 +178,18 @@ expected next device response is a provisioning public key PDU. On macOS this
 depends on the rebuilt `ZhiyunBleScan` helper being allowed in Privacy &
 Security > Bluetooth.
 
+The SDK also implements the provisioning cryptographic primitives needed after
+public-key exchange: confirmation inputs, confirmation key, provisioner
+confirmation, provisioner random, provisioning salt, session key, session nonce,
+device key, and AES-CCM encrypted provisioning data. These match the Nordic
+Mesh code bundled inside Zhiyun Vega. They are exposed as Python helpers so the
+next hardware step can continue with confirmation/random and provisioning data
+once a single authorized BLE session can receive the provisionee public key.
+
+The provisionee key must be treated as session-specific. A live replay of a
+confirmation computed from a previous public key returned `030904`, a
+provisioning failure with reason `confirmation_failed`.
+
 Current local BLE scan validation:
 
 | Runtime | BLE stack | Result |

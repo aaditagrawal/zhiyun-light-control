@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 MESH_SAR_COMPLETE = 0
@@ -14,9 +15,16 @@ PROVISIONING_PUBLIC_KEY = 0x03
 PROVISIONING_CONFIRMATION = 0x05
 PROVISIONING_RANDOM = 0x06
 PROVISIONING_DATA = 0x07
+PROVISIONING_FAILED = 0x09
 
 FIPS_P256_ECDH_ALGORITHM = 0
 NO_OOB_AUTHENTICATION = 0
+NO_OOB_AUTH_VALUE = b"\x00" * 16
+ZERO_AES_KEY = b"\x00" * 16
+PRCK = b"prck"
+PRSK = b"prsk"
+PRSN = b"prsn"
+PRDK = b"prdk"
 
 
 @dataclass(frozen=True)
@@ -90,6 +98,51 @@ class ProvisionerKeypair:
 
     def to_dict(self) -> dict[str, object]:
         return {"public_key": self.public_key.to_dict()}
+
+
+@dataclass(frozen=True)
+class ProvisioningSessionSecrets:
+    confirmation_salt: bytes
+    confirmation_key: bytes
+    provisioning_salt: bytes
+    session_key: bytes
+    session_nonce: bytes
+    device_key: bytes
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "confirmation_salt_hex": self.confirmation_salt.hex(),
+            "confirmation_key_hex": self.confirmation_key.hex(),
+            "provisioning_salt_hex": self.provisioning_salt.hex(),
+            "session_key_hex": self.session_key.hex(),
+            "session_nonce_hex": self.session_nonce.hex(),
+            "device_key_hex": self.device_key.hex(),
+        }
+
+
+@dataclass(frozen=True)
+class ProvisioningFailure:
+    code: int
+
+    @property
+    def reason(self) -> str:
+        return {
+            0x01: "invalid_pdu",
+            0x02: "invalid_format",
+            0x03: "unexpected_pdu",
+            0x04: "confirmation_failed",
+            0x05: "out_of_resources",
+            0x06: "decryption_failed",
+            0x07: "unexpected_error",
+            0x08: "cannot_assign_addresses",
+        }.get(self.code, "unknown")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "code_hex": f"0x{self.code:02x}",
+            "reason": self.reason,
+        }
 
 
 def build_mesh_proxy_pdu(
@@ -169,6 +222,73 @@ def build_provisioning_public_key(public_key_xy: bytes) -> bytes:
     )
 
 
+def build_provisioner_confirmation(
+    *,
+    shared_secret: bytes,
+    confirmation_inputs: bytes,
+    provisioner_random: bytes,
+    auth_value: bytes = NO_OOB_AUTH_VALUE,
+) -> bytes:
+    if len(provisioner_random) != 16:
+        raise ValueError("provisioner_random must be 16 bytes")
+    if len(auth_value) != 16:
+        raise ValueError("auth_value must be 16 bytes")
+    confirmation_salt = mesh_salt(confirmation_inputs)
+    confirmation_key = mesh_k1(shared_secret, confirmation_salt, PRCK)
+    confirmation = aes_cmac(provisioner_random + auth_value, confirmation_key)
+    return build_mesh_proxy_pdu(
+        MESH_MESSAGE_TYPE_PROVISIONING,
+        bytes([PROVISIONING_CONFIRMATION]) + confirmation,
+    )
+
+
+def build_provisioner_random(provisioner_random: bytes) -> bytes:
+    if len(provisioner_random) != 16:
+        raise ValueError("provisioner_random must be 16 bytes")
+    return build_mesh_proxy_pdu(
+        MESH_MESSAGE_TYPE_PROVISIONING,
+        bytes([PROVISIONING_RANDOM]) + provisioner_random,
+    )
+
+
+def build_provisioning_data(
+    *,
+    shared_secret: bytes,
+    confirmation_inputs: bytes,
+    provisioner_random: bytes,
+    provisionee_random: bytes,
+    network_key: bytes,
+    key_index: int,
+    flags: int,
+    iv_index: int,
+    unicast_address: int,
+) -> tuple[bytes, ProvisioningSessionSecrets]:
+    plaintext = provisioning_data_plaintext(
+        network_key=network_key,
+        key_index=key_index,
+        flags=flags,
+        iv_index=iv_index,
+        unicast_address=unicast_address,
+    )
+    secrets = provisioning_session_secrets(
+        shared_secret=shared_secret,
+        confirmation_inputs=confirmation_inputs,
+        provisioner_random=provisioner_random,
+        provisionee_random=provisionee_random,
+    )
+    encrypted = aes_ccm_encrypt(
+        plaintext,
+        key=secrets.session_key,
+        nonce=secrets.session_nonce,
+        mic_size=8,
+    )
+    pdu = build_mesh_proxy_pdu(
+        MESH_MESSAGE_TYPE_PROVISIONING,
+        bytes([PROVISIONING_DATA]) + encrypted,
+    )
+    return pdu, secrets
+
+
 def generate_provisioner_keypair() -> ProvisionerKeypair:
     try:
         from cryptography.hazmat.primitives.asymmetric import ec
@@ -206,6 +326,157 @@ def derive_shared_ecdh_secret(
     )
     peer_public_key = peer_numbers.public_key()
     return private_key.exchange(ec.ECDH(), peer_public_key)
+
+
+def generate_provisioning_random() -> bytes:
+    return os.urandom(16)
+
+
+def confirmation_inputs(
+    *,
+    invite_pdu: bytes,
+    capabilities_pdu: bytes,
+    start_pdu: bytes,
+    provisioner_public_key_xy: bytes,
+    provisionee_public_key_xy: bytes,
+) -> bytes:
+    for name, value in (
+        ("invite_pdu", invite_pdu),
+        ("capabilities_pdu", capabilities_pdu),
+        ("start_pdu", start_pdu),
+        ("provisioner_public_key_xy", provisioner_public_key_xy),
+        ("provisionee_public_key_xy", provisionee_public_key_xy),
+    ):
+        if not value:
+            raise ValueError(f"{name} is required")
+    if len(provisioner_public_key_xy) != 64:
+        raise ValueError("provisioner public key must be 64 bytes of x||y")
+    if len(provisionee_public_key_xy) != 64:
+        raise ValueError("provisionee public key must be 64 bytes of x||y")
+    return (
+        _provisioning_payload_without_type(invite_pdu, PROVISIONING_INVITE)
+        + _provisioning_payload_without_type(
+            capabilities_pdu,
+            PROVISIONING_CAPABILITIES,
+        )
+        + _provisioning_payload_without_type(start_pdu, PROVISIONING_START)
+        + provisioner_public_key_xy
+        + provisionee_public_key_xy
+    )
+
+
+def verify_provisionee_confirmation(
+    *,
+    shared_secret: bytes,
+    confirmation_inputs: bytes,
+    provisionee_confirmation: bytes,
+    provisionee_random: bytes,
+    auth_value: bytes = NO_OOB_AUTH_VALUE,
+) -> bool:
+    if len(provisionee_confirmation) != 16:
+        raise ValueError("provisionee_confirmation must be 16 bytes")
+    if len(provisionee_random) != 16:
+        raise ValueError("provisionee_random must be 16 bytes")
+    if len(auth_value) != 16:
+        raise ValueError("auth_value must be 16 bytes")
+    confirmation_salt = mesh_salt(confirmation_inputs)
+    confirmation_key = mesh_k1(shared_secret, confirmation_salt, PRCK)
+    expected = aes_cmac(provisionee_random + auth_value, confirmation_key)
+    return expected == provisionee_confirmation
+
+
+def provisioning_session_secrets(
+    *,
+    shared_secret: bytes,
+    confirmation_inputs: bytes,
+    provisioner_random: bytes,
+    provisionee_random: bytes,
+) -> ProvisioningSessionSecrets:
+    if len(provisioner_random) != 16:
+        raise ValueError("provisioner_random must be 16 bytes")
+    if len(provisionee_random) != 16:
+        raise ValueError("provisionee_random must be 16 bytes")
+    confirmation_salt = mesh_salt(confirmation_inputs)
+    provisioning_salt = mesh_salt(
+        confirmation_salt + provisioner_random + provisionee_random
+    )
+    session_key = mesh_k1(shared_secret, provisioning_salt, PRSK)
+    session_nonce = mesh_k1(shared_secret, provisioning_salt, PRSN)[3:]
+    device_key = mesh_k1(shared_secret, provisioning_salt, PRDK)
+    return ProvisioningSessionSecrets(
+        confirmation_salt=confirmation_salt,
+        confirmation_key=mesh_k1(shared_secret, confirmation_salt, PRCK),
+        provisioning_salt=provisioning_salt,
+        session_key=session_key,
+        session_nonce=session_nonce,
+        device_key=device_key,
+    )
+
+
+def provisioning_data_plaintext(
+    *,
+    network_key: bytes,
+    key_index: int,
+    flags: int,
+    iv_index: int,
+    unicast_address: int,
+) -> bytes:
+    if len(network_key) != 16:
+        raise ValueError("network_key must be 16 bytes")
+    if not 0 <= key_index <= 0x0FFF:
+        raise ValueError("key_index must fit in 12 bits")
+    if not 0 <= flags <= 0xFF:
+        raise ValueError("flags must fit in one byte")
+    if not 0 <= iv_index <= 0xFFFFFFFF:
+        raise ValueError("iv_index must fit in four bytes")
+    if not 0x0001 <= unicast_address <= 0x7FFF:
+        raise ValueError("unicast_address must be a unicast address")
+    return (
+        network_key
+        + key_index.to_bytes(2, "big")
+        + bytes([flags])
+        + iv_index.to_bytes(4, "big")
+        + unicast_address.to_bytes(2, "big")
+    )
+
+
+def mesh_salt(data: bytes) -> bytes:
+    return aes_cmac(data, ZERO_AES_KEY)
+
+
+def mesh_k1(data: bytes, salt: bytes, text: bytes) -> bytes:
+    return aes_cmac(text, aes_cmac(data, salt))
+
+
+def aes_cmac(data: bytes, key: bytes) -> bytes:
+    try:
+        from cryptography.hazmat.primitives.ciphers import algorithms
+        from cryptography.hazmat.primitives.cmac import CMAC
+    except ImportError as exc:
+        raise RuntimeError(
+            "Bluetooth Mesh CMAC requires the 'mesh' extra: uv run --extra mesh ..."
+        ) from exc
+
+    cmac = CMAC(algorithms.AES(key))
+    cmac.update(data)
+    return cmac.finalize()
+
+
+def aes_ccm_encrypt(
+    data: bytes,
+    *,
+    key: bytes,
+    nonce: bytes,
+    mic_size: int,
+) -> bytes:
+    try:
+        from cryptography.hazmat.primitives.ciphers.aead import AESCCM
+    except ImportError as exc:
+        raise RuntimeError(
+            "Bluetooth Mesh AES-CCM requires the 'mesh' extra: uv run --extra mesh ..."
+        ) from exc
+
+    return AESCCM(key, tag_length=mic_size).encrypt(nonce, data, b"")
 
 
 def parse_mesh_proxy_pdu(data: bytes) -> MeshProxyPdu:
@@ -256,3 +527,39 @@ def parse_provisioning_public_key(data: bytes) -> ProvisioningPublicKey:
     if len(payload) != 64:
         raise ValueError("provisioning public key must contain 64 bytes of x||y")
     return ProvisioningPublicKey(x=payload[:32], y=payload[32:])
+
+
+def parse_provisioning_confirmation(data: bytes) -> bytes:
+    payload = _typed_provisioning_payload(data, PROVISIONING_CONFIRMATION)
+    if len(payload) != 16:
+        raise ValueError("provisioning confirmation must be 16 bytes")
+    return payload
+
+
+def parse_provisioning_random(data: bytes) -> bytes:
+    payload = _typed_provisioning_payload(data, PROVISIONING_RANDOM)
+    if len(payload) != 16:
+        raise ValueError("provisioning random must be 16 bytes")
+    return payload
+
+
+def parse_provisioning_failure(data: bytes) -> ProvisioningFailure:
+    payload = _typed_provisioning_payload(data, PROVISIONING_FAILED)
+    if len(payload) != 1:
+        raise ValueError("provisioning failure must contain one error code")
+    return ProvisioningFailure(code=payload[0])
+
+
+def _typed_provisioning_payload(data: bytes, pdu_type: int) -> bytes:
+    proxy = parse_mesh_proxy_pdu(data)
+    if proxy.sar != MESH_SAR_COMPLETE:
+        raise ValueError("segmented provisioning PDUs are not supported yet")
+    if proxy.message_type != MESH_MESSAGE_TYPE_PROVISIONING:
+        raise ValueError("mesh proxy PDU is not a provisioning message")
+    if not proxy.payload or proxy.payload[0] != pdu_type:
+        raise ValueError(f"provisioning PDU is not type 0x{pdu_type:02x}")
+    return proxy.payload[1:]
+
+
+def _provisioning_payload_without_type(data: bytes, pdu_type: int) -> bytes:
+    return _typed_provisioning_payload(data, pdu_type)

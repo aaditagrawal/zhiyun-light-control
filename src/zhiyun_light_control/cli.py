@@ -52,11 +52,15 @@ from .macos_ble_app import (
     open_macos_bluetooth_settings,
 )
 from .mesh import (
+    build_provisioner_confirmation,
+    build_provisioner_random,
     build_provisioning_invite,
     build_provisioning_public_key,
     build_provisioning_start_no_oob,
+    confirmation_inputs,
     derive_shared_ecdh_secret,
     generate_provisioner_keypair,
+    generate_provisioning_random,
     parse_provisioning_capabilities,
     parse_provisioning_public_key,
 )
@@ -1246,9 +1250,11 @@ def cmd_mesh_probe(args: argparse.Namespace) -> int:
 
 def cmd_mesh_handshake(args: argparse.Namespace) -> int:
     keypair = generate_provisioner_keypair()
+    start = build_provisioning_start_no_oob()
+    provisioner_random = generate_provisioning_random()
     frames = (
         build_provisioning_invite(args.attention),
-        build_provisioning_start_no_oob(),
+        start,
         build_provisioning_public_key(keypair.public_key.xy),
     )
     result = exchange_zhiyun_ble_sequence_macos_app(
@@ -1261,8 +1267,12 @@ def cmd_mesh_handshake(args: argparse.Namespace) -> int:
         notify_uuid=MESH_PROVISIONING_NOTIFY_UUID,
     )
     capabilities: dict[str, object] | None = None
+    capabilities_pdu: bytes | None = None
     provisionee_public_key: dict[str, object] | None = None
+    provisionee_public_key_xy: bytes | None = None
     shared_secret_hex: str | None = None
+    provisioner_confirmation_hex: str | None = None
+    provisioner_random_hex: str | None = None
     parse_errors: list[str] = []
     for index, rx in enumerate(result.rx):
         if not rx:
@@ -1270,6 +1280,7 @@ def cmd_mesh_handshake(args: argparse.Namespace) -> int:
         if capabilities is None:
             try:
                 capabilities = parse_provisioning_capabilities(rx).to_dict()
+                capabilities_pdu = rx
                 continue
             except ValueError as exc:
                 parse_errors.append(f"rx[{index}] capabilities: {exc}")
@@ -1277,12 +1288,29 @@ def cmd_mesh_handshake(args: argparse.Namespace) -> int:
             try:
                 public_key = parse_provisioning_public_key(rx)
                 provisionee_public_key = public_key.to_dict()
-                shared_secret_hex = derive_shared_ecdh_secret(
+                provisionee_public_key_xy = public_key.xy
+                shared_secret = derive_shared_ecdh_secret(
                     keypair.private_key,
                     public_key.xy,
-                ).hex()
+                )
+                shared_secret_hex = shared_secret.hex()
             except ValueError as exc:
                 parse_errors.append(f"rx[{index}] public_key: {exc}")
+    if capabilities_pdu is not None and provisionee_public_key_xy is not None:
+        inputs = confirmation_inputs(
+            invite_pdu=frames[0],
+            capabilities_pdu=capabilities_pdu,
+            start_pdu=start,
+            provisioner_public_key_xy=keypair.public_key.xy,
+            provisionee_public_key_xy=provisionee_public_key_xy,
+        )
+        shared_secret = bytes.fromhex(shared_secret_hex or "")
+        provisioner_confirmation_hex = build_provisioner_confirmation(
+            shared_secret=shared_secret,
+            confirmation_inputs=inputs,
+            provisioner_random=provisioner_random,
+        ).hex()
+        provisioner_random_hex = build_provisioner_random(provisioner_random).hex()
     payload = {
         "ok": result.ok,
         "probe": "mesh_provisioning_handshake",
@@ -1291,6 +1319,10 @@ def cmd_mesh_handshake(args: argparse.Namespace) -> int:
         "capabilities": capabilities,
         "provisionee_public_key": provisionee_public_key,
         "shared_ecdh_secret_hex": shared_secret_hex,
+        "next_frames": {
+            "provisioner_confirmation_hex": provisioner_confirmation_hex,
+            "provisioner_random_hex": provisioner_random_hex,
+        },
         "parse_errors": parse_errors,
         "complete": bool(capabilities and provisionee_public_key and shared_secret_hex),
     }

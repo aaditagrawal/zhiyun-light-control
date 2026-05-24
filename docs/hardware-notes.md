@@ -132,6 +132,20 @@ authorization returned to `not_determined`, so this probe could not be
 re-validated until `ZhiyunBleScan` is allowed again in macOS Privacy & Security
 > Bluetooth.
 
+The post-public-key provisioning crypto is implemented in the SDK and verified
+with unit tests against the Nordic/Zhiyun flow: confirmation inputs,
+confirmation key, provisioner confirmation/random, provisioning salt, session
+key, session nonce, device key, and encrypted provisioning data. This is still
+setup work; the light output path remains unverified until provisioning,
+`1828` proxy reconnect, app-key setup, and Zhiyun native registration are
+completed on hardware.
+
+A live replay probe confirmed the provisionee public key changes between
+sessions. Reusing a confirmation frame computed from a previous public key
+produced provisioning failure `030904`, decoded as `confirmation_failed`. Future
+provisioning must therefore compute and send confirmation/random inside one
+continuous BLE provisioning session.
+
 Direct Swift/Python processes without an app bundle were killed by macOS TCC
 before scan results were returned, which matches the bleak worker `SIGABRT`
 diagnostics. Use `zlight ble-helper --ensure --open-settings` to build the

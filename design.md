@@ -116,6 +116,10 @@ The SDK therefore treats `mesh-probe`, `mesh-handshake`, and `mesh.py` as
 setup/discovery primitives, not as solved output control. `mesh-handshake`
 extends the verified invite/capabilities probe with a no-OOB provisioning start
 and generated P-256 provisioner public key over a single BLE connection.
+`mesh.py` now also owns the Bluetooth Mesh provisioning crypto needed for the
+next state transition: confirmation inputs, AES-CMAC based salts/keys,
+provisioner confirmation/random, session nonce/key, device key, and encrypted
+provisioning data.
 
 ## Planning and Transitions
 
