@@ -8,7 +8,13 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .bridge import LightConnectionConfig, LightFactory
-from .controller import AsyncLightController, AsyncLightFactory, LightController
+from .commands import SerializedPlanBundle
+from .controller import (
+    AsyncLightController,
+    AsyncLightFactory,
+    LightController,
+    _serialized_plan_payload,
+)
 from .cues import CueLibrary
 from .integration import (
     AsyncLightIntegration,
@@ -1347,16 +1353,17 @@ class LightRig:
     def execute_plan(
         self,
         name: str,
-        plan: Mapping[str, object],
+        plan: SerializedPlanBundle | Mapping[str, object],
         *,
         timeout: float | None = None,
         require_acknowledged: bool | None = None,
         require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         self.fixture(name)
+        plan_payload = _serialized_plan_payload(plan)
         self._require_setup_profile_primitive_if_requested(
             name,
-            _plan_primitive_name(plan),
+            _plan_primitive_name(plan_payload),
             require_setup_profile,
         )
         response = self.controller(name).execute_plan(
@@ -1368,7 +1375,7 @@ class LightRig:
 
     def execute_plan_map(
         self,
-        plans: Mapping[str, object],
+        plans: SerializedPlanBundle | Mapping[str, object],
         *,
         stop_on_unconfirmed: bool = False,
         timeout: float | None = None,
@@ -2908,16 +2915,17 @@ class AsyncLightRig:
     async def execute_plan(
         self,
         name: str,
-        plan: Mapping[str, object],
+        plan: SerializedPlanBundle | Mapping[str, object],
         *,
         timeout: float | None = None,
         require_acknowledged: bool | None = None,
         require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         self.fixture(name)
+        plan_payload = _serialized_plan_payload(plan)
         self._require_setup_profile_primitive_if_requested(
             name,
-            _plan_primitive_name(plan),
+            _plan_primitive_name(plan_payload),
             require_setup_profile,
         )
         response = await self.controller(name).execute_plan(
@@ -2929,7 +2937,7 @@ class AsyncLightRig:
 
     async def execute_plan_map(
         self,
-        plans: Mapping[str, object],
+        plans: SerializedPlanBundle | Mapping[str, object],
         *,
         stop_on_unconfirmed: bool = False,
         timeout: float | None = None,
@@ -4002,9 +4010,12 @@ def _rig_plan_next_seq(fixture_responses: Mapping[str, object]) -> int | None:
     return max(next_values) if next_values else None
 
 
-def _fixture_plan_map(plans: Mapping[str, object]) -> dict[str, Mapping[str, object]]:
-    raw_plans = plans.get("fixtures")
-    source = raw_plans if isinstance(raw_plans, Mapping) else plans
+def _fixture_plan_map(
+    plans: SerializedPlanBundle | Mapping[str, object],
+) -> dict[str, Mapping[str, object]]:
+    plan_payload = _serialized_plan_payload(plans)
+    raw_plans = plan_payload.get("fixtures")
+    source = raw_plans if isinstance(raw_plans, Mapping) else plan_payload
     fixture_plans: dict[str, Mapping[str, object]] = {}
     for name, plan in source.items():
         if not isinstance(plan, Mapping):

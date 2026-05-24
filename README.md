@@ -1083,6 +1083,33 @@ clients, and test doubles. Use `execute_frame_plan()` /
 send the exact serialized frame bytes from the plan, including the planned first
 word and sequence numbers.
 
+For portable handoff between timeline renderers, show controllers, and worker
+processes, wrap any serialized plan with `serialized_plan_bundle()`. Bundles are
+plain JSON with a frame summary and the original plan embedded, and the
+serialized frame executors accept either the bundle object or a loaded bundle
+mapping directly for single-target plans:
+
+```python
+from zhiyun_light_control import (
+    execute_serialized_frame_plan,
+    load_serialized_plan_bundle,
+    open_light,
+    save_serialized_plan_bundle,
+    scene_command_plan,
+    serialized_plan_bundle,
+)
+
+plan = scene_command_plan(scene, first_word=0x0301, start_seq=1).to_dict()
+bundle = serialized_plan_bundle({"command_plan": plan})
+save_serialized_plan_bundle(bundle, "planned-scene.json")
+
+with open_light(config) as light:
+    execute_serialized_frame_plan(
+        light,
+        load_serialized_plan_bundle("planned-scene.json"),
+    )
+```
+
 For media-control code that wants presets and cues without running the HTTP
 bridge, use the in-process controller:
 
@@ -1261,7 +1288,11 @@ preset, transition, sequence, or cue plan to `execute_plan()` or pass a grouped
 `plan_all()`, `plan_scene_map()`, or `plan_named_cue_all()` result to
 `execute_plan_map()`. This is the portable SDK pipeline for media systems that
 want to inspect, schedule, log, and then execute the same command frames over USB
-or BLE.
+or BLE. Wrap those returned dictionaries with `serialized_plan_bundle()` when a
+planner process needs to persist or pass the exact fixture command frames to a
+separate runtime process; `execute_plan()` and `execute_plan_map()` accept the
+loaded bundle object so each fixture is still routed to its own configured
+light.
 
 Use `rig.require_setup_profile("key", "read_status")` to fail fast from saved
 profile evidence before opening the transport, or

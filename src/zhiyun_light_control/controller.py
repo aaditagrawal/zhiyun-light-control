@@ -13,6 +13,8 @@ from .bridge import (
     make_light_factory,
 )
 from .commands import (
+    SERIALIZED_PLAN_BUNDLE_KIND,
+    SerializedPlanBundle,
     execute_async_serialized_frame_plan,
     execute_serialized_frame_plan,
     scene_command_plan,
@@ -539,18 +541,19 @@ class LightController:
 
     def execute_plan(
         self,
-        plan: Mapping[str, object],
+        plan: SerializedPlanBundle | Mapping[str, object],
         *,
         timeout: float | None = None,
         require_acknowledged: bool | None = None,
     ) -> dict[str, object]:
+        plan_payload = _serialized_plan_payload(plan)
         with self.light_factory() as light:
             results = execute_serialized_frame_plan(
                 light,
                 plan,
                 timeout=timeout,
             )
-        response = _plan_execution_response(plan, results)
+        response = _plan_execution_response(plan_payload, results)
         self._record_response_scene(response, "execute_plan", results)
         self._require_acknowledged(results, require_acknowledged, action="execute_plan")
         return response
@@ -1250,18 +1253,19 @@ class AsyncLightController:
 
     async def execute_plan(
         self,
-        plan: Mapping[str, object],
+        plan: SerializedPlanBundle | Mapping[str, object],
         *,
         timeout: float | None = None,
         require_acknowledged: bool | None = None,
     ) -> dict[str, object]:
+        plan_payload = _serialized_plan_payload(plan)
         async with self.light_factory() as light:
             results = await execute_async_serialized_frame_plan(
                 light,
                 plan,
                 timeout=timeout,
             )
-        response = _plan_execution_response(plan, results)
+        response = _plan_execution_response(plan_payload, results)
         self._record_response_scene(response, "execute_plan", results)
         self._require_acknowledged(results, require_acknowledged, action="execute_plan")
         return response
@@ -1865,6 +1869,19 @@ def _plan_execution_response(
         if key in plan:
             response[key] = plan[key]
     return response
+
+
+def _serialized_plan_payload(
+    plan: SerializedPlanBundle | Mapping[str, object],
+) -> Mapping[str, object]:
+    if isinstance(plan, SerializedPlanBundle):
+        return plan.plan
+    if plan.get("kind") != SERIALIZED_PLAN_BUNDLE_KIND:
+        return plan
+    bundled = plan.get("plan")
+    if not isinstance(bundled, Mapping):
+        raise ValueError("serialized plan bundle must contain a plan object")
+    return bundled
 
 
 def _primitive_response(

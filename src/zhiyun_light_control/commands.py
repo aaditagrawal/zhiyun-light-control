@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from inspect import isawaitable
+from os import PathLike
+from pathlib import Path
 
 from .models import (
     CommandResult,
@@ -28,6 +31,9 @@ from .protocol import (
     sleep_payload,
 )
 from .transitions import EasingName, scene_transition, transition_interval
+
+SERIALIZED_PLAN_BUNDLE_KIND = "serialized-plan-bundle"
+SERIALIZED_PLAN_BUNDLE_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -113,6 +119,89 @@ class SceneCommandPlan:
             "commands": [command.to_dict() for command in self.commands],
             "frames": [frame.to_dict() for frame in self.frames],
         }
+
+
+@dataclass(frozen=True)
+class SerializedPlanBundle:
+    """Portable JSON wrapper for a serialized SDK command plan."""
+
+    plan: dict[str, object]
+    created_at: float
+    schema_version: int = SERIALIZED_PLAN_BUNDLE_SCHEMA_VERSION
+
+    @classmethod
+    def from_mapping(cls, payload: Mapping[str, object]) -> SerializedPlanBundle:
+        kind = str(payload.get("kind", SERIALIZED_PLAN_BUNDLE_KIND))
+        if kind != SERIALIZED_PLAN_BUNDLE_KIND:
+            raise ValueError(f"unsupported serialized plan bundle kind: {kind}")
+        raw_plan = payload.get("plan")
+        if not isinstance(raw_plan, Mapping):
+            raise ValueError("serialized plan bundle must contain a plan object")
+        return cls(
+            plan=_string_key_dict(raw_plan),
+            created_at=float(payload.get("created_at", 0.0)),
+            schema_version=int(
+                payload.get(
+                    "schema_version",
+                    SERIALIZED_PLAN_BUNDLE_SCHEMA_VERSION,
+                )
+            ),
+        )
+
+    @classmethod
+    def from_json(cls, text: str) -> SerializedPlanBundle:
+        return serialized_plan_bundle_from_json(text)
+
+    @classmethod
+    def load(cls, path: str | PathLike[str]) -> SerializedPlanBundle:
+        return load_serialized_plan_bundle(path)
+
+    @property
+    def frame_commands(self) -> tuple[tuple[bytes, int], ...]:
+        return serialized_frame_commands(self.plan)
+
+    def frames(self) -> list[dict[str, object]]:
+        return [
+            {
+                "index": index,
+                "command": command,
+                "command_hex": f"0x{command:04x}",
+                "frame_hex": frame.hex(),
+            }
+            for index, (frame, command) in enumerate(self.frame_commands)
+        ]
+
+    def summary(self) -> dict[str, object]:
+        commands = [command for _frame, command in self.frame_commands]
+        return {
+            "frame_count": len(commands),
+            "commands": commands,
+            "command_hex": [f"0x{command:04x}" for command in commands],
+            "planned_action": _string_or_none(self.plan.get("action")),
+            "fixture_order": _list_of_strings(self.plan.get("fixture_order")),
+        }
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "api": "zhiyun-light-control",
+            "kind": SERIALIZED_PLAN_BUNDLE_KIND,
+            "schema_version": self.schema_version,
+            "created_at": self.created_at,
+            "summary": self.summary(),
+            "frames": self.frames(),
+            "plan": dict(self.plan),
+        }
+
+    def to_json(self, *, indent: int | None = 2) -> str:
+        return serialized_plan_bundle_to_json(self, indent=indent)
+
+    def save(
+        self,
+        path: str | PathLike[str],
+        *,
+        indent: int | None = 2,
+    ) -> None:
+        save_serialized_plan_bundle(self, path, indent=indent)
 
 
 def scene_command_specs(
@@ -253,6 +342,49 @@ def scene_frame_specs(
     ).frames
 
 
+def serialized_plan_bundle(
+    plan: Mapping[str, object],
+    *,
+    created_at: float | None = None,
+) -> SerializedPlanBundle:
+    return SerializedPlanBundle(
+        plan=_string_key_dict(plan),
+        created_at=time.time() if created_at is None else created_at,
+    )
+
+
+def serialized_plan_bundle_to_json(
+    bundle: SerializedPlanBundle | Mapping[str, object],
+    *,
+    indent: int | None = 2,
+) -> str:
+    payload = bundle.to_dict() if isinstance(bundle, SerializedPlanBundle) else bundle
+    return json.dumps(dict(payload), indent=indent, sort_keys=True)
+
+
+def serialized_plan_bundle_from_json(text: str) -> SerializedPlanBundle:
+    payload = json.loads(text)
+    if not isinstance(payload, Mapping):
+        raise ValueError("serialized plan bundle JSON must contain an object")
+    return SerializedPlanBundle.from_mapping(payload)
+
+
+def save_serialized_plan_bundle(
+    bundle: SerializedPlanBundle | Mapping[str, object],
+    path: str | PathLike[str],
+    *,
+    indent: int | None = 2,
+) -> None:
+    text = serialized_plan_bundle_to_json(bundle, indent=indent)
+    Path(path).write_text(f"{text}\n", encoding="utf-8")
+
+
+def load_serialized_plan_bundle(
+    path: str | PathLike[str],
+) -> SerializedPlanBundle:
+    return serialized_plan_bundle_from_json(Path(path).read_text(encoding="utf-8"))
+
+
 def transition_command_plans(
     start: Scene,
     end: Scene,
@@ -363,7 +495,7 @@ def execute_frame_plan(
 
 def execute_serialized_frame_plan(
     light: object,
-    plan: Mapping[str, object],
+    plan: SerializedPlanBundle | Mapping[str, object],
     *,
     timeout: float | None = None,
 ) -> list[CommandResult]:
@@ -372,7 +504,7 @@ def execute_serialized_frame_plan(
     results: list[CommandResult] = []
     _execute_serialized_plan(
         light,
-        plan,
+        _serialized_plan_mapping(plan),
         results=results,
         timeout=timeout,
     )
@@ -386,6 +518,16 @@ def _execute_serialized_plan(
     results: list[CommandResult],
     timeout: float | None,
 ) -> None:
+    bundled = _serialized_bundle_plan(plan)
+    if bundled is not None:
+        _execute_serialized_plan(
+            light,
+            bundled,
+            results=results,
+            timeout=timeout,
+        )
+        return
+
     nested = plan.get("command_plan")
     if isinstance(nested, Mapping):
         _execute_serialized_plan(
@@ -434,6 +576,11 @@ def _execute_serialized_plan(
             )
         return
 
+    if isinstance(plan.get("fixtures"), Mapping):
+        raise ValueError(
+            "serialized fixture maps require LightRig.execute_plan_map"
+        )
+
     raise ValueError(
         "serialized plan must contain command_plan, frames, command_batches, or steps"
     )
@@ -456,7 +603,7 @@ def execute_frame_plan_confirmed(
 
 def execute_serialized_frame_plan_confirmed(
     light: object,
-    plan: Mapping[str, object],
+    plan: SerializedPlanBundle | Mapping[str, object],
     *,
     timeout: float | None = None,
     action: str = "serialized frame plan",
@@ -596,7 +743,7 @@ async def execute_async_frame_plan(
 
 async def execute_async_serialized_frame_plan(
     light: object,
-    plan: Mapping[str, object],
+    plan: SerializedPlanBundle | Mapping[str, object],
     *,
     timeout: float | None = None,
 ) -> list[CommandResult]:
@@ -605,7 +752,7 @@ async def execute_async_serialized_frame_plan(
     results: list[CommandResult] = []
     await _execute_serialized_plan_async(
         light,
-        plan,
+        _serialized_plan_mapping(plan),
         results=results,
         timeout=timeout,
     )
@@ -619,6 +766,16 @@ async def _execute_serialized_plan_async(
     results: list[CommandResult],
     timeout: float | None,
 ) -> None:
+    bundled = _serialized_bundle_plan(plan)
+    if bundled is not None:
+        await _execute_serialized_plan_async(
+            light,
+            bundled,
+            results=results,
+            timeout=timeout,
+        )
+        return
+
     nested = plan.get("command_plan")
     if isinstance(nested, Mapping):
         await _execute_serialized_plan_async(
@@ -667,6 +824,11 @@ async def _execute_serialized_plan_async(
             )
         return
 
+    if isinstance(plan.get("fixtures"), Mapping):
+        raise ValueError(
+            "serialized fixture maps require AsyncLightRig.execute_plan_map"
+        )
+
     raise ValueError(
         "serialized plan must contain command_plan, frames, command_batches, or steps"
     )
@@ -689,7 +851,7 @@ async def execute_async_frame_plan_confirmed(
 
 async def execute_async_serialized_frame_plan_confirmed(
     light: object,
-    plan: Mapping[str, object],
+    plan: SerializedPlanBundle | Mapping[str, object],
     *,
     timeout: float | None = None,
     action: str = "serialized frame plan",
@@ -841,16 +1003,21 @@ async def _exchange_prebuilt_frame_bytes_async(
 
 
 def serialized_frame_commands(
-    plan: Mapping[str, object],
+    plan: SerializedPlanBundle | Mapping[str, object],
 ) -> tuple[tuple[bytes, int], ...]:
     """Extract ``(frame, command)`` entries from a serialized SDK command plan."""
 
-    return tuple(_iter_serialized_frame_commands(plan))
+    return tuple(_iter_serialized_frame_commands(_serialized_plan_mapping(plan)))
 
 
 def _iter_serialized_frame_commands(
     plan: Mapping[str, object],
 ) -> Iterable[tuple[bytes, int]]:
+    bundled = _serialized_bundle_plan(plan)
+    if bundled is not None:
+        yield from _iter_serialized_frame_commands(bundled)
+        return
+
     nested = plan.get("command_plan")
     if isinstance(nested, Mapping):
         yield from _iter_serialized_frame_commands(nested)
@@ -873,8 +1040,15 @@ def _iter_serialized_frame_commands(
             yield from _iter_serialized_frame_commands(step)
         return
 
+    raw_fixtures = plan.get("fixtures")
+    if isinstance(raw_fixtures, Mapping):
+        for fixture_plan in _fixture_plan_items(plan, raw_fixtures):
+            yield from _iter_serialized_frame_commands(fixture_plan)
+        return
+
     raise ValueError(
-        "serialized plan must contain command_plan, frames, command_batches, or steps"
+        "serialized plan must contain command_plan, frames, command_batches, "
+        "steps, or fixtures"
     )
 
 
@@ -895,8 +1069,27 @@ def _serialized_frame_entries(
             frame = bytes.fromhex(frame_hex)
         except ValueError as exc:
             raise ValueError(f"frame {index} has invalid frame_hex") from exc
-        frames.append((frame, command))
+        frames.append((frame, int(command)))
     return tuple(frames)
+
+
+def _serialized_bundle_plan(
+    plan: Mapping[str, object],
+) -> Mapping[str, object] | None:
+    if plan.get("kind") != SERIALIZED_PLAN_BUNDLE_KIND:
+        return None
+    bundled = plan.get("plan")
+    if not isinstance(bundled, Mapping):
+        raise ValueError("serialized plan bundle must contain a plan object")
+    return bundled
+
+
+def _serialized_plan_mapping(
+    plan: SerializedPlanBundle | Mapping[str, object],
+) -> Mapping[str, object]:
+    if isinstance(plan, SerializedPlanBundle):
+        return plan.to_dict()
+    return plan
 
 
 def _mapping_items(
@@ -911,6 +1104,40 @@ def _mapping_items(
     return tuple(mappings)
 
 
+def _fixture_plan_items(
+    plan: Mapping[str, object],
+    fixtures: Mapping[object, object],
+) -> tuple[Mapping[str, object], ...]:
+    fixture_plans = {str(name): value for name, value in fixtures.items()}
+    ordered_names = _ordered_fixture_names(
+        fixture_plans,
+        _list_of_strings(plan.get("fixture_order")),
+    )
+    mappings: list[Mapping[str, object]] = []
+    for name in ordered_names:
+        fixture_plan = fixture_plans[name]
+        if not isinstance(fixture_plan, Mapping):
+            raise ValueError(f"plan for fixture {name!r} must be an object")
+        mappings.append(fixture_plan)
+    return tuple(mappings)
+
+
+def _ordered_fixture_names(
+    fixtures: Mapping[str, object],
+    fixture_order: Iterable[str],
+) -> tuple[str, ...]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for name in fixture_order:
+        if name in fixtures and name not in seen:
+            names.append(name)
+            seen.add(name)
+    for name in fixtures:
+        if name not in seen:
+            names.append(name)
+    return tuple(names)
+
+
 def _serialized_transition_interval(
     plan: Mapping[str, object],
     batches: int,
@@ -918,6 +1145,20 @@ def _serialized_transition_interval(
     raw_duration = plan.get("duration", 0.0)
     duration = raw_duration if isinstance(raw_duration, int | float) else 0.0
     return transition_interval(float(duration), batches)
+
+
+def _string_key_dict(payload: Mapping[object, object]) -> dict[str, object]:
+    return {str(key): value for key, value in payload.items()}
+
+
+def _string_or_none(value: object) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _list_of_strings(value: object) -> list[str]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [str(item) for item in value]
 
 
 def _transport_exchange(light: object):

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from zhiyun_light_control import (
     CommandResult,
@@ -8,6 +10,7 @@ from zhiyun_light_control import (
     RuntimeFrameSpec,
     Scene,
     SceneCommandPlan,
+    SerializedPlanBundle,
     UnconfirmedCommandError,
     execute_async_command_plan,
     execute_async_command_plan_confirmed,
@@ -23,10 +26,15 @@ from zhiyun_light_control import (
     execute_serialized_frame_plan_confirmed,
     execute_transition_frame_plans,
     execute_transition_plans,
+    load_serialized_plan_bundle,
+    save_serialized_plan_bundle,
     scene_command_plan,
     scene_command_specs,
     scene_frame_specs,
     serialized_frame_commands,
+    serialized_plan_bundle,
+    serialized_plan_bundle_from_json,
+    serialized_plan_bundle_to_json,
     transition_command_plans,
 )
 from zhiyun_light_control.protocol import (
@@ -358,6 +366,114 @@ class CommandPlanningTests(unittest.TestCase):
             ],
         )
 
+    def test_serialized_frame_commands_flattens_fixture_plan_maps(self) -> None:
+        key_plan = scene_command_plan(
+            Scene(obj=1, brightness=10),
+            first_word=0x0301,
+            start_seq=11,
+        ).to_dict()
+        rim_plan = scene_command_plan(
+            Scene(obj=2, brightness=20),
+            first_word=0x0301,
+            start_seq=12,
+        ).to_dict()
+        plan = {
+            "action": "rig_plan_all",
+            "fixture_order": ["rim", "key"],
+            "fixtures": {
+                "key": {"command_plan": key_plan},
+                "rim": {"command_plan": rim_plan},
+            },
+        }
+
+        bundle = serialized_plan_bundle(plan, created_at=123.0)
+        frames = serialized_frame_commands(bundle)
+
+        self.assertEqual(
+            [first_frame(frame).seq for frame, _command in frames],
+            [12, 11],
+        )
+        self.assertEqual(
+            [command for _frame, command in frames],
+            [RuntimeCommand.BRIGHTNESS, RuntimeCommand.BRIGHTNESS],
+        )
+        self.assertEqual(bundle.summary()["fixture_order"], ["rim", "key"])
+        self.assertEqual(bundle.summary()["frame_count"], 2)
+
+    def test_serialized_plan_bundle_round_trips_frame_plans(self) -> None:
+        plan = scene_command_plan(
+            Scene(obj=2, brightness=25),
+            first_word=0x0301,
+            start_seq=5,
+        ).to_dict()
+
+        bundle = serialized_plan_bundle({"command_plan": plan}, created_at=123.0)
+        self.assertIsInstance(bundle, SerializedPlanBundle)
+        self.assertEqual(bundle.summary()["frame_count"], 1)
+        self.assertEqual(bundle.summary()["command_hex"], ["0x1001"])
+        self.assertEqual(
+            bundle.frames()[0]["frame_hex"],
+            plan["frames"][0]["frame_hex"],
+        )
+        self.assertEqual(serialized_frame_commands(bundle), bundle.frame_commands)
+
+        restored = serialized_plan_bundle_from_json(
+            serialized_plan_bundle_to_json(bundle)
+        )
+        self.assertEqual(restored.created_at, 123.0)
+        self.assertEqual(restored.frame_commands, bundle.frame_commands)
+
+        with TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "plan.json"
+            bundle.save(path)
+            self.assertEqual(
+                load_serialized_plan_bundle(path).summary(),
+                bundle.summary(),
+            )
+            save_serialized_plan_bundle(bundle.to_dict(), path)
+            self.assertEqual(
+                SerializedPlanBundle.load(path).frame_commands,
+                bundle.frame_commands,
+            )
+
+    def test_serialized_plan_bundle_requires_plan_object(self) -> None:
+        with self.assertRaisesRegex(ValueError, "plan object"):
+            SerializedPlanBundle.from_mapping({"kind": "serialized-plan-bundle"})
+
+        with self.assertRaisesRegex(ValueError, "JSON must contain an object"):
+            serialized_plan_bundle_from_json("[]")
+
+    def test_execute_serialized_frame_plan_accepts_plan_bundle(self) -> None:
+        light = FakeFrameLight()
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25),
+            first_word=0x0301,
+            start_seq=64,
+        ).to_dict()
+        bundle = serialized_plan_bundle({"command_plan": plan}, created_at=123.0)
+
+        results = execute_serialized_frame_plan(light, bundle, timeout=0.25)
+
+        self.assertEqual(
+            [tx for tx, _timeout in light.transport.sent],
+            [frame for frame, _command in bundle.frame_commands],
+        )
+        self.assertEqual(
+            [timeout for _tx, timeout in light.transport.sent],
+            [0.25],
+        )
+        self.assertEqual([first_frame(result.tx).seq for result in results], [64])
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    def test_execute_serialized_frame_plan_rejects_fixture_maps(self) -> None:
+        plan = scene_command_plan(Scene(obj=1, brightness=25)).to_dict()
+
+        with self.assertRaisesRegex(ValueError, "LightRig.execute_plan_map"):
+            execute_serialized_frame_plan(
+                FakeFrameLight(),
+                {"fixtures": {"key": {"command_plan": plan}}},
+            )
+
     def test_execute_serialized_frame_plan_runs_nested_sequence_frames(self) -> None:
         light = FakeFrameLight()
         plan = {
@@ -586,6 +702,45 @@ class AsyncCommandExecutionTests(unittest.IsolatedAsyncioTestCase):
             [0.25, 0.25, 0.25, 0.25],
         )
         self.assertTrue(all(result.acknowledged for result in results))
+
+    async def test_execute_async_serialized_frame_plan_accepts_bundle(
+        self,
+    ) -> None:
+        light = AsyncFakeFrameLight()
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25),
+            first_word=0x0301,
+            start_seq=101,
+        ).to_dict()
+        bundle = serialized_plan_bundle({"command_plan": plan}, created_at=123.0)
+
+        results = await execute_async_serialized_frame_plan(
+            light,
+            bundle.to_dict(),
+            timeout=0.25,
+        )
+
+        self.assertEqual(
+            [tx for tx, _timeout in light.transport.sent],
+            [frame for frame, _command in bundle.frame_commands],
+        )
+        self.assertEqual(
+            [timeout for _tx, timeout in light.transport.sent],
+            [0.25],
+        )
+        self.assertEqual([first_frame(result.tx).seq for result in results], [101])
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    async def test_execute_async_serialized_frame_plan_rejects_fixture_maps(
+        self,
+    ) -> None:
+        plan = scene_command_plan(Scene(obj=1, brightness=25)).to_dict()
+
+        with self.assertRaisesRegex(ValueError, "AsyncLightRig.execute_plan_map"):
+            await execute_async_serialized_frame_plan(
+                AsyncFakeFrameLight(),
+                {"fixtures": {"key": {"command_plan": plan}}},
+            )
 
     async def test_execute_async_serialized_frame_plan_confirmed_fails(
         self,

@@ -8,6 +8,7 @@ from zhiyun_light_control import (
     Scene,
     ScenePresetLibrary,
     UnconfirmedCommandError,
+    serialized_plan_bundle,
 )
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.protocol import (
@@ -332,7 +333,10 @@ class ControllerTests(unittest.TestCase):
             start_seq=7,
         )
 
-        response = controller.execute_plan(plan, timeout=0.25)
+        response = controller.execute_plan(
+            serialized_plan_bundle(plan, created_at=123.0),
+            timeout=0.25,
+        )
 
         self.assertEqual(response["action"], "execute_plan")
         self.assertEqual(response["planned_action"], "scene")

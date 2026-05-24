@@ -377,6 +377,18 @@ plans, and `execute_plan_map` does the same for grouped `plan_all`,
 `plan_scene_map`, or `plan_named_cue_all` results. This gives host applications
 a plan -> inspect/schedule -> execute pipeline without coupling to a specific
 transport backend.
+`serialized_plan_bundle(...)` wraps any of those serialized plan dictionaries in
+a portable JSON envelope with schema version, frame summary, and original plan.
+`SerializedPlanBundle.save(...)`, `save_serialized_plan_bundle(...)`, and
+`load_serialized_plan_bundle(...)` are the disk handoff helpers, and
+`serialized_frame_commands(...)` can flatten both single-fixture and grouped rig
+plans. `execute_serialized_frame_plan(...)` and
+`execute_async_serialized_frame_plan(...)` accept either the bundle object or a
+loaded bundle mapping for single-target plans; grouped rig plans keep using
+`execute_plan_map(...)` so each fixture is routed to its configured light.
+Controller and rig execution helpers also accept loaded bundle objects directly.
+This keeps the media-control boundary as JSON until the final USB/BLE runtime
+process sends the exact planned bytes.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

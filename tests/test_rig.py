@@ -30,6 +30,7 @@ from zhiyun_light_control import (
     save_light_setup_profile,
     save_rig,
     save_rig_profile_bundle,
+    serialized_plan_bundle,
 )
 from zhiyun_light_control.protocol import (
     RUNTIME_TYPE,
@@ -646,7 +647,10 @@ class LightRigTests(unittest.TestCase):
         )
         plan = rig.plan_all({"brightness": 12}, tag="set", first_word=0x0301)
 
-        response = rig.execute_plan_map(plan, timeout=0.25)
+        response = rig.execute_plan_map(
+            serialized_plan_bundle(plan, created_at=123.0),
+            timeout=0.25,
+        )
 
         self.assertEqual(response["action"], "rig_execute_plan_map")
         self.assertTrue(response["applied"])
@@ -1748,7 +1752,10 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         )
         plan = rig.plan_all({"brightness": 20}, first_word=0x0301)
 
-        response = await rig.execute_plan_map(plan, timeout=0.25)
+        response = await rig.execute_plan_map(
+            serialized_plan_bundle(plan, created_at=123.0),
+            timeout=0.25,
+        )
 
         self.assertEqual(response["action"], "rig_execute_plan_map")
         self.assertTrue(response["applied"])
