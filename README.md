@@ -821,10 +821,15 @@ The integration facade also exposes direct control helpers:
 `run_named_cue()`. Pass `require_ready=True` to state-changing helpers to check
 `control_requests` before opening the transport, or combine it with
 `require_acknowledged=True` to require the stricter `confirmed_control`
-readiness preflight. Primitive read responses include decoded `value`, `obj`,
-and `operation` fields when an ACK contains a parseable functional payload, while
-the raw `CommandResult` evidence remains available under `result`. Direct
-integration control updates the integration's own state tracker, so `state()`,
+readiness preflight. Pass `require_setup_profile=True` when an integration was
+created from `with_setup_profile()` or `from_setup_profile()` and the helper
+should fail before opening USB/BLE unless the saved setup evidence permits that
+primitive. Missing profile evidence raises `SetupProfileMissing`; unready
+primitive evidence raises `SetupProfileNotReady`.
+Primitive read responses include decoded `value`, `obj`, and `operation` fields
+when an ACK contains a parseable functional payload, while the raw
+`CommandResult` evidence remains available under `result`. Direct integration
+control updates the integration's own state tracker, so `state()`,
 `state_snapshot()`, `state_history()`, and
 `wait_for_state_update()` work without manually creating a controller.
 One-shot `LightIntegration` helpers close factories they create internally after
@@ -907,6 +912,12 @@ restored_integration = LightIntegration.from_setup_profile(
 )
 print(restored_integration.config.to_dict())
 restored_integration.require_setup_profile_primitive("status")
+if restored_profile.primitive_ready("set_brightness"):
+    restored_integration.set_brightness(
+        35,
+        require_ready=True,
+        require_setup_profile=True,
+    )
 
 result = integration.apply_scene(
     {"brightness": 35, "kelvin": 5600},

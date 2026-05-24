@@ -118,8 +118,21 @@ def main() -> None:
         payload["profile_path"] = str(profile_path)
 
     if args.brightness is not None:
-        register = integration.register(device_id=0, group_id=0)
-        brightness = integration.set_brightness(args.brightness)
+        integration = control_integration_from_setup(
+            integration,
+            setup,
+            "set_brightness",
+        )
+        register = integration.register(
+            device_id=0,
+            group_id=0,
+            require_setup_profile=True,
+        )
+        brightness = integration.set_brightness(
+            args.brightness,
+            require_ready=True,
+            require_setup_profile=True,
+        )
         payload["register"] = {
             "acknowledged": register["acknowledged"],
             "transport_status": register["transport_status"],
@@ -141,6 +154,16 @@ def config_from_setup(payload: Mapping[str, object]) -> LightConnectionConfig:
 
 def profile_from_setup(payload: Mapping[str, object]) -> LightSetupProfile:
     return LightSetupProfile.from_setup_report(payload)
+
+
+def control_integration_from_setup(
+    integration: LightIntegration,
+    payload: Mapping[str, object],
+    primitive: str,
+) -> LightIntegration:
+    configured = integration.with_setup_profile(profile_from_setup(payload))
+    configured.require_setup_profile_primitive(primitive)
+    return configured
 
 
 def save_profile_if_requested(

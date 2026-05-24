@@ -739,7 +739,12 @@ class LightIntegration:
         group_id: int = 0,
         *,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "register",
+            require_setup_profile,
+        )
         return self._call_controller(
             "register",
             controller_require_acknowledged=require_acknowledged,
@@ -753,7 +758,12 @@ class LightIntegration:
         *,
         obj: int | None = None,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "read_brightness",
+            require_setup_profile,
+        )
         return self._call_controller(
             "read_brightness",
             obj=self._obj(obj),
@@ -765,7 +775,12 @@ class LightIntegration:
         *,
         obj: int | None = None,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "read_cct",
+            require_setup_profile,
+        )
         return self._call_controller(
             "read_cct",
             obj=self._obj(obj),
@@ -777,7 +792,12 @@ class LightIntegration:
         *,
         obj: int | None = None,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "read_sleep",
+            require_setup_profile,
+        )
         return self._call_controller(
             "read_sleep",
             obj=self._obj(obj),
@@ -793,7 +813,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_brightness",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -817,7 +842,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_cct",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -841,7 +871,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_sleep",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -867,7 +902,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_rgb",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -895,7 +935,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_hsi",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -921,7 +966,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "scene",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -946,7 +996,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "preset",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -974,7 +1029,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "sequence",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -1001,7 +1061,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "cue",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -1029,7 +1094,12 @@ class LightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "run_named_cue",
+            require_setup_profile,
+        )
         self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -1297,6 +1367,14 @@ class LightIntegration:
                 require_acknowledged=require_acknowledged,
             )
         )
+
+    def _require_setup_profile_primitive_if_requested(
+        self,
+        primitive: str,
+        require_setup_profile: bool,
+    ) -> None:
+        if require_setup_profile:
+            self.require_setup_profile_primitive(primitive)
 
 
 @dataclass(frozen=True)
@@ -1958,7 +2036,12 @@ class AsyncLightIntegration:
         group_id: int = 0,
         *,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "register",
+            require_setup_profile,
+        )
         return await self._call_controller(
             "register",
             controller_require_acknowledged=require_acknowledged,
@@ -1972,7 +2055,12 @@ class AsyncLightIntegration:
         *,
         obj: int | None = None,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "read_brightness",
+            require_setup_profile,
+        )
         return await self._call_controller(
             "read_brightness",
             obj=self._obj(obj),
@@ -1984,7 +2072,12 @@ class AsyncLightIntegration:
         *,
         obj: int | None = None,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "read_cct",
+            require_setup_profile,
+        )
         return await self._call_controller(
             "read_cct",
             obj=self._obj(obj),
@@ -1996,7 +2089,12 @@ class AsyncLightIntegration:
         *,
         obj: int | None = None,
         require_acknowledged: bool = False,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "read_sleep",
+            require_setup_profile,
+        )
         return await self._call_controller(
             "read_sleep",
             obj=self._obj(obj),
@@ -2012,7 +2110,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_brightness",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2036,7 +2139,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_cct",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2060,7 +2168,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_sleep",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2086,7 +2199,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_rgb",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2114,7 +2232,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_hsi",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2140,7 +2263,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "scene",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2165,7 +2293,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "preset",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2193,7 +2326,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "sequence",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2220,7 +2358,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "cue",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2248,7 +2391,12 @@ class AsyncLightIntegration:
         require_acknowledged: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "run_named_cue",
+            require_setup_profile,
+        )
         await self._require_control_readiness(
             require_ready,
             required_readiness,
@@ -2512,6 +2660,14 @@ class AsyncLightIntegration:
                 require_acknowledged=require_acknowledged,
             )
         )
+
+    def _require_setup_profile_primitive_if_requested(
+        self,
+        primitive: str,
+        require_setup_profile: bool,
+    ) -> None:
+        if require_setup_profile:
+            self.require_setup_profile_primitive(primitive)
 
 
 def _integration_preset_names(

@@ -1193,6 +1193,52 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(integration.state_snapshot()["version"], 5)
         self.assertEqual(integration.state()["action"], "set_hsi")
 
+    def test_light_integration_can_guard_controls_with_setup_profile(
+        self,
+    ) -> None:
+        light = FakeControlStatusLight()
+        profile = setup_profile(
+            control_setup=True,
+            object_reads=False,
+            control_writes=False,
+        )
+        integration = LightIntegration(
+            light_factory=FakeFactory(light),
+            obj=2,
+        ).with_setup_profile(profile)
+
+        with self.assertRaisesRegex(
+            SetupProfileNotReady,
+            "control_writes",
+        ) as write_error:
+            integration.set_brightness(35, require_setup_profile=True)
+        with self.assertRaisesRegex(SetupProfileNotReady, "object_reads"):
+            integration.read_brightness(require_setup_profile=True)
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            integration.apply_scene(
+                {"brightness": 10},
+                require_setup_profile=True,
+            )
+
+        register = integration.register(
+            device_id=1,
+            group_id=2,
+            require_setup_profile=True,
+        )
+
+        self.assertEqual(write_error.exception.capabilities, ("control_writes",))
+        self.assertTrue(register["acknowledged"])
+        self.assertEqual(light.primitive_calls, [])
+
+    def test_light_integration_setup_profile_guard_requires_evidence(self) -> None:
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            light_factory=FakeFactory(FailingLight()),
+        )
+
+        with self.assertRaises(SetupProfileMissing):
+            integration.set_brightness(35, require_setup_profile=True)
+
     def test_light_integration_closes_owned_persistent_controller_factory(self) -> None:
         light = CountingControlStatusLight()
         factory = PersistentLightFactory(lambda: light)
@@ -2107,6 +2153,55 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(integration.state_snapshot()["version"], 5)
         self.assertEqual(integration.state()["action"], "set_hsi")
 
+    async def test_async_light_integration_can_guard_controls_with_setup_profile(
+        self,
+    ) -> None:
+        light = AsyncFakeControlStatusLight()
+        profile = setup_profile(
+            config=LightConnectionConfig.ble(name_contains="MOLUS"),
+            control_setup=True,
+            object_reads=False,
+            control_writes=False,
+        )
+        integration = AsyncLightIntegration(
+            light_factory=AsyncFakeFactory(light),
+            obj=2,
+        ).with_setup_profile(profile)
+
+        with self.assertRaisesRegex(
+            SetupProfileNotReady,
+            "control_writes",
+        ) as write_error:
+            await integration.set_brightness(35, require_setup_profile=True)
+        with self.assertRaisesRegex(SetupProfileNotReady, "object_reads"):
+            await integration.read_brightness(require_setup_profile=True)
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            await integration.apply_scene(
+                {"brightness": 10},
+                require_setup_profile=True,
+            )
+
+        register = await integration.register(
+            device_id=1,
+            group_id=2,
+            require_setup_profile=True,
+        )
+
+        self.assertEqual(write_error.exception.capabilities, ("control_writes",))
+        self.assertTrue(register["acknowledged"])
+        self.assertEqual(light.primitive_calls, [])
+
+    async def test_async_light_integration_setup_profile_guard_requires_evidence(
+        self,
+    ) -> None:
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            light_factory=AsyncFakeFactory(AsyncFailingLight()),
+        )
+
+        with self.assertRaises(SetupProfileMissing):
+            await integration.set_brightness(35, require_setup_profile=True)
+
     async def test_async_light_integration_runs_controls_directly(self) -> None:
         light = AsyncFakeControlStatusLight()
         presets = ScenePresetLibrary.from_mapping({"key": {"brightness": 25}})
@@ -2276,6 +2371,43 @@ def _result(first_word: int, cmd: int, payload: bytes) -> CommandResult:
     rx = build_frame(first_word, 1, cmd, payload)
     ack = first_frame(rx, cmd=cmd)
     return CommandResult(cmd, tx, rx, (ack,), ack)
+
+
+def setup_profile(
+    *,
+    config: LightConnectionConfig | None = None,
+    read_status: bool = True,
+    device_discovery: bool = True,
+    state_events: bool = True,
+    control_setup: bool = False,
+    object_reads: bool = False,
+    control_writes: bool = False,
+) -> LightSetupProfile:
+    resolved = config or LightConnectionConfig.usb(port="/dev/cu.test")
+    return LightSetupProfile.from_setup_report(
+        {
+            "ok": True,
+            "config": resolved.to_dict(),
+            "route_confirmed": True,
+            "status_ok": read_status,
+            "ready_for": {
+                "read_status": read_status,
+                "device_discovery": device_discovery,
+                "state_events": state_events,
+                "control_requests": True,
+                "confirmed_control": control_writes,
+            },
+            "validation_ready_for": {
+                "read_status": read_status,
+                "device_discovery": device_discovery,
+                "state_events": state_events,
+                "object_reads": object_reads,
+                "control_setup": control_setup,
+                "control_writes": control_writes,
+            },
+            "validation_unconfirmed": [],
+        }
+    )
 
 
 if __name__ == "__main__":

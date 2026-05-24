@@ -302,7 +302,11 @@ evidence capabilities they require (`control_writes`, `object_reads`,
 profile JSON, or a raw setup report. `LightIntegration` and
 `AsyncLightIntegration` instances created from a profile retain that evidence as
 `setup_profile_evidence` and expose matching
-`setup_profile_primitive_ready`/`require_setup_profile_primitive` helpers.
+`setup_profile_primitive_ready`/`require_setup_profile_primitive` helpers. Their
+direct primitive helpers also accept `require_setup_profile=true`, which checks
+the saved profile before opening USB/BLE. This is the fail-closed path for
+production controllers that should not send a control primitive unless the
+setup profile proves the operation was validated on the selected transport.
 When a host talks to a long-running HTTP bridge instead of embedding the
 transport directly, `LightBridgeClient.setup_report`,
 `LightBridgeClient.setup_profile`, and `LightBridgeClient.save_setup_profile`
