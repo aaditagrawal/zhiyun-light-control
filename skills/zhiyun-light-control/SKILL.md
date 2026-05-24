@@ -38,6 +38,12 @@ uv run zlight ble-helper --ensure --open-settings
 uv run zlight ble-helper --status --json
 ```
 
+The helper should be a compiled Swift app at
+`~/Library/Caches/zhiyun-light-control/ZhiyunBleScan.app`. If Settings does not
+show `ZhiyunBleScan`, rebuild the helper with current code and rerun scan; the
+old script helper could stay `not_determined`/`unauthorized` without appearing
+in Bluetooth privacy settings.
+
 ## Safe Validation
 
 ```sh
@@ -47,6 +53,16 @@ uv run zlight discover-usb --g60-matrix --json
 
 Use `--allow-control` only when the user explicitly wants state-changing
 hardware probes.
+
+## BLE Endpoint Evidence
+
+For the local `PL103_EDFE` G60, the macOS app backend scans successfully once
+Bluetooth authorization is allowed. `test-ble-endpoints` confirmed service
+`fee9`, write characteristic `d44bc439-abfd-45a2-b575-925416129600`, and notify
+characteristic `d44bc439-abfd-45a2-b575-925416129601` for read-only global
+identity/status frames. The `1827/2adb/2adc` candidate timed out. Do not present
+BLE brightness/CCT/sleep as solved yet; object reads, register, and control
+writes still time out on the confirmed `fee9` endpoint.
 
 ## Current G60 Control Evidence
 

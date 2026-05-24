@@ -47,14 +47,17 @@ def macos_ble_app_info(
         if sys.platform != "darwin":
             error = "macOS BLE app helper can only be built on macOS"
         else:
-            resolved_swift = swift_path or shutil.which("swift")
-            if resolved_swift is None:
-                error = "Swift runtime not found"
+            resolved_swiftc = swift_path or _find_swiftc()
+            if resolved_swiftc is None:
+                error = "Swift compiler not found"
             else:
-                app_path = ensure_macos_ble_app(
-                    bundle_name=bundle_name,
-                    swift_path=resolved_swift,
-                )
+                try:
+                    app_path = ensure_macos_ble_app(
+                        bundle_name=bundle_name,
+                        swift_path=resolved_swiftc,
+                    )
+                except RuntimeError as exc:
+                    error = str(exc)
     return {
         "ok": error is None,
         "available": sys.platform == "darwin",
@@ -137,16 +140,22 @@ def run_macos_ble_app(
             error="macOS BLE app backend requires macOS",
         )
     open_path = shutil.which("open")
-    swift_path = shutil.which("swift")
+    swiftc_path = _find_swiftc()
     if open_path is None:
         return MacosBleAppRun(
             ok=False,
             payload={},
             error="macOS open command not found",
         )
-    if swift_path is None:
-        return MacosBleAppRun(ok=False, payload={}, error="Swift runtime not found")
-    app_path = ensure_macos_ble_app(bundle_name=bundle_name, swift_path=swift_path)
+    if swiftc_path is None:
+        return MacosBleAppRun(ok=False, payload={}, error="Swift compiler not found")
+    try:
+        app_path = ensure_macos_ble_app(
+            bundle_name=bundle_name,
+            swift_path=swiftc_path,
+        )
+    except RuntimeError as exc:
+        return MacosBleAppRun(ok=False, payload={}, error=str(exc))
     with tempfile.TemporaryDirectory(prefix="zhiyun-ble-") as tmp:
         output = Path(tmp) / "result.json"
         command = [
@@ -216,7 +225,7 @@ def run_macos_ble_app(
 def ensure_macos_ble_app(
     *,
     bundle_name: str = APP_BUNDLE_NAME,
-    swift_path: str = "/usr/bin/swift",
+    swift_path: str = "/usr/bin/swiftc",
 ) -> Path:
     app_path = _bundle_root(bundle_name)
     contents = app_path / "Contents"
@@ -226,15 +235,18 @@ def ensure_macos_ble_app(
     resources.mkdir(parents=True, exist_ok=True)
     _write_if_changed(contents / "Info.plist", _info_plist(bundle_name))
     helper = resources / "helper.swift"
-    _write_if_changed(helper, _swift_source().encode("utf-8"))
+    source_changed = _write_if_changed(helper, _swift_source().encode("utf-8"))
     launcher = macos / bundle_name
-    launcher_bytes = (
-        "#!/bin/sh\n"
-        'APP_DIR="$(dirname "$0")"\n'
-        f"exec {swift_path!r} "
-        '"$APP_DIR/../Resources/helper.swift" "$@"\n'
-    ).encode()
-    _write_if_changed(launcher, launcher_bytes)
+    if source_changed or not launcher.exists():
+        proc = subprocess.run(
+            [swift_path, str(helper), "-o", str(launcher)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            error = proc.stderr.strip() or proc.stdout.strip()
+            raise RuntimeError(f"could not compile macOS BLE helper: {error}")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
     return app_path
 
@@ -255,7 +267,6 @@ def _info_plist(bundle_name: str) -> bytes:
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": "0.1.0",
             "CFBundleVersion": "1",
-            "LSBackgroundOnly": True,
             "NSBluetoothAlwaysUsageDescription": BLUETOOTH_USAGE,
             "NSBluetoothPeripheralUsageDescription": BLUETOOTH_USAGE,
         },
@@ -263,10 +274,30 @@ def _info_plist(bundle_name: str) -> bytes:
     )
 
 
-def _write_if_changed(path: Path, data: bytes) -> None:
+def _write_if_changed(path: Path, data: bytes) -> bool:
     if path.exists() and path.read_bytes() == data:
-        return
+        return False
     path.write_bytes(data)
+    return True
+
+
+def _find_swiftc() -> str | None:
+    direct = shutil.which("swiftc")
+    if direct is not None:
+        return direct
+    xcrun = shutil.which("xcrun")
+    if xcrun is None:
+        return None
+    proc = subprocess.run(
+        [xcrun, "--find", "swiftc"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return None
+    value = proc.stdout.strip()
+    return value or None
 
 
 def _terminate_helper(bundle_name: str) -> None:

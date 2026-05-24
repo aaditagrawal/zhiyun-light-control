@@ -107,9 +107,13 @@ without parsing every attempt.
 
 Native bundled CoreBluetooth inspection with an
 `NSBluetoothAlwaysUsageDescription` plist found service `FEE9` plus mesh service
-`1827` on the local G60. On `FEE9`, device-info, firmware, and register frames
-ACKed; legacy op `0x01` brightness/sleep controls timed out. Writing raw
-runtime frames to `1827/2ADB` disconnected immediately.
+`1827` on the local G60. The compiled Swift helper app reaches macOS Bluetooth
+authorization `allowed`; the older script-launch helper could remain
+`not_determined`/`unauthorized` without appearing in Settings. On the local
+G60, `FEE9` ACKs read-only global identity/status frames, while `1827` times out
+for the same `DEVICE_INFO` probe. Object reads, register, and
+brightness/CCT/sleep writes still time out on the confirmed `FEE9` endpoint, so
+BLE control routing remains unidentified.
 
 Direct Swift/Python processes without an app bundle were killed by macOS TCC
 before scan results were returned, which matches the bleak worker `SIGABRT`

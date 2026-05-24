@@ -13,6 +13,19 @@ For the local G60, a healthy USB status report includes firmware `1.6.4`,
 generation `pl103`, and ACKs for device info, firmware, voltage, device id, and
 updater identity reads.
 
+For BLE on macOS, first verify helper authorization and endpoint evidence:
+
+```sh
+uv run zlight ble-helper --status --json
+uv run zlight scan-ble --backend macos-app --timeout 10
+uv run zlight test-ble-endpoints --backend macos-app --address <BLE-UUID> --timeout 12 --json
+```
+
+The local G60 advertises as `PL103_EDFE`. The confirmed read-only endpoint is
+`fee9` with write `d44bc439-abfd-45a2-b575-925416129600` and notify
+`d44bc439-abfd-45a2-b575-925416129601`. It ACKs global identity/status reads,
+but object reads and control writes still time out.
+
 ## Interpreting Results
 
 - `acknowledged`: confirmed command response matched the sent command.

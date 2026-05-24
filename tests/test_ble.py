@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import plistlib
 import tempfile
 import types
 import unittest
@@ -11,6 +12,7 @@ from zhiyun_light_control.macos_ble_app import (
     APP_BUNDLE_ID,
     BLUETOOTH_USAGE,
     MacosBleAppRun,
+    ensure_macos_ble_app,
     macos_ble_app_info,
     macos_ble_app_status,
 )
@@ -125,6 +127,34 @@ class SafeBleScanTests(unittest.TestCase):
             timeout=1.25,
             bundle_name="ZhiyunBleScan",
         )
+
+    def test_macos_ble_app_ensure_compiles_visible_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_path = Path(tmp) / "ZhiyunBleScan.app"
+            compile_calls = []
+
+            def fake_run(args, **_kwargs):
+                compile_calls.append(args)
+                Path(args[-1]).write_bytes(b"mach-o")
+                return types.SimpleNamespace(returncode=0, stderr="", stdout="")
+
+            with (
+                patch(
+                    "zhiyun_light_control.macos_ble_app._bundle_root",
+                    return_value=app_path,
+                ),
+                patch("zhiyun_light_control.macos_ble_app.subprocess.run", fake_run),
+            ):
+                result = ensure_macos_ble_app(swift_path="/usr/bin/swiftc")
+
+            info = plistlib.loads((app_path / "Contents" / "Info.plist").read_bytes())
+            self.assertEqual(result, app_path)
+            self.assertEqual(compile_calls[0][0], "/usr/bin/swiftc")
+            self.assertEqual(info["CFBundleIdentifier"], APP_BUNDLE_ID)
+            self.assertNotIn("LSBackgroundOnly", info)
+            self.assertTrue(
+                (app_path / "Contents" / "MacOS" / "ZhiyunBleScan").exists()
+            )
 
     def test_safe_scan_parses_worker_devices(self) -> None:
         payload = {

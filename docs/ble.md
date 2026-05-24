@@ -72,8 +72,11 @@ before scan results were returned on the local setup. Use:
 uv run zlight ble-helper --ensure --open-settings
 ```
 
-This builds the cached helper and opens Bluetooth privacy settings for the exact
-bundle id used by scans. Use:
+This builds a cached compiled Swift `.app` helper and opens Bluetooth privacy
+settings for the exact bundle id used by scans. Older script-based helper builds
+could report `not_determined` plus `unauthorized` without appearing in Settings;
+delete the cached app or rerun `--ensure` with current code to rebuild the
+compiled helper. Use:
 
 ```sh
 uv run zlight ble-helper --status --json
@@ -125,9 +128,16 @@ worker-isolated BLE still performs each raw BLE exchange in a child process. Use
 
 Native bundled CoreBluetooth inspection with an
 `NSBluetoothAlwaysUsageDescription` plist found service `FEE9` plus mesh service
-`1827` on the local G60. On `FEE9`, device-info, firmware, and register frames
-ACKed; legacy op `0x01` brightness/sleep controls timed out. Writing raw
-runtime frames to `1827/2ADB` disconnected immediately.
+`1827` on the local G60. After switching the helper to a compiled Swift app,
+macOS authorization reached `allowed`, scan found `PL103_EDFE`, and endpoint
+testing confirmed `FEE9` (`d44bc439...9600` write, `...9601` notify) ACKs the
+read-only `DEVICE_INFO` frame. The `1827/2ADB/2ADC` endpoint timed out for that
+same read-only probe.
+
+On the confirmed `FEE9` endpoint, global status reads ACKed for device info,
+firmware, voltage, and device id. Updater commands, object reads, register, and
+brightness/CCT/sleep writes timed out. That means the current BLE route is a
+confirmed identity/status route, not a confirmed control route.
 
 Current local BLE scan validation:
 
