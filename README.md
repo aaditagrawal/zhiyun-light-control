@@ -6,6 +6,10 @@ Python SDK and bridge tooling for controlling Zhiyun MOLUS lights over USB CDC
 and BLE. The package is aimed at local media-production automation: scripts,
 show controllers, OSC/DMX bridges, and custom control surfaces.
 
+## Why
+
+I had a Zhiyun Molus G60 but the incomplete implementation on their tooling left me controlling settings manually, which affects long runs or programmatic scene flows. This repository is a showcase of GPT 5.5 xHigh over Codex with a long /goal to build out all tooling for this hardware with just the actual hardware plugged via USB for reference.
+
 ## Status
 
 This project is alpha hardware-control software.
