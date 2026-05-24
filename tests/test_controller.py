@@ -472,6 +472,26 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(update["version"], 1)
         self.assertEqual(update["state"]["scene"]["brightness"], 10)
 
+    def test_controller_iterates_state_events(self) -> None:
+        controller = LightController(light_factory=FakeFactory(FakeLight()))
+
+        initial = next(controller.state_events(limit=1, timeout=0.1))
+        self.assertEqual(initial, {"version": 0, "state": {"scene": None}})
+
+        controller.apply_scene(Scene(obj=1, brightness=10))
+        controller.apply_scene(Scene(obj=1, brightness=20))
+        events = list(
+            controller.state_events(
+                after_version=1,
+                limit=1,
+                timeout=0.1,
+                initial=False,
+            )
+        )
+
+        self.assertEqual(events[0]["version"], 2)
+        self.assertEqual(events[0]["state"]["scene"]["brightness"], 20)
+
     def test_controller_rejects_malformed_cue_steps(self) -> None:
         controller = LightController(light_factory=FakeFactory(FakeLight()))
 

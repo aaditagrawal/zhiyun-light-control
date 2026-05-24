@@ -491,6 +491,33 @@ class AsyncControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update["version"], 1)
         self.assertEqual(update["state"]["scene"]["brightness"], 10)
 
+    async def test_async_controller_iterates_state_events(self) -> None:
+        controller = AsyncLightController(
+            light_factory=FakeAsyncFactory(FakeAsyncLight())
+        )
+
+        initial_events: list[dict[str, object]] = []
+        async for event in controller.state_events(limit=1, timeout=0.1):
+            initial_events.append(event)
+        self.assertEqual(
+            initial_events,
+            [{"version": 0, "state": {"scene": None}}],
+        )
+
+        await controller.apply_scene(Scene(obj=1, brightness=10))
+        await controller.apply_scene(Scene(obj=1, brightness=20))
+        events: list[dict[str, object]] = []
+        async for event in controller.state_events(
+            after_version=1,
+            limit=1,
+            timeout=0.1,
+            initial=False,
+        ):
+            events.append(event)
+
+        self.assertEqual(events[0]["version"], 2)
+        self.assertEqual(events[0]["state"]["scene"]["brightness"], 20)
+
     async def test_async_controller_rejects_malformed_cue_steps(self) -> None:
         controller = AsyncLightController(
             light_factory=FakeAsyncFactory(FakeAsyncLight())

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field, replace
 from os import PathLike
 
@@ -293,6 +293,21 @@ class LightIntegration:
     ) -> dict[str, object]:
         return _state_payload(
             *self.state_tracker.wait_for_update(after_version, timeout=timeout)
+        )
+
+    def state_events(
+        self,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> Iterator[dict[str, object]]:
+        return self.state_tracker.events(
+            after_version=after_version,
+            limit=limit,
+            timeout=timeout,
+            initial=initial,
         )
 
     def devices(
@@ -1653,6 +1668,21 @@ class AsyncLightIntegration:
             timeout=timeout,
         )
         return _state_payload(version, state)
+
+    def state_events(
+        self,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> AsyncIterator[dict[str, object]]:
+        return self.state_tracker.async_events(
+            after_version=after_version,
+            limit=limit,
+            timeout=timeout,
+            initial=initial,
+        )
 
     async def devices(
         self,

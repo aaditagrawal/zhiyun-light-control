@@ -87,6 +87,27 @@ class StateTests(unittest.TestCase):
         self.assertEqual(tracker.history(limit=1), ((3, third),))
         self.assertEqual(tracker.history(limit=0), ())
 
+    def test_tracker_iterates_resumable_events(self) -> None:
+        tracker = SceneStateTracker()
+
+        initial = list(tracker.events(limit=1, timeout=0.1))
+        self.assertEqual(initial, [{"version": 0, "state": {"scene": None}}])
+
+        tracker.record(Scene(obj=1, brightness=10), source="test", action="a")
+        tracker.record(Scene(obj=1, brightness=20), source="test", action="b")
+
+        resumed = list(
+            tracker.events(
+                after_version=1,
+                limit=1,
+                timeout=0.1,
+                initial=False,
+            )
+        )
+
+        self.assertEqual(resumed[0]["version"], 2)
+        self.assertEqual(resumed[0]["state"]["scene"]["brightness"], 20)
+
     def test_tracker_infers_unconfirmed_results(self) -> None:
         tracker = SceneStateTracker()
 
@@ -108,6 +129,24 @@ class StateTests(unittest.TestCase):
 
     def test_empty_tracker_payload_is_stable(self) -> None:
         self.assertEqual(SceneStateTracker().to_dict(), {"scene": None})
+
+
+class AsyncStateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_tracker_iterates_async_events(self) -> None:
+        tracker = SceneStateTracker()
+        tracker.record(Scene(obj=1, brightness=30), source="test", action="scene")
+        events: list[dict[str, object]] = []
+
+        async for event in tracker.async_events(
+            after_version=0,
+            limit=1,
+            timeout=0.1,
+            initial=False,
+        ):
+            events.append(event)
+
+        self.assertEqual(events[0]["version"], 1)
+        self.assertEqual(events[0]["state"]["scene"]["brightness"], 30)
 
 
 if __name__ == "__main__":

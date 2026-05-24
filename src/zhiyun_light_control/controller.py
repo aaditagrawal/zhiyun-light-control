@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import AsyncIterator, Callable, Iterable, Iterator, Mapping
 from inspect import isawaitable
 
 from .async_client import AsyncZhiyunLight
@@ -395,6 +395,21 @@ class LightController:
     ) -> dict[str, object]:
         return _state_payload(
             *self.state_tracker.wait_for_update(after_version, timeout=timeout)
+        )
+
+    def state_events(
+        self,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> Iterator[dict[str, object]]:
+        return self.state_tracker.events(
+            after_version=after_version,
+            limit=limit,
+            timeout=timeout,
+            initial=initial,
         )
 
     def run_named_cue(
@@ -1107,6 +1122,21 @@ class AsyncLightController:
     ) -> dict[str, object]:
         return _state_payload(
             *self.state_tracker.wait_for_update(after_version, timeout=timeout)
+        )
+
+    def state_events(
+        self,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> AsyncIterator[dict[str, object]]:
+        return self.state_tracker.async_events(
+            after_version=after_version,
+            limit=limit,
+            timeout=timeout,
+            initial=initial,
         )
 
     async def run_named_cue(

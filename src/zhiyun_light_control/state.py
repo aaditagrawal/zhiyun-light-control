@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import asdict, dataclass
 
 from .models import Scene
@@ -113,6 +115,167 @@ class SceneStateTracker:
     def to_dict(self) -> dict[str, object]:
         state = self.snapshot()
         return {"scene": None} if state is None else state.to_dict()
+
+    def events(
+        self,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> Iterator[dict[str, object]]:
+        return iter_state_events(
+            self,
+            after_version=after_version,
+            limit=limit,
+            timeout=timeout,
+            initial=initial,
+        )
+
+    def async_events(
+        self,
+        *,
+        after_version: int | None = None,
+        limit: int | None = None,
+        timeout: float | None = 30.0,
+        initial: bool = True,
+    ) -> AsyncIterator[dict[str, object]]:
+        return async_iter_state_events(
+            self,
+            after_version=after_version,
+            limit=limit,
+            timeout=timeout,
+            initial=initial,
+        )
+
+
+def state_event_payload(
+    version: int,
+    state: SceneState | None,
+) -> dict[str, object]:
+    return {
+        "version": version,
+        "state": {"scene": None} if state is None else state.to_dict(),
+    }
+
+
+def state_history_payload(
+    history: tuple[tuple[int, SceneState], ...],
+) -> dict[str, object]:
+    return {
+        "events": [
+            {
+                "version": version,
+                "state": state.to_dict(),
+            }
+            for version, state in history
+        ]
+    }
+
+
+def iter_state_events(
+    tracker: SceneStateTracker,
+    *,
+    after_version: int | None = None,
+    limit: int | None = None,
+    timeout: float | None = 30.0,
+    initial: bool = True,
+) -> Iterator[dict[str, object]]:
+    remaining = limit
+    if remaining is not None and remaining <= 0:
+        return
+    version, state = tracker.versioned_snapshot()
+    if after_version is None:
+        if initial:
+            yield state_event_payload(version, state)
+            remaining = _decrement_remaining(remaining)
+            if remaining == 0:
+                return
+    else:
+        requested_version = max(0, after_version)
+        if requested_version > version:
+            if initial:
+                yield state_event_payload(version, state)
+                remaining = _decrement_remaining(remaining)
+                if remaining == 0:
+                    return
+        else:
+            version = requested_version
+            for event_version, event_state in tracker.history(
+                after_version=requested_version,
+            ):
+                yield state_event_payload(event_version, event_state)
+                version = event_version
+                remaining = _decrement_remaining(remaining)
+                if remaining == 0:
+                    return
+    while remaining is None or remaining > 0:
+        next_version, next_state = tracker.wait_for_update(
+            version,
+            timeout=timeout,
+        )
+        if next_version == version:
+            if remaining is not None:
+                return
+            continue
+        version = next_version
+        yield state_event_payload(version, next_state)
+        remaining = _decrement_remaining(remaining)
+
+
+async def async_iter_state_events(
+    tracker: SceneStateTracker,
+    *,
+    after_version: int | None = None,
+    limit: int | None = None,
+    timeout: float | None = 30.0,
+    initial: bool = True,
+) -> AsyncIterator[dict[str, object]]:
+    remaining = limit
+    if remaining is not None and remaining <= 0:
+        return
+    version, state = tracker.versioned_snapshot()
+    if after_version is None:
+        if initial:
+            yield state_event_payload(version, state)
+            remaining = _decrement_remaining(remaining)
+            if remaining == 0:
+                return
+    else:
+        requested_version = max(0, after_version)
+        if requested_version > version:
+            if initial:
+                yield state_event_payload(version, state)
+                remaining = _decrement_remaining(remaining)
+                if remaining == 0:
+                    return
+        else:
+            version = requested_version
+            for event_version, event_state in tracker.history(
+                after_version=requested_version,
+            ):
+                yield state_event_payload(event_version, event_state)
+                version = event_version
+                remaining = _decrement_remaining(remaining)
+                if remaining == 0:
+                    return
+    while remaining is None or remaining > 0:
+        next_version, next_state = await asyncio.to_thread(
+            tracker.wait_for_update,
+            version,
+            timeout=timeout,
+        )
+        if next_version == version:
+            if remaining is not None:
+                return
+            continue
+        version = next_version
+        yield state_event_payload(version, next_state)
+        remaining = _decrement_remaining(remaining)
+
+
+def _decrement_remaining(remaining: int | None) -> int | None:
+    return None if remaining is None else remaining - 1
 
 
 def _result_status(result: object) -> str:

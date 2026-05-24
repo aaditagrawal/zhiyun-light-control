@@ -1502,6 +1502,16 @@ class IntegrationTests(unittest.TestCase):
             integration.wait_for_state_update(3, timeout=0)["state"]["action"],
             "cue",
         )
+        events = list(
+            integration.state_events(
+                after_version=3,
+                limit=1,
+                timeout=0.1,
+                initial=False,
+            )
+        )
+        self.assertEqual(events[0]["version"], 4)
+        self.assertEqual(events[0]["state"]["action"], "cue")
         with patch(
             "zhiyun_light_control.integration.discover_transport_devices",
             return_value={
@@ -2597,6 +2607,16 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         update = await integration.wait_for_state_update(3, timeout=0)
         self.assertEqual(update["state"]["action"], "cue")
+        events: list[dict[str, object]] = []
+        async for event in integration.state_events(
+            after_version=3,
+            limit=1,
+            timeout=0.1,
+            initial=False,
+        ):
+            events.append(event)
+        self.assertEqual(events[0]["version"], 4)
+        self.assertEqual(events[0]["state"]["action"], "cue")
         with patch(
             "zhiyun_light_control.integration.discover_transport_devices",
             return_value={

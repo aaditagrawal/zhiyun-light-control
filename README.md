@@ -897,6 +897,9 @@ when an ACK contains a parseable functional payload, while the raw
 control updates the integration's own state tracker, so `state()`,
 `state_snapshot()`, `state_history()`, and
 `wait_for_state_update()` work without manually creating a controller.
+`state_events()` gives direct USB/BLE SDK sessions the same resumable event
+model as the HTTP bridge: pass `after_version=<last seen version>` to replay
+buffered requested-state changes before waiting for the next live update.
 One-shot `LightIntegration` helpers close factories they create internally after
 each call, even when a discovered config has `persistent=True`; use
 `with integration.controller() as controller:` when a host process deliberately
@@ -1209,6 +1212,8 @@ result = controller.run_named_cue("intro", require_acknowledged=True)
 print(result["applied"], result["reason"])
 print(controller.state_snapshot())
 print(controller.state_history(limit=5))
+for event in controller.state_events(after_version=0, limit=1):
+    print(event["version"], event["state"])
 ```
 
 When driving a running HTTP bridge from another process, the same dry-run
@@ -1421,6 +1426,8 @@ async def main() -> None:
     ) as controller:
         result = await controller.run_named_cue("intro")
         print(result["applied"], result["reason"])
+        async for event in controller.state_events(after_version=0, limit=1):
+            print(event["version"], event["state"])
 
 
 asyncio.run(main())

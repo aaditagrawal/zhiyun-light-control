@@ -288,7 +288,14 @@ from .rig import (
     save_rig_profile_bundle,
 )
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
-from .state import SceneState, SceneStateTracker
+from .state import (
+    SceneState,
+    SceneStateTracker,
+    async_iter_state_events,
+    iter_state_events,
+    state_event_payload,
+    state_history_payload,
+)
 from .status import LightStatusReport, read_async_status, read_sync_status
 from .transitions import SceneTransition, interpolate_scene, scene_transition
 from .transports.ble import (
@@ -388,6 +395,7 @@ __all__ = [
     "SceneCommandPlan",
     "SceneState",
     "SceneStateTracker",
+    "async_iter_state_events",
     "SceneTransition",
     "ScenePresetLibrary",
     "SacnPacket",
@@ -454,7 +462,9 @@ __all__ = [
     "request_template_required_readiness",
     "request_templates",
     "require_acknowledged_response",
+    "state_event_payload",
     "state_event_version",
+    "state_history_payload",
     "state_history_events",
     "validation_category",
     "validation_ready",
@@ -495,6 +505,7 @@ __all__ = [
     "has_echo_frame",
     "hsi_payload",
     "iter_frames",
+    "iter_state_events",
     "object_id_payload",
     "parse_brightness_payload",
     "parse_cct_payload",
