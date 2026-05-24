@@ -367,17 +367,76 @@ def execute_serialized_frame_plan(
     *,
     timeout: float | None = None,
 ) -> list[CommandResult]:
-    """Execute exact frame bytes from a serialized command plan dictionary."""
+    """Execute exact frame bytes from a serialized SDK plan dictionary."""
 
-    return [
-        _exchange_prebuilt_frame_bytes(
+    results: list[CommandResult] = []
+    _execute_serialized_plan(
+        light,
+        plan,
+        results=results,
+        timeout=timeout,
+    )
+    return results
+
+
+def _execute_serialized_plan(
+    light: object,
+    plan: Mapping[str, object],
+    *,
+    results: list[CommandResult],
+    timeout: float | None,
+) -> None:
+    nested = plan.get("command_plan")
+    if isinstance(nested, Mapping):
+        _execute_serialized_plan(
             light,
-            frame,
-            command,
+            nested,
+            results=results,
             timeout=timeout,
         )
-        for frame, command in serialized_frame_commands(plan)
-    ]
+        return
+
+    raw_frames = plan.get("frames")
+    if isinstance(raw_frames, list | tuple):
+        results.extend(
+            _exchange_prebuilt_frame_bytes(
+                light,
+                frame,
+                command,
+                timeout=timeout,
+            )
+            for frame, command in _serialized_frame_entries(raw_frames)
+        )
+        return
+
+    raw_batches = plan.get("command_batches")
+    if isinstance(raw_batches, list | tuple):
+        delay = _serialized_transition_interval(plan, len(raw_batches))
+        for index, batch in enumerate(_mapping_items(raw_batches, "command batch")):
+            _execute_serialized_plan(
+                light,
+                batch,
+                results=results,
+                timeout=timeout,
+            )
+            if delay > 0 and index < len(raw_batches) - 1:
+                time.sleep(delay)
+        return
+
+    raw_steps = plan.get("steps")
+    if isinstance(raw_steps, list | tuple):
+        for step in _mapping_items(raw_steps, "step"):
+            _execute_serialized_plan(
+                light,
+                step,
+                results=results,
+                timeout=timeout,
+            )
+        return
+
+    raise ValueError(
+        "serialized plan must contain command_plan, frames, command_batches, or steps"
+    )
 
 
 def execute_frame_plan_confirmed(
@@ -541,19 +600,76 @@ async def execute_async_serialized_frame_plan(
     *,
     timeout: float | None = None,
 ) -> list[CommandResult]:
-    """Execute exact frame bytes from a serialized command plan asynchronously."""
+    """Execute exact frame bytes from a serialized SDK plan asynchronously."""
 
     results: list[CommandResult] = []
-    for frame, command in serialized_frame_commands(plan):
-        results.append(
-            await _exchange_prebuilt_frame_bytes_async(
+    await _execute_serialized_plan_async(
+        light,
+        plan,
+        results=results,
+        timeout=timeout,
+    )
+    return results
+
+
+async def _execute_serialized_plan_async(
+    light: object,
+    plan: Mapping[str, object],
+    *,
+    results: list[CommandResult],
+    timeout: float | None,
+) -> None:
+    nested = plan.get("command_plan")
+    if isinstance(nested, Mapping):
+        await _execute_serialized_plan_async(
+            light,
+            nested,
+            results=results,
+            timeout=timeout,
+        )
+        return
+
+    raw_frames = plan.get("frames")
+    if isinstance(raw_frames, list | tuple):
+        for frame, command in _serialized_frame_entries(raw_frames):
+            results.append(
+                await _exchange_prebuilt_frame_bytes_async(
+                    light,
+                    frame,
+                    command,
+                    timeout=timeout,
+                )
+            )
+        return
+
+    raw_batches = plan.get("command_batches")
+    if isinstance(raw_batches, list | tuple):
+        delay = _serialized_transition_interval(plan, len(raw_batches))
+        for index, batch in enumerate(_mapping_items(raw_batches, "command batch")):
+            await _execute_serialized_plan_async(
                 light,
-                frame,
-                command,
+                batch,
+                results=results,
                 timeout=timeout,
             )
-        )
-    return results
+            if delay > 0 and index < len(raw_batches) - 1:
+                await asyncio.sleep(delay)
+        return
+
+    raw_steps = plan.get("steps")
+    if isinstance(raw_steps, list | tuple):
+        for step in _mapping_items(raw_steps, "step"):
+            await _execute_serialized_plan_async(
+                light,
+                step,
+                results=results,
+                timeout=timeout,
+            )
+        return
+
+    raise ValueError(
+        "serialized plan must contain command_plan, frames, command_batches, or steps"
+    )
 
 
 async def execute_async_frame_plan_confirmed(
@@ -729,10 +845,42 @@ def serialized_frame_commands(
 ) -> tuple[tuple[bytes, int], ...]:
     """Extract ``(frame, command)`` entries from a serialized SDK command plan."""
 
-    command_plan = _serialized_command_plan(plan)
-    raw_frames = command_plan.get("frames")
-    if not isinstance(raw_frames, list | tuple):
-        raise ValueError("serialized command plan must contain a frames list")
+    return tuple(_iter_serialized_frame_commands(plan))
+
+
+def _iter_serialized_frame_commands(
+    plan: Mapping[str, object],
+) -> Iterable[tuple[bytes, int]]:
+    nested = plan.get("command_plan")
+    if isinstance(nested, Mapping):
+        yield from _iter_serialized_frame_commands(nested)
+        return
+
+    raw_frames = plan.get("frames")
+    if isinstance(raw_frames, list | tuple):
+        yield from _serialized_frame_entries(raw_frames)
+        return
+
+    raw_batches = plan.get("command_batches")
+    if isinstance(raw_batches, list | tuple):
+        for batch in _mapping_items(raw_batches, "command batch"):
+            yield from _iter_serialized_frame_commands(batch)
+        return
+
+    raw_steps = plan.get("steps")
+    if isinstance(raw_steps, list | tuple):
+        for step in _mapping_items(raw_steps, "step"):
+            yield from _iter_serialized_frame_commands(step)
+        return
+
+    raise ValueError(
+        "serialized plan must contain command_plan, frames, command_batches, or steps"
+    )
+
+
+def _serialized_frame_entries(
+    raw_frames: Iterable[object],
+) -> tuple[tuple[bytes, int], ...]:
     frames: list[tuple[bytes, int]] = []
     for index, raw_frame in enumerate(raw_frames):
         if not isinstance(raw_frame, Mapping):
@@ -751,13 +899,25 @@ def serialized_frame_commands(
     return tuple(frames)
 
 
-def _serialized_command_plan(
+def _mapping_items(
+    items: Iterable[object],
+    label: str,
+) -> tuple[Mapping[str, object], ...]:
+    mappings: list[Mapping[str, object]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{label} {index} must be an object")
+        mappings.append(item)
+    return tuple(mappings)
+
+
+def _serialized_transition_interval(
     plan: Mapping[str, object],
-) -> Mapping[str, object]:
-    nested = plan.get("command_plan")
-    if isinstance(nested, Mapping):
-        return nested
-    return plan
+    batches: int,
+) -> float:
+    raw_duration = plan.get("duration", 0.0)
+    duration = raw_duration if isinstance(raw_duration, int | float) else 0.0
+    return transition_interval(float(duration), batches)
 
 
 def _transport_exchange(light: object):

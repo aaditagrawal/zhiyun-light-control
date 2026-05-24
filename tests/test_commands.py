@@ -311,6 +311,102 @@ class CommandPlanningTests(unittest.TestCase):
         self.assertEqual([first_frame(result.tx).seq for result in results], [51, 52])
         self.assertTrue(all(result.acknowledged for result in results))
 
+    def test_serialized_frame_commands_flattens_nested_sequence_plans(self) -> None:
+        plan = {
+            "action": "sequence",
+            "steps": [
+                {
+                    "action": "scene",
+                    "command_plan": scene_command_plan(
+                        Scene(obj=1, brightness=10),
+                        first_word=0x0301,
+                        start_seq=71,
+                    ).to_dict(),
+                },
+                {
+                    "action": "transition",
+                    "duration": 0,
+                    "command_batches": [
+                        scene_command_plan(
+                            Scene(obj=1, brightness=20),
+                            first_word=0x0301,
+                            start_seq=72,
+                        ).to_dict(),
+                        scene_command_plan(
+                            Scene(obj=1, brightness=30, kelvin=5600),
+                            first_word=0x0301,
+                            start_seq=73,
+                        ).to_dict(),
+                    ],
+                },
+            ],
+        }
+
+        frames = serialized_frame_commands(plan)
+
+        self.assertEqual(
+            [first_frame(frame).seq for frame, _command in frames],
+            [71, 72, 73, 74],
+        )
+        self.assertEqual(
+            [command for _frame, command in frames],
+            [
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.CCT,
+            ],
+        )
+
+    def test_execute_serialized_frame_plan_runs_nested_sequence_frames(self) -> None:
+        light = FakeFrameLight()
+        plan = {
+            "action": "sequence",
+            "steps": [
+                {
+                    "action": "scene",
+                    "command_plan": scene_command_plan(
+                        Scene(obj=1, brightness=10),
+                        first_word=0x0301,
+                        start_seq=81,
+                    ).to_dict(),
+                },
+                {
+                    "action": "transition",
+                    "duration": 0,
+                    "command_batches": [
+                        scene_command_plan(
+                            Scene(obj=1, brightness=20),
+                            first_word=0x0301,
+                            start_seq=82,
+                        ).to_dict(),
+                        scene_command_plan(
+                            Scene(obj=1, brightness=30, kelvin=5600),
+                            first_word=0x0301,
+                            start_seq=83,
+                        ).to_dict(),
+                    ],
+                },
+            ],
+        }
+
+        frames = serialized_frame_commands(plan)
+        results = execute_serialized_frame_plan(light, plan, timeout=0.25)
+
+        self.assertEqual(
+            [tx for tx, _timeout in light.transport.sent],
+            [frame for frame, _command in frames],
+        )
+        self.assertEqual(
+            [timeout for _tx, timeout in light.transport.sent],
+            [0.25, 0.25, 0.25, 0.25],
+        )
+        self.assertEqual(
+            [first_frame(result.tx).seq for result in results],
+            [81, 82, 83, 84],
+        )
+        self.assertTrue(all(result.acknowledged for result in results))
+
     def test_execute_serialized_frame_plan_confirmed_fails_closed(self) -> None:
         class TimeoutFrameTransport:
             def exchange(self, tx: bytes, timeout: float | None = None) -> bytes:
@@ -438,6 +534,56 @@ class AsyncCommandExecutionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [timeout for _tx, timeout in light.transport.sent],
             [0.25, 0.25],
+        )
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    async def test_execute_async_serialized_frame_plan_runs_nested_sequence(
+        self,
+    ) -> None:
+        light = AsyncFakeFrameLight()
+        plan = {
+            "action": "sequence",
+            "steps": [
+                {
+                    "action": "scene",
+                    "command_plan": scene_command_plan(
+                        Scene(obj=1, brightness=10),
+                        first_word=0x0301,
+                        start_seq=91,
+                    ).to_dict(),
+                },
+                {
+                    "action": "transition",
+                    "duration": 0,
+                    "command_batches": [
+                        scene_command_plan(
+                            Scene(obj=1, brightness=20),
+                            first_word=0x0301,
+                            start_seq=92,
+                        ).to_dict(),
+                        scene_command_plan(
+                            Scene(obj=1, brightness=30, kelvin=5600),
+                            first_word=0x0301,
+                            start_seq=93,
+                        ).to_dict(),
+                    ],
+                },
+            ],
+        }
+
+        results = await execute_async_serialized_frame_plan(
+            light,
+            plan,
+            timeout=0.25,
+        )
+
+        self.assertEqual(
+            [first_frame(tx).seq for tx, _timeout in light.transport.sent],
+            [91, 92, 93, 94],
+        )
+        self.assertEqual(
+            [timeout for _tx, timeout in light.transport.sent],
+            [0.25, 0.25, 0.25, 0.25],
         )
         self.assertTrue(all(result.acknowledged for result in results))
 

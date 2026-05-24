@@ -341,13 +341,14 @@ helpers for hosts that only want this guard on selected cues.
 `setup_profile_summary_all(primitives=...)` gives hosts a no-I/O rig capability
 matrix from saved setup evidence, including missing profiles and unready
 primitive names per fixture.
-Rig planning helpers (`plan_scene`, `plan_preset`, `plan_sequence`,
-`plan_named_cue`, and their group variants) also run without opening USB/BLE and
-return exact per-fixture command plans. `execute_plan` sends serialized frame
-bytes from single-scene or preset command plans, and `execute_plan_map` does the
-same for grouped `plan_all` / `plan_scene_map` results. This gives host
-applications a plan -> inspect/schedule -> execute pipeline without coupling to
-a specific transport backend.
+Rig planning helpers (`plan_scene`, `plan_preset`, `plan_transition`,
+`plan_sequence`, `plan_named_cue`, and their group variants) also run without
+opening USB/BLE and return exact per-fixture command plans. `execute_plan` sends
+serialized frame bytes from scene, preset, transition, sequence, or cue command
+plans, and `execute_plan_map` does the same for grouped `plan_all`,
+`plan_scene_map`, or `plan_named_cue_all` results. This gives host applications
+a plan -> inspect/schedule -> execute pipeline without coupling to a specific
+transport backend.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

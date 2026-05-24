@@ -540,6 +540,55 @@ class LightRigTests(unittest.TestCase):
             [0x0301],
         )
 
+    def test_rig_executes_serialized_cue_plan_maps(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {"transport": "usb", "obj": 1, "tags": ["set"]},
+                    "fill": {"transport": "usb", "obj": 2, "tags": ["set"]},
+                },
+                "cues": {
+                    "cues": {
+                        "intro": {
+                            "steps": [
+                                {"scene": {"brightness": 12}},
+                                {
+                                    "to": {"brightness": 16},
+                                    "steps": 1,
+                                    "duration": 0,
+                                },
+                            ]
+                        }
+                    }
+                },
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        plan = rig.plan_named_cue_all("intro", tag="set", first_word=0x0301)
+
+        response = rig.execute_plan_map(plan, timeout=0.25)
+
+        self.assertEqual(response["action"], "rig_execute_plan_map")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["fixtures"]["key"]["planned_action"], "sequence")
+        self.assertEqual(response["fixtures"]["fill"]["planned_action"], "sequence")
+        self.assertEqual(response["fixtures"]["key"]["cue"], "intro")
+        self.assertEqual(response["fixtures"]["fill"]["cue"], "intro")
+        self.assertEqual(
+            [first_frame(frame).seq for frame in key.prebuilt_frames],
+            [1, 2],
+        )
+        self.assertEqual(
+            [first_frame(frame).seq for frame in fill.prebuilt_frames],
+            [1, 2],
+        )
+        self.assertEqual(response["fixtures"]["fill"]["scene"]["obj"], 2)
+
     def test_rig_can_guard_fixture_controls_with_setup_profiles(self) -> None:
         key = FakeLight("key")
         rig = LightRig(
@@ -1108,6 +1157,55 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
             [first_frame(frame).first_word for frame in fill.prebuilt_frames],
             [0x0301],
         )
+
+    async def test_async_rig_executes_serialized_cue_plan_maps(self) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {"transport": "ble", "name_contains": "KEY", "obj": 3},
+                    "fill": {"transport": "ble", "name_contains": "FILL", "obj": 4},
+                },
+                "cues": {
+                    "cues": {
+                        "intro": {
+                            "steps": [
+                                {"scene": {"brightness": 12}},
+                                {
+                                    "to": {"brightness": 16},
+                                    "steps": 1,
+                                    "duration": 0,
+                                },
+                            ]
+                        }
+                    }
+                },
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        plan = rig.plan_named_cue_all("intro", first_word=0x0301)
+
+        response = await rig.execute_plan_map(plan, timeout=0.25)
+
+        self.assertEqual(response["action"], "rig_execute_plan_map")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["fixtures"]["key"]["planned_action"], "sequence")
+        self.assertEqual(response["fixtures"]["fill"]["planned_action"], "sequence")
+        self.assertEqual(response["fixtures"]["key"]["cue"], "intro")
+        self.assertEqual(response["fixtures"]["fill"]["cue"], "intro")
+        self.assertEqual(
+            [first_frame(frame).seq for frame in key.prebuilt_frames],
+            [1, 2],
+        )
+        self.assertEqual(
+            [first_frame(frame).seq for frame in fill.prebuilt_frames],
+            [1, 2],
+        )
+        self.assertEqual(response["fixtures"]["fill"]["scene"]["obj"], 4)
 
     async def test_async_apply_all_uses_fixture_object_defaults(self) -> None:
         key = AsyncFakeLight("key")

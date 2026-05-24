@@ -1545,6 +1545,46 @@ class IntegrationTests(unittest.TestCase):
         )
         self.assertEqual(integration.state()["action"], "execute_plan")
 
+    def test_light_integration_executes_serialized_sequence_plan(self) -> None:
+        light = FakeSceneLight()
+        presets = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 15, "kelvin": 5600}}}
+        )
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            light_factory=FakeFactory(light),
+            preset_library=presets,
+        )
+        plan = integration.plan_sequence(
+            [
+                {"scene": {"brightness": 10}},
+                {"preset": "key"},
+                {"to": {"brightness": 20}, "steps": 1, "duration": 0},
+            ],
+            first_word=0x0301,
+            start_seq=21,
+        )
+
+        response = integration.execute_plan(plan, timeout=0.25)
+
+        self.assertEqual(response["planned_action"], "sequence")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["scene"]["brightness"], 20.0)
+        self.assertEqual(
+            [first_frame(frame).seq for frame in light.prebuilt_frames],
+            [21, 22, 23, 24],
+        )
+        self.assertEqual(
+            [first_frame(frame).cmd for frame in light.prebuilt_frames],
+            [
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.CCT,
+                RuntimeCommand.BRIGHTNESS,
+            ],
+        )
+        self.assertEqual(integration.state()["action"], "execute_plan")
+
     def test_local_validation_reports_open_errors_without_raising(self) -> None:
         payload = local_validation(light_factory=FakeFactory(FailingLight()))
 
@@ -2560,6 +2600,48 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [first_frame(frame).seq for frame in light.prebuilt_frames],
             [7],
+        )
+        self.assertEqual(integration.state()["action"], "execute_plan")
+
+    async def test_async_light_integration_executes_serialized_sequence_plan(
+        self,
+    ) -> None:
+        light = AsyncFakeSceneLight()
+        presets = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 15, "kelvin": 5600}}}
+        )
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            light_factory=AsyncFakeFactory(light),
+            preset_library=presets,
+        )
+        plan = integration.plan_sequence(
+            [
+                {"scene": {"brightness": 10}},
+                {"preset": "key"},
+                {"to": {"brightness": 20}, "steps": 1, "duration": 0},
+            ],
+            first_word=0x0301,
+            start_seq=21,
+        )
+
+        response = await integration.execute_plan(plan, timeout=0.25)
+
+        self.assertEqual(response["planned_action"], "sequence")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["scene"]["brightness"], 20.0)
+        self.assertEqual(
+            [first_frame(frame).seq for frame in light.prebuilt_frames],
+            [21, 22, 23, 24],
+        )
+        self.assertEqual(
+            [first_frame(frame).cmd for frame in light.prebuilt_frames],
+            [
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.CCT,
+                RuntimeCommand.BRIGHTNESS,
+            ],
         )
         self.assertEqual(integration.state()["action"], "execute_plan")
 

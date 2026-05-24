@@ -366,6 +366,48 @@ class AsyncControllerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(controller.state()["action"], "execute_plan")
         self.assertEqual(controller.state()["scene"]["brightness"], 12.0)
 
+    async def test_async_controller_executes_serialized_sequence_plan_frames(
+        self,
+    ) -> None:
+        light = FakeAsyncLight()
+        presets = ScenePresetLibrary.from_mapping(
+            {"scenes": {"key": {"brightness": 15, "kelvin": 5600}}}
+        )
+        controller = AsyncLightController(
+            light_factory=FakeAsyncFactory(light),
+            preset_library=presets,
+        )
+        plan = controller.plan_sequence(
+            [
+                {"scene": {"brightness": 10}},
+                {"preset": "key"},
+                {"to": {"brightness": 20}, "steps": 1, "duration": 0},
+            ],
+            first_word=0x0301,
+            start_seq=21,
+        )
+
+        response = await controller.execute_plan(plan, timeout=0.25)
+
+        self.assertEqual(response["planned_action"], "sequence")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["scene"]["brightness"], 20.0)
+        self.assertEqual(
+            [first_frame(frame).seq for frame in light.prebuilt_frames],
+            [21, 22, 23, 24],
+        )
+        self.assertEqual(
+            [first_frame(frame).cmd for frame in light.prebuilt_frames],
+            [
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.CCT,
+                RuntimeCommand.BRIGHTNESS,
+            ],
+        )
+        self.assertEqual(controller.state()["action"], "execute_plan")
+        self.assertEqual(controller.state()["scene"]["brightness"], 20.0)
+
     async def test_async_controller_runs_named_cues_and_transitions(self) -> None:
         light = FakeAsyncLight()
         cues = CueLibrary.from_mapping(
