@@ -148,4 +148,7 @@ envelope.
 Low-level protocol callers can import `RuntimeCommand`, `UpdaterCommand`,
 `build_runtime_frame`, `first_frame`, payload builders, and functional payload
 parsers directly from `zhiyun_light_control` when building custom transports or
-external SDK adapters.
+external SDK adapters. These compatibility exports are also visible through
+`dir(zhiyun_light_control)` for agent/tool discovery, but they remain outside
+the curated stable `__all__`; direct imports from `zhiyun_light_control.protocol`
+are the most explicit option for low-level protocol work.

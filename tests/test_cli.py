@@ -17,6 +17,7 @@ from zhiyun_light_control.protocol import (
     build_runtime_frame,
     first_frame,
     first_response_frame,
+    hsi_payload,
     iter_frames,
 )
 from zhiyun_light_control.transports.ble import (
@@ -863,6 +864,217 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(fake.payloads[0][0], RuntimeCommand.SLEEP)
         self.assertEqual(fake.payloads[0][1].hex(), "01000100")
+
+    def test_register_cli_accepts_group_id(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.payloads: list[tuple[int, bytes]] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.8):
+                del timeout
+                self.payloads.append((cmd, payload))
+                tx = build_runtime_frame(1, cmd, payload)
+                rx = build_runtime_frame(1, cmd, b"\x00")
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    tuple(iter_frames(rx)),
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        fake = FakeLight()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=fake,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "register",
+                    "--device-id",
+                    "2",
+                    "--group-id",
+                    "3",
+                    "--yes",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.payloads[0][0], RuntimeCommand.REGISTER_DEFAULT_GROUP)
+        self.assertEqual(fake.payloads[0][1].hex(), "02000300")
+
+    def test_set_cli_accepts_brightness_with_mode(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.payloads: list[tuple[int, bytes]] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.8):
+                del timeout
+                self.payloads.append((cmd, payload))
+                tx = build_runtime_frame(1, cmd, payload)
+                rx = build_runtime_frame(1, cmd, b"\x00")
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    tuple(iter_frames(rx)),
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        fake = FakeLight()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=fake,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "set",
+                    "brightness-with-mode",
+                    "--value",
+                    "25",
+                    "--mode",
+                    "2",
+                    "--control-mode",
+                    "0x33",
+                    "--yes",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.payloads[0][0], RuntimeCommand.BRIGHTNESS_WITH_MODE)
+        self.assertEqual(fake.payloads[0][1].hex(), "0100330000c84102")
+
+    def test_set_cli_accepts_hsi(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.payloads: list[tuple[int, bytes]] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.8):
+                del timeout
+                self.payloads.append((cmd, payload))
+                tx = build_runtime_frame(1, cmd, payload)
+                rx = build_runtime_frame(1, cmd, b"\x00")
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    tuple(iter_frames(rx)),
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        fake = FakeLight()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=fake,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "set",
+                    "hsi",
+                    "--hue",
+                    "12.5",
+                    "--saturation",
+                    "34.5",
+                    "--intensity",
+                    "56",
+                    "--control-mode",
+                    "0x33",
+                    "--yes",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.payloads[0][0], RuntimeCommand.HSI)
+        self.assertEqual(fake.payloads[0][1], hsi_payload(1, 12.5, 34.5, 56))
+
+    def test_set_cli_accepts_custom_first_word(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.frames: list[tuple[int, int, bytes]] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_frame(
+                self,
+                first_word,
+                cmd,
+                payload=b"",
+                *,
+                timeout=0.8,
+            ):
+                del timeout
+                self.frames.append((first_word, cmd, payload))
+                tx = build_frame(first_word, 1, cmd, payload)
+                rx = build_frame(first_word, 1, cmd, b"\x00")
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    tuple(iter_frames(rx)),
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+        fake = FakeLight()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=fake,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "set",
+                    "brightness-with-mode",
+                    "--value",
+                    "25",
+                    "--mode",
+                    "2",
+                    "--first-word",
+                    "0x0301",
+                    "--yes",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.frames[0][0], 0x0301)
+        self.assertEqual(fake.frames[0][1], RuntimeCommand.BRIGHTNESS_WITH_MODE)
+        self.assertEqual(fake.frames[0][2].hex(), "0100330000c84102")
 
     def test_apply_returns_nonzero_when_any_command_is_unacknowledged(self) -> None:
         class FakeLight:

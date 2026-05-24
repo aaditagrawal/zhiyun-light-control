@@ -726,13 +726,17 @@ class HttpClientTests(unittest.TestCase):
                 client.apply_scene({"brightness": 10})
 
             summary = client.integration()["client"]["setup_profile"]
-            register = client.register(device_id=0)
+            register = client.register(device_id=0, group_id=2)
 
             self.assertTrue(summary["present"])
             self.assertTrue(summary["primitive_ready_for"]["register"])
             self.assertFalse(summary["primitive_ready_for"]["brightness"])
             self.assertEqual(error.exception.capabilities, ("control_writes",))
             self.assertTrue(register["acknowledged"])
+            self.assertIn(
+                (RuntimeCommand.REGISTER_DEFAULT_GROUP, b"\x00\x00\x02\x00"),
+                light.commands,
+            )
             self.assertNotIn(
                 RuntimeCommand.BRIGHTNESS,
                 [command for command, _payload in light.commands],

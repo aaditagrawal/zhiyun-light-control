@@ -727,6 +727,7 @@ class LightBridgeClient:
         self,
         *,
         device_id: int = 0,
+        group_id: int = 0,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
         require_setup_profile: bool = False,
@@ -736,7 +737,10 @@ class LightBridgeClient:
             require_setup_profile,
         )
         self._require_control_readiness(require_ready, required_readiness)
-        return self._post_control("/register", {"device_id": device_id})
+        return self._post_control(
+            "/register",
+            {"device_id": device_id, "group_id": group_id},
+        )
 
     def set_brightness(
         self,

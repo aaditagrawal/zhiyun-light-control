@@ -22,6 +22,7 @@ class FakeProbe:
 class FakeLight:
     def __init__(self) -> None:
         self.commands: list[int] = []
+        self.payloads: list[tuple[int, bytes]] = []
         self.transition_calls = []
 
     def __enter__(self) -> FakeLight:
@@ -34,8 +35,9 @@ class FakeLight:
         return FakeProbe()
 
     def exchange_runtime(self, cmd: int, payload: bytes = b"", *, timeout: float = 0.8):
-        del payload, timeout
+        del timeout
         self.commands.append(cmd)
+        self.payloads.append((cmd, payload))
         tx = build_runtime_frame(1, cmd)
         rx = build_runtime_frame(1, cmd, b"\x00")
         ack = first_frame(rx, cmd=cmd)
@@ -100,6 +102,20 @@ class OscTests(unittest.TestCase):
 
         self.assertEqual(result.action, "blocked")
         self.assertIn("allow_control", result.error)
+
+    def test_dispatch_register_accepts_group_id(self) -> None:
+        light = FakeLight()
+        dispatcher = OscLightDispatcher(lambda: light, allow_control=True)
+
+        result = dispatcher.dispatch(
+            decode_message(encode_message("/zhiyun/register", 2, 3))
+        )
+
+        self.assertEqual(result.action, "register")
+        self.assertEqual(
+            light.payloads[0],
+            (0x0006, b"\x02\x00\x03\x00"),
+        )
 
     def test_dispatch_scene_maps_to_light_scene(self) -> None:
         light = FakeLight()

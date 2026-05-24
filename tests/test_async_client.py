@@ -92,6 +92,24 @@ class AsyncClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.acknowledged)
         self.assertEqual(first_frame(transport.sent[0]).first_word, 0x0301)
 
+    async def test_async_brightness_with_mode_uses_official_runtime_command(
+        self,
+    ) -> None:
+        transport = AsyncEchoAckTransport()
+        light = AsyncZhiyunLight(transport)
+
+        result = await light.set_brightness_with_mode(
+            1,
+            25,
+            2,
+            control_mode=0x33,
+        )
+
+        frame = first_frame(transport.sent[0])
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(result.command, RuntimeCommand.BRIGHTNESS_WITH_MODE)
+        self.assertEqual(frame.payload.hex(), "0100330000c84102")
+
     async def test_async_exchange_prebuilt_frame_preserves_supplied_bytes(
         self,
     ) -> None:

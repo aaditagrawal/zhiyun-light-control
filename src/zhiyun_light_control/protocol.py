@@ -131,7 +131,7 @@ class ReadSnInfo:
 class FunctionalValue:
     obj: int | None
     operation: int | None
-    value: int | float | tuple[int, ...] | tuple[float, float, int]
+    value: int | float | tuple[int, ...] | tuple[float, int] | tuple[float, float, int]
 
     def to_dict(self) -> dict[str, object]:
         value: object = (
@@ -356,6 +356,12 @@ def object_id_payload(obj: int) -> bytes:
 def parse_brightness_payload(frame: ParsedFrame) -> FunctionalValue:
     obj, operation, value = _parse_functional_value(frame.payload, "<f")
     return FunctionalValue(obj=obj, operation=operation, value=value[0])
+
+
+def parse_brightness_with_mode_payload(frame: ParsedFrame) -> FunctionalValue:
+    obj, operation, value = _parse_functional_value(frame.payload, "<fb")
+    brightness, mode = value
+    return FunctionalValue(obj=obj, operation=operation, value=(brightness, mode))
 
 
 def parse_cct_payload(frame: ParsedFrame) -> FunctionalValue:

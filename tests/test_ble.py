@@ -218,6 +218,9 @@ class SafeBleScanTests(unittest.TestCase):
             info = plistlib.loads((app_path / "Contents" / "Info.plist").read_bytes())
             self.assertEqual(result, app_path)
             self.assertEqual(compile_calls[0][0], "/usr/bin/swiftc")
+            self.assertIn("-sectcreate", compile_calls[0])
+            self.assertIn("__info_plist", compile_calls[0])
+            self.assertIn(str(app_path / "Contents" / "Info.plist"), compile_calls[0])
             self.assertEqual(
                 sign_calls[0][:4],
                 ["/usr/bin/codesign", "--force", "--deep", "--sign"],

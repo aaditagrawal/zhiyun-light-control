@@ -21,6 +21,10 @@ connected with USB-C for data. The G60 presents as a USB CDC serial device.
 For the attached G60, macOS IOKit metadata identified `Zhiyun Virtual ComPort`
 at `VID 0xfff8`, `PID 0x0180`.
 
+On 2026-05-24, macOS IOKit still exposed only this single full-speed virtual
+COM port. No second HID or vendor-specific USB control interface was visible to
+the host.
+
 ## Object Read And Control Discovery
 
 Object reads still need more live validation. On the upgraded G60, registration
@@ -65,6 +69,14 @@ immediately retried all object-read candidates for object id `1`; registration
 ACKed, but all nine post-register object reads still returned
 `sent_no_response`. Device id `0` was re-registered afterward and verified by
 status.
+
+Another narrowed pass sent `sleep`, `brightness`, `CCT`, and the official
+`brightness-with-mode` command `0x100b` over first word `0x0301`, object id
+`1`, op bytes `0x33` and `0x01`, then repeated the warm scene against object id
+`0`. Every object-control candidate returned exact `echoed_write` frames only;
+none produced an ACK-confirmed state change. This strengthens the current
+conclusion that USB object-control payloads are shaped correctly but the
+attached G60 is not accepting them as runtime commands on the serial route.
 
 The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
 For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,

@@ -91,6 +91,22 @@ class FakeLight:
         self.primitive_calls.append(("brightness", obj, value, control_mode))
         return _result(RuntimeCommand.BRIGHTNESS, acknowledged=self.acknowledged)
 
+    def set_brightness_with_mode(
+        self,
+        obj: int,
+        value: float,
+        mode: int,
+        *,
+        control_mode: int = 0x33,
+    ) -> CommandResult:
+        self.primitive_calls.append(
+            ("brightness_with_mode", obj, (value, mode), control_mode)
+        )
+        return _result(
+            RuntimeCommand.BRIGHTNESS_WITH_MODE,
+            acknowledged=self.acknowledged,
+        )
+
     def set_cct(
         self,
         obj: int,
@@ -209,6 +225,12 @@ class ControllerTests(unittest.TestCase):
         register = controller.register(device_id=1, group_id=2)
         read = controller.read_brightness(obj=1)
         brightness = controller.set_brightness(35, obj=2, control_mode=0x01)
+        brightness_mode = controller.set_brightness_with_mode(
+            36,
+            2,
+            obj=2,
+            control_mode=0x01,
+        )
         cct = controller.set_cct(5600, obj=2, control_mode=0x01)
         sleep = controller.set_sleep(0, obj=2, control_mode=0x01)
         rgb = controller.set_rgb(255, 180, 120, obj=2, control_mode=0x01)
@@ -223,6 +245,7 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(read["operation"], 0)
         self.assertEqual(read["decoded"]["value"], 35.0)
         self.assertTrue(brightness["applied"])
+        self.assertEqual(brightness_mode["mode"], 2)
         self.assertEqual(cct["scene"]["kelvin"], 5600)
         self.assertEqual(sleep["scene"]["sleep"], 0)
         self.assertEqual(rgb["scene"]["red"], 255)
@@ -231,6 +254,7 @@ class ControllerTests(unittest.TestCase):
             light.primitive_calls,
             [
                 ("brightness", 2, 35, 0x01),
+                ("brightness_with_mode", 2, (36, 2), 0x01),
                 ("cct", 2, 5600, 0x01),
                 ("sleep", 2, 0, 0x01),
                 ("rgb", 2, (255, 180, 120), 0x01),
@@ -238,7 +262,7 @@ class ControllerTests(unittest.TestCase):
             ],
         )
         self.assertEqual(controller.state()["action"], "set_hsi")
-        self.assertEqual(controller.state_snapshot()["version"], 5)
+        self.assertEqual(controller.state_snapshot()["version"], 6)
 
     def test_controller_runs_sequences_and_stops_on_unconfirmed_steps(self) -> None:
         light = FakeLight(acknowledged=False)

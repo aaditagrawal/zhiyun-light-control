@@ -16,6 +16,7 @@ from zhiyun_light_control.protocol import (
     first_response_frame,
     has_echo_frame,
     parse_brightness_payload,
+    parse_brightness_with_mode_payload,
     parse_cct_payload,
     parse_chip_sync,
     parse_device_id,
@@ -125,8 +126,20 @@ class ProtocolTests(unittest.TestCase):
             ),
             cmd=RuntimeCommand.HSI,
         )
+        brightness_mode = first_frame(
+            build_runtime_frame(
+                1,
+                RuntimeCommand.BRIGHTNESS_WITH_MODE,
+                bytes.fromhex("02000000000c4201"),
+            ),
+            cmd=RuntimeCommand.BRIGHTNESS_WITH_MODE,
+        )
 
         self.assertEqual(parse_brightness_payload(brightness).to_dict()["value"], 35.0)
+        self.assertEqual(
+            parse_brightness_with_mode_payload(brightness_mode).to_dict()["value"],
+            [35.0, 1],
+        )
         self.assertEqual(parse_cct_payload(cct).to_dict()["value"], 5600)
         self.assertEqual(parse_sleep_payload(sleep).to_dict()["value"], 1)
         self.assertEqual(parse_rgb_payload(rgb).to_dict()["value"], [255, 180, 120])

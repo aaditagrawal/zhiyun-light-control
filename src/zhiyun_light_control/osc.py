@@ -164,9 +164,10 @@ class OscLightDispatcher:
         obj = _obj_arg(args, default=1)
         if address in {"/zhiyun/register", "/light/register"}:
             device_id = int(args[0]) if args else 0
+            group_id = int(args[1]) if len(args) > 1 else 0
             result = light.exchange_runtime(
                 RuntimeCommand.REGISTER_DEFAULT_GROUP,
-                register_payload(device_id),
+                register_payload(device_id, group_id),
             )
             return _command_result(message, "register", result.to_dict())
         if address in {"/zhiyun/brightness", "/light/brightness"}:

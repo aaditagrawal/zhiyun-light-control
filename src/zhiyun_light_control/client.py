@@ -25,6 +25,7 @@ from .protocol import (
     RuntimeCommand,
     UpdaterCommand,
     brightness_payload,
+    brightness_with_mode_payload,
     build_frame,
     cct_payload,
     first_response_frame,
@@ -250,6 +251,43 @@ class ZhiyunLight:
         return require_command_result(
             self.set_brightness(obj, value, control_mode=control_mode),
             action="brightness",
+        )
+
+    def set_brightness_with_mode(
+        self,
+        obj: int,
+        value: float,
+        mode: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ):
+        return self.exchange_runtime(
+            RuntimeCommand.BRIGHTNESS_WITH_MODE,
+            brightness_with_mode_payload(
+                obj,
+                value,
+                mode,
+                read=False,
+                control_mode=control_mode,
+            ),
+        )
+
+    def set_brightness_with_mode_confirmed(
+        self,
+        obj: int,
+        value: float,
+        mode: int,
+        *,
+        control_mode: int = DEFAULT_CONTROL_MODE,
+    ) -> CommandResult:
+        return require_command_result(
+            self.set_brightness_with_mode(
+                obj,
+                value,
+                mode,
+                control_mode=control_mode,
+            ),
+            action="brightness_with_mode",
         )
 
     def read_cct(self, obj: int = 0):

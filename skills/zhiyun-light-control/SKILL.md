@@ -98,6 +98,8 @@ Use the macOS helper backend after Bluetooth permission is allowed:
 uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
 uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
 uv run --extra mesh zlight mesh-session --name-contains PL103 --json
+uv run --extra mesh zlight mesh-session --name-contains PL103 --provision \
+  --network-key-hex "$NETWORK_KEY_HEX" --yes --json
 uv run zlight scan-ble --backend macos-app --include-all --timeout 10
 ```
 
@@ -105,9 +107,10 @@ uv run zlight scan-ble --backend macos-app --include-all --timeout 10
 capabilities. `mesh-handshake` sends invite, no-OOB start, and a generated P-256
 public key in one CoreBluetooth connection. `mesh-session` keeps that connection
 open and dynamically sends confirmation/random frames derived from the live
-provisionee public key. Treat this as setup progress only; actual brightness/CCT
-control still requires completing provisioning, proxy reconnect, app-key setup,
-and the Zhiyun native register/control stage.
+provisionee public key. With `--provision --yes`, it also sends encrypted
+provisioning data and expects Provisioning Complete `0308`. Treat this as setup
+progress only; actual brightness/CCT control still requires proxy reconnect,
+app-key setup, and the Zhiyun native register/control stage.
 
 If the mesh commands report `no matching BLE device found`, use the broad
 `--include-all` scan before assuming a protocol regression. Zero devices there

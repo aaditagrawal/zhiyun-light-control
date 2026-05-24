@@ -84,9 +84,11 @@ from .protocol import (
     RUNTIME_TYPE,
     RuntimeCommand,
     brightness_payload,
+    brightness_with_mode_payload,
     build_runtime_frame,
     cct_payload,
     first_frame,
+    hsi_payload,
     object_id_payload,
     register_payload,
     rgb_payload,
@@ -739,6 +741,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_transport_args(register)
     add_ble_execution_args(register)
     register.add_argument("--device-id", type=parse_int, default=0)
+    register.add_argument("--group-id", type=parse_int, default=0)
     register.add_argument("--yes", action="store_true")
     register.set_defaults(func=cmd_register)
 
@@ -762,14 +765,34 @@ def build_parser() -> argparse.ArgumentParser:
     set_cmd = sub.add_parser("set", help="Send an experimental control command.")
     add_transport_args(set_cmd)
     add_ble_execution_args(set_cmd)
-    set_cmd.add_argument("kind", choices=["brightness", "cct", "sleep", "rgb"])
+    set_cmd.add_argument(
+        "kind",
+        choices=["brightness", "brightness-with-mode", "cct", "sleep", "rgb", "hsi"],
+    )
     set_cmd.add_argument("--obj", type=parse_int, default=1)
     set_cmd.add_argument("--value", type=float)
+    set_cmd.add_argument(
+        "--mode",
+        type=parse_int,
+        help="Device mode byte for brightness-with-mode (official command 0x100b).",
+    )
     set_cmd.add_argument("--kelvin", type=int)
     set_cmd.add_argument("--red", type=int)
     set_cmd.add_argument("--green", type=int)
     set_cmd.add_argument("--blue", type=int)
+    set_cmd.add_argument("--hue", type=float)
+    set_cmd.add_argument("--saturation", type=float)
+    set_cmd.add_argument("--intensity", type=int)
     add_control_mode_arg(set_cmd)
+    set_cmd.add_argument(
+        "--first-word",
+        type=parse_int,
+        default=RUNTIME_TYPE,
+        help=(
+            "Frame first word for experimental USB routes. Default is 0x0100; "
+            "use 0x0301 for observed G60 echo-route probes."
+        ),
+    )
     set_cmd.add_argument("--yes", action="store_true")
     set_cmd.set_defaults(func=cmd_set)
 
@@ -1998,7 +2021,7 @@ def cmd_register(args: argparse.Namespace) -> int:
         with sync_usb_light_from_args(args) as light:
             result = light.exchange_runtime(
                 RuntimeCommand.REGISTER_DEFAULT_GROUP,
-                register_payload(args.device_id),
+                register_payload(args.device_id, args.group_id),
             )
     print_json(result.to_dict())
     return command_result_exit_code(result)
@@ -2008,7 +2031,7 @@ async def _register_ble(args: argparse.Namespace):
     async with async_ble_light_from_args(args) as light:
         return await light.exchange_runtime(
             RuntimeCommand.REGISTER_DEFAULT_GROUP,
-            register_payload(args.device_id),
+            register_payload(args.device_id, args.group_id),
         )
 
 
@@ -2067,13 +2090,37 @@ def cmd_set(args: argparse.Namespace) -> int:
 
 
 def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
+    command, payload = set_command_request(args)
+    if args.first_word != RUNTIME_TYPE:
+        return light.exchange_frame(args.first_word, command, payload)
+    return light.exchange_runtime(command, payload)
+
+
+def set_command_request(args: argparse.Namespace) -> tuple[RuntimeCommand, bytes]:
     if args.kind == "brightness":
         value = require_value(args.value, "--value is required for brightness")
-        return light.exchange_runtime(
+        return (
             RuntimeCommand.BRIGHTNESS,
             brightness_payload(
                 args.obj,
                 value,
+                read=False,
+                control_mode=args.control_mode,
+            ),
+        )
+    if args.kind == "brightness-with-mode":
+        value = require_value(
+            args.value,
+            "--value is required for brightness-with-mode",
+        )
+        if args.mode is None:
+            raise SystemExit("--mode is required for brightness-with-mode")
+        return (
+            RuntimeCommand.BRIGHTNESS_WITH_MODE,
+            brightness_with_mode_payload(
+                args.obj,
+                value,
+                args.mode,
                 read=False,
                 control_mode=args.control_mode,
             ),
@@ -2086,7 +2133,7 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
                 require_value(args.value, "--kelvin or --value is required for cct")
             )
         )
-        return light.exchange_runtime(
+        return (
             RuntimeCommand.CCT,
             cct_payload(
                 args.obj,
@@ -2097,7 +2144,7 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
         )
     if args.kind == "sleep":
         value = int(require_value(args.value, "--value is required for sleep"))
-        return light.exchange_runtime(
+        return (
             RuntimeCommand.SLEEP,
             sleep_payload(
                 args.obj,
@@ -2109,7 +2156,7 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
     if args.kind == "rgb":
         if args.red is None or args.green is None or args.blue is None:
             raise SystemExit("--red, --green, and --blue are required for rgb")
-        return light.exchange_runtime(
+        return (
             RuntimeCommand.RGB,
             rgb_payload(
                 args.obj,
@@ -2119,48 +2166,30 @@ def _set_usb(light: ZhiyunLight, args: argparse.Namespace):
                 control_mode=args.control_mode,
             ),
         )
+    if args.kind == "hsi":
+        if args.hue is None or args.saturation is None or args.intensity is None:
+            raise SystemExit(
+                "--hue, --saturation, and --intensity are required for hsi"
+            )
+        return (
+            RuntimeCommand.HSI,
+            hsi_payload(
+                args.obj,
+                args.hue,
+                args.saturation,
+                args.intensity,
+                control_mode=args.control_mode,
+            ),
+        )
     raise AssertionError(args.kind)
 
 
 async def _set_ble(args: argparse.Namespace):
     async with async_ble_light_from_args(args) as light:
-        if args.kind == "brightness":
-            value = require_value(args.value, "--value is required for brightness")
-            return await light.exchange_runtime(
-                RuntimeCommand.BRIGHTNESS,
-                brightness_payload(args.obj, value, control_mode=args.control_mode),
-            )
-        if args.kind == "cct":
-            kelvin = (
-                args.kelvin
-                if args.kelvin is not None
-                else int(
-                    require_value(args.value, "--kelvin or --value is required for cct")
-                )
-            )
-            return await light.exchange_runtime(
-                RuntimeCommand.CCT,
-                cct_payload(args.obj, kelvin, control_mode=args.control_mode),
-            )
-        if args.kind == "sleep":
-            value = int(require_value(args.value, "--value is required for sleep"))
-            return await light.exchange_runtime(
-                RuntimeCommand.SLEEP,
-                sleep_payload(args.obj, value, control_mode=args.control_mode),
-            )
-        if args.kind == "rgb":
-            if args.red is None or args.green is None or args.blue is None:
-                raise SystemExit("--red, --green, and --blue are required for rgb")
-            return await light.exchange_runtime(
-                RuntimeCommand.RGB,
-                rgb_payload(
-                    args.obj,
-                    args.red,
-                    args.green,
-                    args.blue,
-                    control_mode=args.control_mode,
-                ),
-            )
+        command, payload = set_command_request(args)
+        if args.first_word != RUNTIME_TYPE:
+            return await light.exchange_frame(args.first_word, command, payload)
+        return await light.exchange_runtime(command, payload)
     raise AssertionError(args.kind)
 
 

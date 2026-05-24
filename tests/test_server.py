@@ -254,6 +254,34 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_register_accepts_group_id(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            request = Request(
+                f"{base}/register",
+                data=json.dumps({"device_id": 2, "group_id": 3}).encode(),
+                headers={"content-type": "application/json"},
+                method="POST",
+            )
+            result = json.loads(urlopen(request, timeout=3).read())
+
+            self.assertTrue(result["acknowledged"])
+            self.assertEqual(
+                light.payloads[0],
+                (RuntimeCommand.REGISTER_DEFAULT_GROUP, b"\x02\x00\x03\x00"),
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_lists_and_applies_preset(self) -> None:
         light = FakeLight()
         library = ScenePresetLibrary.from_mapping(

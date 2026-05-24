@@ -17,7 +17,7 @@ The OSC bridge is UDP-based and dependency-free.
 | Address | Arguments |
 | --- | --- |
 | `/zhiyun/probe` | none |
-| `/zhiyun/register` | `i device_id` |
+| `/zhiyun/register` | `i device_id`, optional `i group_id` |
 | `/zhiyun/brightness` | `f value`, optional trailing `i obj` |
 | `/zhiyun/cct` | `i kelvin`, optional trailing `i obj` |
 | `/zhiyun/sleep` | `i value`, optional trailing `i obj` |

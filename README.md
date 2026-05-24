@@ -176,9 +176,11 @@ discover, persist, validate, and control flow.
 Low-level primitives:
 
 ```sh
-uv run zlight register --transport usb --yes
+uv run zlight register --transport usb --device-id 0 --group-id 0 --yes
 uv run zlight read brightness --transport usb --obj 1
 uv run zlight set brightness --transport usb --obj 1 --value 35 --yes
+uv run zlight set brightness-with-mode --transport usb --obj 1 --value 35 --mode 1 --yes
+uv run zlight set hsi --transport usb --obj 1 --hue 20 --saturation 80 --intensity 35 --yes
 uv run zlight apply --transport usb --brightness 35 --kelvin 5600 --yes
 ```
 
@@ -186,6 +188,7 @@ For the locally observed G60 echo route, make the frame first word explicit:
 
 ```sh
 uv run zlight apply --transport usb --first-word 0x0301 --accept-echo --sleep 0 --brightness 50 --kelvin 3200 --yes
+uv run zlight set brightness-with-mode --transport usb --first-word 0x0301 --obj 1 --value 50 --mode 1 --yes
 ```
 
 This route may report `echoed_write`, not an ACK. The CLI keeps that distinction
@@ -259,7 +262,9 @@ Proxy config step.
 `mesh-provision-plan` is the next offline builder: it consumes a complete
 `mesh-session` JSON transcript and derives the encrypted provisioning-data PDU,
 network key metadata, session nonce/key, and device key. It does not send
-anything to the light; sending that PDU is a later explicit provisioning step.
+anything to the light; send that PDU through the explicit
+`mesh-session --provision --yes` path when you are ready to persistently attach
+the light to the generated mesh.
 
 `mesh-setup-plan` builds the official Zhiyun mesh network defaults and the
 post-provisioning access-message sequence observed in Vega: composition data
@@ -269,7 +274,7 @@ instructions before a sender for `1828/2ADD/2ADE` is added.
 
 After a real provisioning session has produced a light `device_key_hex`,
 `mesh-setup-plan --device-key-hex ...` also emits encrypted Mesh Proxy Network
-PDUs for `1828/2ADD`. Those PDUs are still offline artifacts until they are sent
+PDUs for `1828/2ADD`. Use `mesh-config-send --yes` to transmit those artifacts
 over an authorized BLE Mesh Proxy connection.
 
 To transmit those config PDUs after the light is provisioned and advertising

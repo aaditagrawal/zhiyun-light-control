@@ -93,6 +93,11 @@ completed the Bluetooth authorization decision yet; click Allow on the
 `ZhiyunBleScan` Bluetooth prompt or allow it in the Bluetooth privacy pane,
 then rerun the scan.
 
+On the local Mac, System Settings can show `ZhiyunBleScan` enabled while a fresh
+helper run still reports `authorization=not_determined` and
+`Bluetooth state unknown: 0`. Treat that combination as a TCC/helper identity
+mismatch; it is not evidence that BLE scanning or mesh provisioning is ready.
+
 If macOS appears to have stale TCC state for the default helper, build a fresh
 helper identity for diagnosis:
 

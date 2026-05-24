@@ -43,6 +43,7 @@ from .protocol import (
     brightness_payload,
     cct_payload,
     parse_brightness_payload,
+    parse_brightness_with_mode_payload,
     parse_cct_payload,
     parse_hsi_payload,
     parse_rgb_payload,
@@ -171,6 +172,32 @@ class LightController:
             result,
             require_acknowledged=require_acknowledged,
         )
+
+    def set_brightness_with_mode(
+        self,
+        value: float,
+        mode: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, brightness=value)
+        with self.light_factory() as light:
+            result = light.set_brightness_with_mode(
+                obj,
+                value,
+                mode,
+                control_mode=self._control_mode(control_mode),
+            )
+        response = self._record_primitive(
+            "set_brightness_with_mode",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+        response["mode"] = mode
+        return response
 
     def set_cct(
         self,
@@ -898,6 +925,32 @@ class AsyncLightController:
             result,
             require_acknowledged=require_acknowledged,
         )
+
+    async def set_brightness_with_mode(
+        self,
+        value: float,
+        mode: int,
+        *,
+        obj: int = 1,
+        control_mode: int | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        scene = Scene(obj=obj, brightness=value)
+        async with self.light_factory() as light:
+            result = await light.set_brightness_with_mode(
+                obj,
+                value,
+                mode,
+                control_mode=self._control_mode(control_mode),
+            )
+        response = self._record_primitive(
+            "set_brightness_with_mode",
+            scene,
+            result,
+            require_acknowledged=require_acknowledged,
+        )
+        response["mode"] = mode
+        return response
 
     async def set_cct(
         self,
@@ -1955,6 +2008,8 @@ def _primitive_parser(
 ) -> Callable[[ParsedFrame], FunctionalValue] | None:
     if command == RuntimeCommand.BRIGHTNESS:
         return parse_brightness_payload
+    if command == RuntimeCommand.BRIGHTNESS_WITH_MODE:
+        return parse_brightness_with_mode_payload
     if command == RuntimeCommand.CCT:
         return parse_cct_payload
     if command == RuntimeCommand.SLEEP:

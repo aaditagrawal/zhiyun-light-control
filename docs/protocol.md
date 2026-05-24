@@ -46,9 +46,12 @@ The official Vega Android package includes `base/assets/pl103/1.6.4.config`.
 For PL103 it lists optional control commands `0x1001`, `0x1002`, `0x1008`,
 `0x1101`, `0x1201`, and `0x1202` with `controlMode: "0x33"`, plus CCT range
 `2700..6500`. Disassembly of Vega's `libzylink.so` shows that `controlMode` is
-the `u8 op` field inside the functional payload, not the frame first word.
-Accordingly, library writes default to op `0x33`; object reads use op `0x00`,
-and `control_mode=0x01` is available for reproducing legacy probes.
+the `u8 op` field inside the functional payload, not the frame first word. It
+also shows `0x100b` as the native brightness-with-device-mode variant; the SDK
+exposes this as `set_brightness_with_mode(...)` and
+`zlight set brightness-with-mode`. Accordingly, library writes default to op
+`0x33`; object reads use op `0x00`, and `control_mode=0x01` is available for
+reproducing legacy probes.
 
 ## ACK And Evidence Semantics
 

@@ -241,6 +241,9 @@ class PublicApiTests(unittest.TestCase):
         self.assertNotIn("RuntimeCommand", zlight.__all__)
         self.assertNotIn("first_frame", zlight.__all__)
         self.assertNotIn("BleProfile", zlight.__all__)
+        self.assertIn("RuntimeCommand", dir(zlight))
+        self.assertIn("first_frame", dir(zlight))
+        self.assertIn("BleProfile", dir(zlight))
 
         self.assertIs(zlight.RuntimeCommand, RuntimeCommand)
         self.assertIs(zlight.first_frame, first_frame)

@@ -485,13 +485,32 @@ def ensure_macos_ble_app(
     resources = contents / "Resources"
     macos.mkdir(parents=True, exist_ok=True)
     resources.mkdir(parents=True, exist_ok=True)
-    _write_if_changed(contents / "Info.plist", _info_plist(bundle_name, bundle_id))
+    plist_path = contents / "Info.plist"
+    plist_changed = _write_if_changed(plist_path, _info_plist(bundle_name, bundle_id))
     helper = resources / "helper.swift"
     source_changed = _write_if_changed(helper, _swift_source().encode("utf-8"))
     launcher = macos / bundle_name
-    if source_changed or not launcher.exists():
+    if (
+        source_changed
+        or plist_changed
+        or not launcher.exists()
+        or not _binary_contains_bluetooth_usage(launcher)
+    ):
         proc = subprocess.run(
-            [swift_path, str(helper), "-o", str(launcher)],
+            [
+                swift_path,
+                str(helper),
+                "-Xlinker",
+                "-sectcreate",
+                "-Xlinker",
+                "__TEXT",
+                "-Xlinker",
+                "__info_plist",
+                "-Xlinker",
+                str(plist_path),
+                "-o",
+                str(launcher),
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -565,6 +584,14 @@ def _write_if_changed(path: Path, data: bytes) -> bool:
         return False
     path.write_bytes(data)
     return True
+
+
+def _binary_contains_bluetooth_usage(path: Path) -> bool:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    return b"NSBluetoothAlwaysUsageDescription" in data
 
 
 def _find_swiftc() -> str | None:

@@ -295,7 +295,10 @@ class LightRequestHandler(BaseHTTPRequestHandler):
             if path == "/register":
                 result = light.exchange_runtime(
                     RuntimeCommand.REGISTER_DEFAULT_GROUP,
-                    register_payload(int(body.get("device_id", 0))),
+                    register_payload(
+                        int(body.get("device_id", 0)),
+                        int(body.get("group_id", 0)),
+                    ),
                 )
                 return result.to_dict()
             if path == "/brightness":
@@ -1749,7 +1752,10 @@ def _openapi_schemas() -> dict[str, object]:
         },
         "RegisterRequest": {
             "type": "object",
-            "properties": {"device_id": {"type": "integer"}},
+            "properties": {
+                "device_id": {"type": "integer"},
+                "group_id": {"type": "integer"},
+            },
         },
         "UsbDiscoveryRequest": {
             "type": "object",
@@ -2692,7 +2698,7 @@ def capabilities_response(
                 "method": "POST",
                 "path": "/register",
                 "requires_control": True,
-                "fields": ["device_id"],
+                "fields": ["device_id", "group_id"],
                 "confirmation": "CommandResult.acknowledged",
             },
             {

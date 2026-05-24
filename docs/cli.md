@@ -49,15 +49,21 @@ the run.
 Low-level primitives:
 
 ```sh
-uv run zlight register --transport usb --yes
+uv run zlight register --transport usb --device-id 0 --group-id 0 --yes
 uv run zlight read brightness --transport usb --obj 1
 uv run zlight set brightness --transport usb --obj 1 --value 35 --yes
+uv run zlight set brightness-with-mode --transport usb --obj 1 --value 35 --mode 1 --yes
+uv run zlight set hsi --transport usb --obj 1 --hue 20 --saturation 80 --intensity 35 --yes
 uv run zlight apply --transport usb --brightness 35 --kelvin 5600 --yes
 ```
 
 The direct commands `register`, `read`, `set`, and `apply` use the same ACK
 definition as the SDK. They print the full `CommandResult` payload either way,
 but unacknowledged transmissions return exit code `1`.
+
+`set` also accepts `--first-word` for experimental routes. On the local G60,
+`brightness-with-mode` over `0x0301` transmits the official `0x100b` payload but
+currently returns `echoed_write`, not an ACK.
 
 `apply` can also send exact scene frames over an experimental first-word route:
 

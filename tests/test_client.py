@@ -166,6 +166,17 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(result.command, RuntimeCommand.BRIGHTNESS)
         self.assertEqual(frame.payload[2], 0x01)
 
+    def test_brightness_with_mode_uses_official_runtime_command(self) -> None:
+        transport = EchoAckTransport()
+        light = ZhiyunLight(transport)
+
+        result = light.set_brightness_with_mode(1, 25, 2, control_mode=0x33)
+
+        frame = first_frame(transport.sent[0])
+        self.assertTrue(result.acknowledged)
+        self.assertEqual(result.command, RuntimeCommand.BRIGHTNESS_WITH_MODE)
+        self.assertEqual(frame.payload.hex(), "0100330000c84102")
+
     def test_confirmed_helpers_return_acknowledged_sdk_results(self) -> None:
         transport = EchoAckTransport()
         light = ZhiyunLight(transport)

@@ -86,8 +86,10 @@ uv run --extra mesh zlight mesh-session --name-contains PL103 --json
 
 This keeps one CoreBluetooth helper connection open and lets Python calculate
 the confirmation/random frames from the session-specific provisionee public key.
-It stops before provisioning data, so it should not persistently attach the G60
-to a generated mesh network.
+By default it stops before provisioning data, so it should not persistently
+attach the G60 to a generated mesh network. Add `--provision --yes` plus a
+network key only when you intend to send encrypted provisioning data and wait
+for Provisioning Complete `0308`.
 
 ## SDK Use
 

@@ -535,6 +535,7 @@ _LEGACY_EXPORT_GROUPS: dict[str, tuple[str, ...]] = {
         "hsi_payload",
         "iter_frames",
         "object_id_payload",
+        "parse_brightness_with_mode_payload",
         "parse_brightness_payload",
         "parse_cct_payload",
         "parse_hsi_payload",
@@ -595,4 +596,4 @@ def __getattr__(name: str) -> object:
 
 
 def __dir__() -> list[str]:
-    return sorted(__all__)
+    return sorted(set(__all__) | set(_LEGACY_EXPORTS))
