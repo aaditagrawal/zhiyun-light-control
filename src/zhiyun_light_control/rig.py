@@ -1620,16 +1620,27 @@ class LightRig:
             }
         }
 
+    def state_versions(self) -> dict[str, int]:
+        return {
+            name: _state_version(controller.state_snapshot())
+            for name, controller in self.controllers.items()
+        }
+
     def state_history(
         self,
         *,
         after_version: int = 0,
+        after_versions: Mapping[str, object] | None = None,
         limit: int | None = None,
     ) -> dict[str, object]:
         return {
             "fixtures": {
                 name: controller.state_history(
-                    after_version=after_version,
+                    after_version=_fixture_after_version(
+                        name,
+                        default=after_version,
+                        after_versions=after_versions,
+                    ),
                     limit=limit,
                 )
                 for name, controller in self.controllers.items()
@@ -3199,16 +3210,27 @@ class AsyncLightRig:
             }
         }
 
+    def state_versions(self) -> dict[str, int]:
+        return {
+            name: _state_version(controller.state_snapshot())
+            for name, controller in self.controllers.items()
+        }
+
     def state_history(
         self,
         *,
         after_version: int = 0,
+        after_versions: Mapping[str, object] | None = None,
         limit: int | None = None,
     ) -> dict[str, object]:
         return {
             "fixtures": {
                 name: controller.state_history(
-                    after_version=after_version,
+                    after_version=_fixture_after_version(
+                        name,
+                        default=after_version,
+                        after_versions=after_versions,
+                    ),
                     limit=limit,
                 )
                 for name, controller in self.controllers.items()
@@ -4301,6 +4323,24 @@ def _state_version(snapshot: Mapping[str, object]) -> int:
 def _state_payload(snapshot: Mapping[str, object]) -> Mapping[str, object] | None:
     raw_state = snapshot.get("state")
     return raw_state if isinstance(raw_state, Mapping) else None
+
+
+def _fixture_after_version(
+    name: str,
+    *,
+    default: int,
+    after_versions: Mapping[str, object] | None,
+) -> int:
+    if after_versions is None or name not in after_versions:
+        return default
+    value = after_versions[name]
+    if isinstance(value, bool):
+        raise ValueError(f"state version for fixture {name} must be an integer")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        return int(value, 0)
+    raise ValueError(f"state version for fixture {name} must be an integer")
 
 
 def _fixture_state_event(

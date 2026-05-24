@@ -1386,6 +1386,8 @@ for name, item in snapshot["fixtures"].items():
     summary = item["snapshot"]["summary"]
     print(name, summary["ready_for"], summary["pending_action_ids"])
 
+cursors = rig.state_versions()
+print(rig.state_history(after_versions=cursors))
 for event in rig.state_events("key", after_version=0, limit=1):
     print(event["fixture"], event["version"], event["state"])
 ```
