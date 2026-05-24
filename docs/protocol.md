@@ -342,6 +342,10 @@ accept `require_setup_profile_controls=true`, which makes fixture apply helpers
 call `require_setup_profile_primitive` before opening the underlying USB/BLE
 transport. Per-call `require_setup_profile=true` is available on rig apply
 helpers for hosts that only want this guard on selected cues.
+`LightProject` and `load_light_project(...)` are the directory-level SDK bundle
+helpers for host applications: a `project.json` can reference `rig.json`,
+`scenes.json`, and `cues.json`, and the project object can materialize either a
+sync `LightRig` or async `AsyncLightRig` with those libraries wired in.
 `setup_profile_summary_all(primitives=...)` gives hosts a no-I/O rig capability
 matrix from saved setup evidence, including missing profiles and unready
 primitive names per fixture.

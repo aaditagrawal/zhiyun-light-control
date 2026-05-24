@@ -1182,6 +1182,20 @@ restored = load_rig("saved-rig.json")
 print(restored.fixture_names())
 ```
 
+For a directory-style show bundle, use `LightProject` or `load_light_project()`.
+It wires `rig.json`, `scenes.json`, and `cues.json` into ready-to-use sync or
+async rig objects, while still keeping each file plain JSON:
+
+```python
+from zhiyun_light_control import load_light_project
+
+project = load_light_project("examples")
+rig = project.to_rig()
+async_rig = project.to_async_rig()
+print(project.summary())
+print(rig.plan_named_cue_all("warm-key"))
+```
+
 Fixture entries may use `profile_path` or an inline `profile` object instead of
 duplicating a connection config. Relative profile paths are resolved beside the
 rig JSON file:

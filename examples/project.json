@@ -1,0 +1,8 @@
+{
+  "api": "zhiyun-light-control",
+  "kind": "light-project",
+  "schema_version": 1,
+  "rig_path": "rig.json",
+  "presets_path": "scenes.json",
+  "cues_path": "cues.json"
+}
