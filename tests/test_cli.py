@@ -23,6 +23,31 @@ from zhiyun_light_control.transports.ble import BleExchangeResult, BleWorkerErro
 
 
 class CliTests(unittest.TestCase):
+    def write_scene_plan_bundle(self, path: Path) -> dict[str, object]:
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = main(
+                [
+                    "plan",
+                    "--brightness",
+                    "25",
+                    "--kelvin",
+                    "5600",
+                    "--first-word",
+                    "0x0301",
+                    "--start-seq",
+                    "7",
+                    "--output",
+                    str(path),
+                    "--json",
+                ]
+            )
+
+        self.assertEqual(code, 0)
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), payload)
+        return payload
+
     def test_apply_preset_dry_run_resolves_scene_without_transport(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "scenes.json"
@@ -800,6 +825,200 @@ class CliTests(unittest.TestCase):
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 1)
         self.assertEqual(payload["results"][0]["transport_status"], "sent_no_response")
+
+    def test_plan_cli_writes_serialized_scene_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.json"
+            payload = self.write_scene_plan_bundle(path)
+
+        self.assertEqual(payload["kind"], "serialized-plan-bundle")
+        self.assertEqual(payload["plan"]["action"], "scene")
+        self.assertEqual(payload["plan"]["scene"]["brightness"], 25.0)
+        self.assertEqual(payload["plan"]["command_plan"]["start_seq"], 7)
+        self.assertEqual(payload["plan"]["command_plan"]["next_seq"], 9)
+        self.assertEqual(payload["plan"]["command_plan"]["frames"][0]["seq"], 7)
+        self.assertEqual(
+            payload["plan"]["command_plan"]["frames"][0]["first_word_hex"],
+            "0x0301",
+        )
+        self.assertEqual(payload["summary"]["frame_count"], 2)
+
+    def test_execute_plan_cli_runs_exact_usb_frames(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.calls: list[tuple[bytes, int, float]] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_prebuilt_frame(self, frame, command, *, timeout=0.8):
+                self.calls.append((frame, command, timeout))
+                parsed = first_frame(frame)
+                assert parsed is not None
+                rx = build_frame(parsed.first_word, parsed.seq, command, b"\x00")
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    command,
+                    frame,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=frame, cmd=command),
+                )
+
+        fake = FakeLight()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.json"
+            payload = self.write_scene_plan_bundle(path)
+            stdout = io.StringIO()
+            with (
+                patch(
+                    "zhiyun_light_control.cli.ZhiyunLight.usb",
+                    return_value=fake,
+                ),
+                contextlib.redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "execute-plan",
+                        "--timeout",
+                        "0.25",
+                        str(path),
+                        "--yes",
+                        "--json",
+                    ]
+                )
+
+        result = json.loads(stdout.getvalue())
+        expected = [
+            (bytes.fromhex(frame["frame_hex"]), frame["command"], 0.25)
+            for frame in payload["plan"]["command_plan"]["frames"]
+        ]
+        self.assertEqual(code, 0)
+        self.assertTrue(result["applied"])
+        self.assertEqual(result["planned_action"], "scene")
+        self.assertEqual(fake.calls, expected)
+
+    def test_execute_plan_cli_uses_ble_backend_for_serialized_frames(self) -> None:
+        class FakeAsyncLight:
+            def __init__(self) -> None:
+                self.calls: list[tuple[bytes, int, float]] = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb) -> None:
+                return
+
+            async def exchange_prebuilt_frame(self, frame, command, *, timeout=0.8):
+                self.calls.append((frame, command, timeout))
+                parsed = first_frame(frame)
+                assert parsed is not None
+                rx = build_frame(parsed.first_word, parsed.seq, command, b"\x00")
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    command,
+                    frame,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=frame, cmd=command),
+                )
+
+        fake = FakeAsyncLight()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.json"
+            payload = self.write_scene_plan_bundle(path)
+            stdout = io.StringIO()
+            with (
+                patch(
+                    "zhiyun_light_control.cli.AsyncZhiyunLight.isolated_ble",
+                    return_value=fake,
+                ) as isolated,
+                contextlib.redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "execute-plan",
+                        "--transport",
+                        "ble",
+                        "--name-contains",
+                        "MOLUS",
+                        "--python",
+                        "python-test",
+                        "--timeout",
+                        "0.25",
+                        str(path),
+                        "--yes",
+                        "--json",
+                    ]
+                )
+
+        result = json.loads(stdout.getvalue())
+        expected = [
+            (bytes.fromhex(frame["frame_hex"]), frame["command"], 0.25)
+            for frame in payload["plan"]["command_plan"]["frames"]
+        ]
+        self.assertEqual(code, 0)
+        self.assertTrue(result["applied"])
+        self.assertEqual(fake.calls, expected)
+        isolated.assert_called_once_with(
+            address=None,
+            name_contains="MOLUS",
+            profile="direct",
+            service_uuid=None,
+            write_uuid=None,
+            notify_uuid=None,
+            timeout=0.25,
+            python="python-test",
+        )
+
+    def test_execute_plan_cli_can_post_bundle_to_bridge(self) -> None:
+        class FakeBridgeClient:
+            instances: list[FakeBridgeClient] = []
+
+            def __init__(self, base_url: str, *, timeout: float = 3.0):
+                self.base_url = base_url
+                self.timeout = timeout
+                self.calls = []
+                self.instances.append(self)
+
+            def execute_plan(self, plan, *, timeout=None):
+                self.calls.append((plan, timeout))
+                return {"action": "execute_plan", "applied": True}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "plan.json"
+            self.write_scene_plan_bundle(path)
+            stdout = io.StringIO()
+            with (
+                patch("zhiyun_light_control.cli.LightBridgeClient", FakeBridgeClient),
+                contextlib.redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "execute-plan",
+                        "--base-url",
+                        "http://bridge.test",
+                        "--bridge-timeout",
+                        "5",
+                        "--timeout",
+                        "0.25",
+                        str(path),
+                        "--yes",
+                        "--json",
+                    ]
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["applied"])
+        client = FakeBridgeClient.instances[0]
+        self.assertEqual(client.base_url, "http://bridge.test")
+        self.assertEqual(client.timeout, 5.0)
+        self.assertEqual(client.calls[0][1], 0.25)
+        self.assertEqual(client.calls[0][0].summary()["planned_action"], "scene")
 
     def test_discover_usb_cli_runs_matrix(self) -> None:
         class FakeLight:

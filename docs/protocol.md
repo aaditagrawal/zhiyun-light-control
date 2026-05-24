@@ -253,6 +253,9 @@ SDK callers can reach the same surface through `LightController.plan_scene()`,
 `exchange_prebuilt_frame` so the sequence number, first word, command, and
 payload bytes from the planner are the bytes sent over the configured USB or BLE
 transport.
+For shell-driven systems, `zlight plan --output plan.json` creates the same
+bundle without opening a transport, and `zlight execute-plan plan.json` sends it
+over direct USB/BLE or through HTTP `/execute-plan` when `--base-url` is set.
 Embedded hosts that already use `LightIntegration` or `AsyncLightIntegration`
 can attach preset/cue libraries there and call the same `plan_*` helpers before
 opening USB or BLE. The same integration objects also expose direct primitive

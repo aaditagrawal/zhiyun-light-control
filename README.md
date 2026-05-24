@@ -167,6 +167,19 @@ Preview a named preset without sending hardware commands:
 uv run zlight apply --preset-file examples/scenes.json --preset key --dry-run
 ```
 
+Build a portable serialized frame plan and execute those exact bytes later:
+
+```sh
+uv run zlight plan --brightness 25 --kelvin 5600 --first-word 0x0301 --start-seq 1 --output planned-scene.json --json
+uv run zlight execute-plan planned-scene.json --transport usb --yes --json
+uv run zlight execute-plan planned-scene.json --transport ble --name-contains MOLUS --yes --json
+uv run zlight execute-plan planned-scene.json --base-url http://127.0.0.1:8765 --yes --json
+```
+
+`plan` does not open USB or BLE. It writes the same `SerializedPlanBundle` JSON
+that the Python SDK accepts, and `execute-plan` can either open the configured
+USB/BLE transport directly or POST the bundle to a running HTTP bridge.
+
 ## CLI
 
 List local transport setup without opening the light:
@@ -1110,7 +1123,9 @@ processes, wrap any serialized plan with `serialized_plan_bundle()`. Bundles are
 plain JSON with a frame summary and the original plan embedded, and the
 serialized frame executors accept either the bundle object or a loaded bundle
 mapping directly for single-target plans. The higher-level controller, rig, and
-integration `execute_plan` helpers accept the same loaded bundle objects:
+integration `execute_plan` helpers accept the same loaded bundle objects. The
+CLI mirrors this handoff with `zlight plan --output plan.json` and
+`zlight execute-plan plan.json`, including bridge execution through `--base-url`.
 
 ```python
 from zhiyun_light_control import (

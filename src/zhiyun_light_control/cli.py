@@ -5,11 +5,21 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import sys
 
 from .artnet import DmxMapping, serve_artnet
 from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
+from .commands import (
+    execute_async_serialized_frame_plan,
+    execute_serialized_frame_plan,
+    load_serialized_plan_bundle,
+    scene_command_plan,
+    serialized_plan_bundle,
+    serialized_plan_bundle_from_json,
+    serialized_plan_payload,
+)
 from .cues import CueLibrary
 from .devices import (
     discover_transport_devices,
@@ -38,6 +48,7 @@ from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
 from .protocol import (
     DEFAULT_CONTROL_MODE,
+    RUNTIME_TYPE,
     RuntimeCommand,
     brightness_payload,
     build_runtime_frame,
@@ -475,6 +486,58 @@ def build_parser() -> argparse.ArgumentParser:
     )
     apply.add_argument("--yes", action="store_true")
     apply.set_defaults(func=cmd_apply)
+
+    plan = sub.add_parser(
+        "plan",
+        help="Build a serialized runtime plan bundle without opening a transport.",
+    )
+    plan.add_argument("--obj", type=parse_int)
+    plan.add_argument("--brightness", type=float)
+    plan.add_argument("--kelvin", type=int)
+    plan.add_argument("--sleep", type=int)
+    plan.add_argument("--red", type=int)
+    plan.add_argument("--green", type=int)
+    plan.add_argument("--blue", type=int)
+    plan.add_argument("--hue", type=float)
+    plan.add_argument("--saturation", type=float)
+    plan.add_argument("--intensity", type=int)
+    add_control_mode_arg(plan)
+    plan.add_argument(
+        "--preset-file", help="JSON file containing named scene presets."
+    )
+    plan.add_argument("--preset", help="Named preset to apply before CLI overrides.")
+    plan.add_argument("--first-word", type=parse_int, default=RUNTIME_TYPE)
+    plan.add_argument("--start-seq", type=parse_int, default=1)
+    plan.add_argument(
+        "--output",
+        help="Write the serialized plan bundle JSON to this path.",
+    )
+    plan.add_argument("--json", action="store_true", help="Print compact JSON.")
+    plan.set_defaults(func=cmd_plan)
+
+    execute_plan = sub.add_parser(
+        "execute-plan",
+        help="Execute a serialized plan bundle over USB/BLE or a running bridge.",
+    )
+    add_transport_args(execute_plan)
+    add_ble_execution_args(execute_plan)
+    execute_plan.add_argument(
+        "plan_file",
+        help="Serialized plan bundle JSON path, or '-' to read from stdin.",
+    )
+    execute_plan.add_argument(
+        "--base-url",
+        help="POST to a running zlight serve bridge instead of opening USB/BLE.",
+    )
+    execute_plan.add_argument(
+        "--bridge-timeout",
+        type=float,
+        default=12.0,
+        help="HTTP timeout when --base-url is used.",
+    )
+    execute_plan.add_argument("--yes", action="store_true")
+    execute_plan.add_argument("--json", action="store_true", help="Print compact JSON.")
+    execute_plan.set_defaults(func=cmd_execute_plan)
 
     cue = sub.add_parser("cue", help="Run a named cue against the HTTP bridge.")
     cue.add_argument(
@@ -1223,6 +1286,116 @@ def cmd_apply(args: argparse.Namespace) -> int:
         {"scene": scene.to_dict(), "results": [result.to_dict() for result in results]}
     )
     return command_results_exit_code(results)
+
+
+def cmd_plan(args: argparse.Namespace) -> int:
+    scene = scene_from_args(args)
+    command_plan = scene_command_plan(
+        scene,
+        control_mode=args.control_mode,
+        first_word=args.first_word,
+        start_seq=args.start_seq,
+    )
+    plan = {
+        "action": "scene",
+        "scene": scene.to_dict(),
+        "control_mode": args.control_mode,
+        "first_word": args.first_word,
+        "first_word_hex": f"0x{args.first_word:04x}",
+        "command_plan": command_plan.to_dict(),
+    }
+    bundle = serialized_plan_bundle(plan)
+    if args.output:
+        bundle.save(args.output)
+    print_json(bundle.to_dict(), compact=args.json)
+    return 0
+
+
+def cmd_execute_plan(args: argparse.Namespace) -> int:
+    require_yes(args, "execute-plan sends one or more planned frames to the light")
+    bundle = plan_bundle_from_arg(args.plan_file)
+    if args.base_url:
+        client = LightBridgeClient(args.base_url, timeout=args.bridge_timeout)
+        try:
+            result = client.execute_plan(bundle, timeout=args.timeout)
+        except LightBridgeError as exc:
+            print_json(
+                {
+                    "ok": False,
+                    "status": exc.status,
+                    "payload": exc.payload,
+                },
+                compact=args.json,
+            )
+            return 1
+        print_json(result, compact=args.json)
+        return 0 if result.get("applied") is True else 1
+    if args.transport == "ble":
+        try:
+            results = asyncio.run(_execute_plan_ble(args, bundle))
+        except RuntimeError as exc:
+            return print_ble_runtime_error(exc, compact=args.json)
+    else:
+        with sync_usb_light_from_args(args) as light:
+            results = execute_serialized_frame_plan(
+                light,
+                bundle,
+                timeout=args.timeout,
+            )
+    response = serialized_plan_execution_response(bundle, results)
+    print_json(response, compact=args.json)
+    return command_results_exit_code(results)
+
+
+async def _execute_plan_ble(args: argparse.Namespace, bundle) -> list[CommandResult]:
+    async with async_ble_light_from_args(args) as light:
+        return await execute_async_serialized_frame_plan(
+            light,
+            bundle,
+            timeout=args.timeout,
+        )
+
+
+def plan_bundle_from_arg(path: str):
+    if path == "-":
+        return load_serialized_plan_bundle_from_text(sys.stdin.read())
+    return load_serialized_plan_bundle(path)
+
+
+def load_serialized_plan_bundle_from_text(text: str):
+    return serialized_plan_bundle_from_json(text)
+
+
+def serialized_plan_execution_response(bundle, results: list[CommandResult]):
+    plan = serialized_plan_payload(bundle)
+    result_items = list(results)
+    applied = all(result.acknowledged for result in result_items)
+    response: dict[str, object] = {
+        "action": "execute_plan",
+        "planned_action": str(plan.get("action", "unknown")),
+        "plan": dict(plan),
+        "results": [result.to_dict() for result in result_items],
+        "applied": applied,
+        "reason": None if applied else unconfirmed_results_reason(result_items),
+    }
+    raw_scene = plan.get("scene")
+    if isinstance(raw_scene, dict):
+        response["scene"] = dict(raw_scene)
+    for key in ("preset", "cue"):
+        if key in plan:
+            response[key] = plan[key]
+    return response
+
+
+def unconfirmed_results_reason(results: list[CommandResult]) -> str | None:
+    unconfirmed = [
+        f"0x{result.command:04x}:{result.transport_status}"
+        for result in results
+        if not result.acknowledged
+    ]
+    if not unconfirmed:
+        return None
+    return "unconfirmed command results: " + ", ".join(unconfirmed)
 
 
 def cmd_cue(args: argparse.Namespace) -> int:
