@@ -869,8 +869,11 @@ from zhiyun_light_control import (
     LightConnectionConfig,
     LightIntegration,
     ScenePresetLibrary,
+    load_serialized_plan_bundle,
     load_light_setup_profile,
+    save_serialized_plan_bundle,
     save_light_setup_profile,
+    serialized_plan_bundle,
 )
 
 presets = ScenePresetLibrary.from_mapping(
@@ -899,6 +902,8 @@ selected_integration = integration.with_best_connection(
 )
 status_confirmed = integration.with_confirmed_connection(include_ble=True)
 plan = integration.plan_named_cue("intro", start_seq=1)
+plan_bundle = serialized_plan_bundle(plan)
+save_serialized_plan_bundle(plan_bundle, "./intro-plan.json")
 integration.require_readiness("read_status")
 
 print(ready["ready_for"])
@@ -913,6 +918,12 @@ print([candidate.to_dict() for candidate in status_routes])
 print(selected_integration.config.to_dict())
 print(status_confirmed.config.to_dict())
 print(plan["steps"])
+print(plan_bundle.summary())
+planned_execution = integration.execute_plan(
+    load_serialized_plan_bundle("./intro-plan.json"),
+    require_ready=True,
+)
+print(planned_execution["applied"], planned_execution["reason"])
 
 primitive = integration.set_brightness(35, require_ready=True)
 print(primitive["transport_status"], integration.state()["action"])
@@ -1087,7 +1098,8 @@ For portable handoff between timeline renderers, show controllers, and worker
 processes, wrap any serialized plan with `serialized_plan_bundle()`. Bundles are
 plain JSON with a frame summary and the original plan embedded, and the
 serialized frame executors accept either the bundle object or a loaded bundle
-mapping directly for single-target plans:
+mapping directly for single-target plans. The higher-level controller, rig, and
+integration `execute_plan` helpers accept the same loaded bundle objects:
 
 ```python
 from zhiyun_light_control import (

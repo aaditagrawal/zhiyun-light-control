@@ -369,6 +369,15 @@ def serialized_plan_bundle_from_json(text: str) -> SerializedPlanBundle:
     return SerializedPlanBundle.from_mapping(payload)
 
 
+def serialized_plan_payload(
+    plan: SerializedPlanBundle | Mapping[str, object],
+) -> Mapping[str, object]:
+    if isinstance(plan, SerializedPlanBundle):
+        return plan.plan
+    bundled = _serialized_bundle_plan(plan)
+    return bundled if bundled is not None else plan
+
+
 def save_serialized_plan_bundle(
     bundle: SerializedPlanBundle | Mapping[str, object],
     path: str | PathLike[str],
@@ -1087,9 +1096,7 @@ def _serialized_bundle_plan(
 def _serialized_plan_mapping(
     plan: SerializedPlanBundle | Mapping[str, object],
 ) -> Mapping[str, object]:
-    if isinstance(plan, SerializedPlanBundle):
-        return plan.to_dict()
-    return plan
+    return serialized_plan_payload(plan)
 
 
 def _mapping_items(

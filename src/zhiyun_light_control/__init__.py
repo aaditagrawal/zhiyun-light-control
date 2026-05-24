@@ -56,6 +56,7 @@ from .commands import (
     serialized_plan_bundle,
     serialized_plan_bundle_from_json,
     serialized_plan_bundle_to_json,
+    serialized_plan_payload,
     transition_command_plans,
 )
 from .controller import (
@@ -573,6 +574,7 @@ __all__ = [
     "serialized_plan_bundle",
     "serialized_plan_bundle_from_json",
     "serialized_plan_bundle_to_json",
+    "serialized_plan_payload",
     "transition_command_plans",
     "read_async_status",
     "read_sync_status",

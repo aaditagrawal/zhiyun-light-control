@@ -8,12 +8,11 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .bridge import LightConnectionConfig, LightFactory
-from .commands import SerializedPlanBundle
+from .commands import SerializedPlanBundle, serialized_plan_payload
 from .controller import (
     AsyncLightController,
     AsyncLightFactory,
     LightController,
-    _serialized_plan_payload,
 )
 from .cues import CueLibrary
 from .integration import (
@@ -1360,7 +1359,7 @@ class LightRig:
         require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         self.fixture(name)
-        plan_payload = _serialized_plan_payload(plan)
+        plan_payload = serialized_plan_payload(plan)
         self._require_setup_profile_primitive_if_requested(
             name,
             _plan_primitive_name(plan_payload),
@@ -2922,7 +2921,7 @@ class AsyncLightRig:
         require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         self.fixture(name)
-        plan_payload = _serialized_plan_payload(plan)
+        plan_payload = serialized_plan_payload(plan)
         self._require_setup_profile_primitive_if_requested(
             name,
             _plan_primitive_name(plan_payload),
@@ -4013,7 +4012,7 @@ def _rig_plan_next_seq(fixture_responses: Mapping[str, object]) -> int | None:
 def _fixture_plan_map(
     plans: SerializedPlanBundle | Mapping[str, object],
 ) -> dict[str, Mapping[str, object]]:
-    plan_payload = _serialized_plan_payload(plans)
+    plan_payload = serialized_plan_payload(plans)
     raw_plans = plan_payload.get("fixtures")
     source = raw_plans if isinstance(raw_plans, Mapping) else plan_payload
     fixture_plans: dict[str, Mapping[str, object]] = {}

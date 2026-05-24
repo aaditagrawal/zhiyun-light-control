@@ -13,11 +13,11 @@ from .bridge import (
     make_light_factory,
 )
 from .commands import (
-    SERIALIZED_PLAN_BUNDLE_KIND,
     SerializedPlanBundle,
     execute_async_serialized_frame_plan,
     execute_serialized_frame_plan,
     scene_command_plan,
+    serialized_plan_payload,
     transition_command_plans,
 )
 from .cues import CueLibrary
@@ -546,7 +546,7 @@ class LightController:
         timeout: float | None = None,
         require_acknowledged: bool | None = None,
     ) -> dict[str, object]:
-        plan_payload = _serialized_plan_payload(plan)
+        plan_payload = serialized_plan_payload(plan)
         with self.light_factory() as light:
             results = execute_serialized_frame_plan(
                 light,
@@ -1258,7 +1258,7 @@ class AsyncLightController:
         timeout: float | None = None,
         require_acknowledged: bool | None = None,
     ) -> dict[str, object]:
-        plan_payload = _serialized_plan_payload(plan)
+        plan_payload = serialized_plan_payload(plan)
         async with self.light_factory() as light:
             results = await execute_async_serialized_frame_plan(
                 light,
@@ -1869,19 +1869,6 @@ def _plan_execution_response(
         if key in plan:
             response[key] = plan[key]
     return response
-
-
-def _serialized_plan_payload(
-    plan: SerializedPlanBundle | Mapping[str, object],
-) -> Mapping[str, object]:
-    if isinstance(plan, SerializedPlanBundle):
-        return plan.plan
-    if plan.get("kind") != SERIALIZED_PLAN_BUNDLE_KIND:
-        return plan
-    bundled = plan.get("plan")
-    if not isinstance(bundled, Mapping):
-        raise ValueError("serialized plan bundle must contain a plan object")
-    return bundled
 
 
 def _primitive_response(

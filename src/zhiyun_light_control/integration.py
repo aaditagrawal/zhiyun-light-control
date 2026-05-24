@@ -13,6 +13,7 @@ from .bridge import (
     close_light_factory,
     make_light_factory,
 )
+from .commands import SerializedPlanBundle, serialized_plan_payload
 from .controller import (
     AsyncLightController,
     AsyncLightFactory,
@@ -1287,7 +1288,7 @@ class LightIntegration:
 
     def execute_plan(
         self,
-        plan: Mapping[str, object],
+        plan: SerializedPlanBundle | Mapping[str, object],
         *,
         timeout: float | None = None,
         require_acknowledged: bool = False,
@@ -1295,8 +1296,9 @@ class LightIntegration:
         required_readiness: Iterable[str] | None = None,
         require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        plan_payload = serialized_plan_payload(plan)
         self._require_setup_profile_primitive_if_requested(
-            _plan_primitive_name(plan),
+            _plan_primitive_name(plan_payload),
             require_setup_profile,
         )
         self._require_control_readiness(
@@ -2645,7 +2647,7 @@ class AsyncLightIntegration:
 
     async def execute_plan(
         self,
-        plan: Mapping[str, object],
+        plan: SerializedPlanBundle | Mapping[str, object],
         *,
         timeout: float | None = None,
         require_acknowledged: bool = False,
@@ -2653,8 +2655,9 @@ class AsyncLightIntegration:
         required_readiness: Iterable[str] | None = None,
         require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        plan_payload = serialized_plan_payload(plan)
         self._require_setup_profile_primitive_if_requested(
-            _plan_primitive_name(plan),
+            _plan_primitive_name(plan_payload),
             require_setup_profile,
         )
         await self._require_control_readiness(

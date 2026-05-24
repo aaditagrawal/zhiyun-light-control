@@ -259,6 +259,10 @@ add decoded functional payload fields when an ACK carries brightness, CCT, sleep
 RGB, or HSI values. Direct integration control records into the integration
 state tracker so subsequent `state_snapshot`, `state_history`, and
 readiness/snapshot payloads include the latest control evidence by default.
+`LightIntegration.execute_plan(...)` and `AsyncLightIntegration.execute_plan(...)`
+accept loaded serialized plan bundles as well as raw plan dictionaries, so a
+planner process can persist JSON and a runtime integration process can execute it
+without manually unwrapping the envelope.
 One-shot integration helpers close internally owned light factories after each
 call; long-lived media hosts should keep an explicit controller or injected
 factory when they want connection persistence across commands.
@@ -386,7 +390,8 @@ plans. `execute_serialized_frame_plan(...)` and
 `execute_async_serialized_frame_plan(...)` accept either the bundle object or a
 loaded bundle mapping for single-target plans; grouped rig plans keep using
 `execute_plan_map(...)` so each fixture is routed to its configured light.
-Controller and rig execution helpers also accept loaded bundle objects directly.
+Controller, integration, and rig execution helpers also accept loaded bundle
+objects directly.
 This keeps the media-control boundary as JSON until the final USB/BLE runtime
 process sends the exact planned bytes.
 

@@ -42,6 +42,7 @@ from zhiyun_light_control import (
     local_usb_discovery,
     local_validation,
     save_light_setup_profile,
+    serialized_plan_bundle,
 )
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.protocol import (
@@ -1626,7 +1627,10 @@ class IntegrationTests(unittest.TestCase):
             start_seq=7,
         )
 
-        response = integration.execute_plan(plan, timeout=0.25)
+        response = integration.execute_plan(
+            serialized_plan_bundle(plan, created_at=123.0),
+            timeout=0.25,
+        )
 
         self.assertEqual(response["action"], "execute_plan")
         self.assertEqual(response["planned_action"], "scene")
@@ -2714,7 +2718,10 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
             start_seq=7,
         )
 
-        response = await integration.execute_plan(plan, timeout=0.25)
+        response = await integration.execute_plan(
+            serialized_plan_bundle(plan, created_at=123.0).to_dict(),
+            timeout=0.25,
+        )
 
         self.assertEqual(response["action"], "execute_plan")
         self.assertEqual(response["planned_action"], "scene")

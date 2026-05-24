@@ -35,6 +35,7 @@ from zhiyun_light_control import (
     serialized_plan_bundle,
     serialized_plan_bundle_from_json,
     serialized_plan_bundle_to_json,
+    serialized_plan_payload,
     transition_command_plans,
 )
 from zhiyun_light_control.protocol import (
@@ -422,6 +423,8 @@ class CommandPlanningTests(unittest.TestCase):
         )
         self.assertEqual(restored.created_at, 123.0)
         self.assertEqual(restored.frame_commands, bundle.frame_commands)
+        self.assertEqual(serialized_plan_payload(restored), bundle.plan)
+        self.assertEqual(serialized_plan_payload(restored.to_dict()), bundle.plan)
 
         with TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "plan.json"
