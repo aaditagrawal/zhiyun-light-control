@@ -72,11 +72,12 @@ before scan results were returned on the local setup. Use:
 uv run zlight ble-helper --ensure --open-settings
 ```
 
-This builds a cached compiled Swift `.app` helper and opens Bluetooth privacy
-settings for the exact bundle id used by scans. Older script-based helper builds
-could report `not_determined` plus `unauthorized` without appearing in Settings;
-delete the cached app or rerun `--ensure` with current code to rebuild the
-compiled helper. Use:
+This builds a cached compiled Swift `.app` helper, ad-hoc signs the full app
+bundle, and opens Bluetooth privacy settings for the exact bundle id used by
+scans. Older script-based or unsigned helper builds could report
+`not_determined` plus `unauthorized` without appearing in Settings; delete the
+cached app or rerun `--ensure` with current code to rebuild and sign the helper.
+Use:
 
 ```sh
 uv run zlight ble-helper --status --json
@@ -84,6 +85,10 @@ uv run zlight ble-helper --status --json
 
 or `GET /devices?include_ble_status=true` to report the current helper
 Bluetooth state and authorization status without starting GATT inspection.
+If status reports `pending_action: "allow_bluetooth_prompt"`, macOS has not
+completed the Bluetooth authorization decision yet; click Allow on the
+`ZhiyunBleScan` Bluetooth prompt or allow it in the Bluetooth privacy pane,
+then rerun the scan.
 
 When the HTTP bridge is configured as `transport=ble` with
 `ble_backend=macos-app`, the embedded `devices.ble.macos_status` field includes

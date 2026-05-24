@@ -132,20 +132,51 @@ class SafeBleScanTests(unittest.TestCase):
             bundle_name="ZhiyunBleScan",
         )
 
+    def test_macos_ble_app_status_names_pending_bluetooth_prompt(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=False,
+            payload={
+                "ok": False,
+                "state": "unknown",
+                "state_raw": 0,
+                "authorization": "not_determined",
+                "authorization_raw": 0,
+                "error": "Bluetooth status timed out",
+            },
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ):
+            status = macos_ble_app_status(timeout=1.25)
+
+        self.assertEqual(status["pending_action"], "allow_bluetooth_prompt")
+        self.assertIn("permission prompt", status["error"])
+
     def test_macos_ble_app_ensure_compiles_visible_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             app_path = Path(tmp) / "ZhiyunBleScan.app"
             compile_calls = []
+            sign_calls = []
 
             def fake_run(args, **_kwargs):
-                compile_calls.append(args)
-                Path(args[-1]).write_bytes(b"mach-o")
+                if args[0] == "/usr/bin/swiftc":
+                    compile_calls.append(args)
+                    Path(args[-1]).write_bytes(b"mach-o")
+                elif args[0] == "/usr/bin/codesign":
+                    sign_calls.append(args)
                 return types.SimpleNamespace(returncode=0, stderr="", stdout="")
 
             with (
                 patch(
                     "zhiyun_light_control.macos_ble_app._bundle_root",
                     return_value=app_path,
+                ),
+                patch(
+                    "zhiyun_light_control.macos_ble_app.shutil.which",
+                    side_effect=lambda name: f"/usr/bin/{name}",
                 ),
                 patch("zhiyun_light_control.macos_ble_app.subprocess.run", fake_run),
             ):
@@ -154,6 +185,11 @@ class SafeBleScanTests(unittest.TestCase):
             info = plistlib.loads((app_path / "Contents" / "Info.plist").read_bytes())
             self.assertEqual(result, app_path)
             self.assertEqual(compile_calls[0][0], "/usr/bin/swiftc")
+            self.assertEqual(
+                sign_calls[0][:4],
+                ["/usr/bin/codesign", "--force", "--deep", "--sign"],
+            )
+            self.assertEqual(sign_calls[0][-1], str(app_path))
             self.assertEqual(info["CFBundleIdentifier"], APP_BUNDLE_ID)
             self.assertNotIn("LSBackgroundOnly", info)
             self.assertTrue(

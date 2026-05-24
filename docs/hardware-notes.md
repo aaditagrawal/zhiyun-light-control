@@ -171,6 +171,16 @@ diagnostics. Use `zlight ble-helper --ensure --open-settings` to build the
 cached helper and open the Bluetooth privacy settings for the exact bundle id
 used by scans.
 
+On 2026-05-24, the helper builder was updated to ad-hoc sign the full `.app`
+bundle after compiling the Swift binary. Before signing, `codesign` reported
+the executable identifier as `ZhiyunBleScan` and `Info.plist=not bound`; after
+signing it reported `Identifier=local.zhiyun-light-control.ble-scan` with bound
+Info.plist entries. System logs then showed `bluetoothd` registering the central
+session for `local.zhiyun-light-control.ble-scan` and `tccd` prompting for
+`kTCCServiceBluetoothAlways`. If status remains `not_determined`, the next
+action is to accept that Bluetooth prompt or allow `ZhiyunBleScan` in Privacy &
+Security > Bluetooth.
+
 Current local BLE scan validation:
 
 | Runtime | BLE stack | Result |

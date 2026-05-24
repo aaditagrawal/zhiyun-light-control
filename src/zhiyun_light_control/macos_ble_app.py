@@ -261,6 +261,15 @@ def macos_ble_app_status(
         status["ok"] = bool(run.ok)
     if run.error is not None and status.get("error") is None:
         status["error"] = run.error
+    if (
+        status.get("authorization") == "not_determined"
+        and status.get("error") == "Bluetooth status timed out"
+    ):
+        status["error"] = (
+            "Bluetooth authorization is not determined; respond to the "
+            f"{bundle_name} permission prompt or open Bluetooth privacy settings."
+        )
+        status["pending_action"] = "allow_bluetooth_prompt"
     status.update(
         {
             "bundle_name": bundle_name,
@@ -421,6 +430,8 @@ def ensure_macos_ble_app(
             error = proc.stderr.strip() or proc.stdout.strip()
             raise RuntimeError(f"could not compile macOS BLE helper: {error}")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
+    _clear_quarantine(app_path)
+    _sign_app_bundle(app_path)
     return app_path
 
 
@@ -471,6 +482,40 @@ def _find_swiftc() -> str | None:
         return None
     value = proc.stdout.strip()
     return value or None
+
+
+def _clear_quarantine(app_path: Path) -> None:
+    xattr_path = shutil.which("xattr")
+    if xattr_path is None:
+        return
+    subprocess.run(
+        [xattr_path, "-dr", "com.apple.quarantine", str(app_path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _sign_app_bundle(app_path: Path) -> None:
+    codesign_path = shutil.which("codesign")
+    if codesign_path is None:
+        raise RuntimeError("codesign command not found")
+    proc = subprocess.run(
+        [
+            codesign_path,
+            "--force",
+            "--deep",
+            "--sign",
+            "-",
+            str(app_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        error = proc.stderr.strip() or proc.stdout.strip()
+        raise RuntimeError(f"could not sign macOS BLE helper app: {error}")
 
 
 def _terminate_helper(bundle_name: str) -> None:
