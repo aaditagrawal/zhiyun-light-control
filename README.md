@@ -589,12 +589,15 @@ from zhiyun_light_control import (
     bridge_response_reason,
     bridge_response_statuses,
     bridge_setup_report,
+    bridge_setup_primitive_readiness,
     devices_ble_authorization,
     devices_ble_blocker,
     devices_selected_usb_port,
     connection_candidates_from_devices,
     load_light_setup_profile,
     save_light_setup_profile,
+    setup_profile_primitive_readiness,
+    setup_profile_primitive_ready_for,
     usb_config_from_devices,
 )
 
@@ -613,7 +616,11 @@ profile = bridge.setup_profile(include_ble_status=True, include_object_reads=Tru
 save_light_setup_profile(profile, "./bridge-light-profile.json")
 restored_profile = load_light_setup_profile("./bridge-light-profile.json")
 print(setup["summary"])
+print(setup["primitive_ready_for"]["status"])
+print(setup["primitive_readiness"]["brightness"])
 print(profile.ready("read_status"), restored_profile.config.to_dict())
+print(profile.primitive_ready_for["brightness"])
+print(setup_profile_primitive_ready_for(restored_profile)["status"])
 devices = bridge.devices(include_ble_status=True)
 print(devices_selected_usb_port(devices))
 print(devices_ble_authorization(devices), devices_ble_blocker(devices))
@@ -629,6 +636,8 @@ print(usb_config.to_dict())
 print(bridge_config.to_dict())
 print(bridge_primitive_requirements_map(bridge.capabilities())["status"])
 print(bridge_primitive_requirements(bridge.integration(), "read-brightness"))
+print(bridge_setup_primitive_readiness(setup, "brightness"))
+print(setup_profile_primitive_readiness(restored_profile.to_dict(), "status"))
 print(ble_scan_config.to_dict())
 ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
 print(ble["endpoint_candidates"])
@@ -683,6 +692,14 @@ talks to a bridge process but still wants the same portable
 `LightSetupProfile` evidence used by direct `LightIntegration` SDK sessions.
 `bridge_setup_report()` and `bridge_connection_config()` provide the same
 normalization for hosts that already fetched bridge JSON themselves.
+Bridge setup reports include `capabilities`, `primitive_ready_for`, and
+`primitive_readiness` fields so an external controller can decide whether to
+arm `status`, `read_brightness`, `set_brightness`, cues, or scenes from plain
+JSON. The helpers `setup_capabilities()`, `setup_primitive_ready()`,
+`setup_primitive_readiness()`, and `setup_primitive_readiness_map()` expose the
+same checks on `LightBridgeClient`; standalone
+`bridge_setup_primitive_readiness(payload, name)` works on a cached setup
+report.
 Use `control_guard()`, `request_templates()`, `request_template(category, name)`,
 `request_template_body(category, name)`, `request_template_query(category, name)`,
 and `request_template_required_readiness(category, name)` to consume the
@@ -787,7 +804,10 @@ checks such as `profile.ready("read_status")` or
 `profile.ready("control_writes")` before a host enables a workflow. It can also
 gate by primitive name with `profile.primitive_ready("set_brightness")` or
 `profile.require_primitive("read_brightness")`, so a media host does not need to
-hard-code which setup capability protects each operation.
+hard-code which setup capability protects each operation. Saved profile JSON
+also carries `capabilities`, `primitive_ready_for`, and `primitive_readiness`,
+and module helpers such as `setup_profile_primitive_readiness(payload, name)`
+consume either a `LightSetupProfile`, profile JSON, or raw setup report.
 Use `LightIntegration.from_setup_profile()` or
 `LightIntegration.from_setup_profile_file()` to turn that saved profile back
 into a host integration while requiring capabilities up front. Integrations

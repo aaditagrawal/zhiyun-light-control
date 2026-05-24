@@ -12,7 +12,16 @@ from urllib.request import Request, urlopen
 
 from .bridge import LightConnectionConfig
 from .models import Scene
-from .profiles import LightSetupProfile, save_light_setup_profile
+from .profiles import (
+    LightSetupProfile,
+    save_light_setup_profile,
+    setup_profile_capabilities,
+    setup_profile_primitive_readiness,
+    setup_profile_primitive_readiness_map,
+    setup_profile_primitive_ready,
+    setup_profile_primitive_ready_for,
+    setup_profile_unready_primitive_capabilities,
+)
 
 
 class LightBridgeError(RuntimeError):
@@ -370,6 +379,35 @@ class LightBridgeClient:
         **options: object,
     ) -> LightSetupProfile:
         return LightSetupProfile.from_setup_report(self.setup_report(**options))
+
+    def setup_capabilities(self, **options: object) -> dict[str, bool]:
+        return setup_profile_capabilities(self.setup_report(**options))
+
+    def setup_primitive_ready(
+        self,
+        primitive: str,
+        **options: object,
+    ) -> bool:
+        return setup_profile_primitive_ready(
+            self.setup_report(**options),
+            primitive,
+        )
+
+    def setup_primitive_readiness(
+        self,
+        primitive: str,
+        **options: object,
+    ) -> dict[str, object]:
+        return setup_profile_primitive_readiness(
+            self.setup_report(**options),
+            primitive,
+        )
+
+    def setup_primitive_readiness_map(
+        self,
+        **options: object,
+    ) -> dict[str, dict[str, object]]:
+        return setup_profile_primitive_readiness_map(self.setup_report(**options))
 
     def save_setup_profile(
         self,
@@ -1030,7 +1068,7 @@ def bridge_setup_report(
         "warnings": _bridge_setup_warnings(summary, ready),
         "errors": errors,
     }
-    return {
+    report = {
         "api": "zhiyun-light-control",
         "ok": connection_confirmed,
         "source": "http_bridge",
@@ -1057,6 +1095,10 @@ def bridge_setup_report(
         "integration": _string_key_dict(payload),
         "summary": report_summary,
     }
+    report["capabilities"] = setup_profile_capabilities(report)
+    report["primitive_ready_for"] = setup_profile_primitive_ready_for(report)
+    report["primitive_readiness"] = setup_profile_primitive_readiness_map(report)
+    return report
 
 
 def control_guard(payload: Mapping[str, object]) -> dict[str, object]:
@@ -1153,6 +1195,39 @@ def bridge_primitive_requirements(
 ) -> list[str]:
     normalized = primitive.strip().lower().replace("-", "_")
     return bridge_primitive_requirements_map(payload).get(normalized, [])
+
+
+def bridge_setup_capabilities(
+    payload: Mapping[str, object],
+) -> dict[str, bool]:
+    return setup_profile_capabilities(payload)
+
+
+def bridge_setup_primitive_ready(
+    payload: Mapping[str, object],
+    primitive: str,
+) -> bool:
+    return setup_profile_primitive_ready(payload, primitive)
+
+
+def bridge_setup_unready_primitive_capabilities(
+    payload: Mapping[str, object],
+    primitive: str,
+) -> list[str]:
+    return setup_profile_unready_primitive_capabilities(payload, primitive)
+
+
+def bridge_setup_primitive_readiness(
+    payload: Mapping[str, object],
+    primitive: str,
+) -> dict[str, object]:
+    return setup_profile_primitive_readiness(payload, primitive)
+
+
+def bridge_setup_primitive_readiness_map(
+    payload: Mapping[str, object],
+) -> dict[str, dict[str, object]]:
+    return setup_profile_primitive_readiness_map(payload)
 
 
 def readiness_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:

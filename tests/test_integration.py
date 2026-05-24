@@ -1730,6 +1730,15 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
             report["summary"]["validation_unconfirmed"],
             ["read_brightness", "set_brightness"],
         )
+        self.assertTrue(report["capabilities"]["read_status"])
+        self.assertFalse(report["capabilities"]["object_reads"])
+        self.assertTrue(report["primitive_ready_for"]["status"])
+        self.assertFalse(report["primitive_ready_for"]["read_brightness"])
+        self.assertFalse(report["primitive_ready_for"]["brightness"])
+        self.assertEqual(
+            report["primitive_readiness"]["brightness"]["unready_capabilities"],
+            ["control_writes"],
+        )
         self.assertFalse(report["validation_ready_for"]["object_reads"])
         self.assertEqual(routes.call_args.kwargs["include_ble"], True)
         self.assertEqual(routes.call_args.kwargs["persistent"], True)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from os import PathLike
 from pathlib import Path
@@ -121,13 +121,15 @@ class LightSetupProfile:
 
     @property
     def capabilities(self) -> dict[str, bool]:
-        capabilities = self.ready_for
-        for name, ready in self.validation_ready_for.items():
-            if name in capabilities:
-                capabilities[name] = capabilities[name] and ready
-            else:
-                capabilities[name] = ready
-        return capabilities
+        return setup_profile_capabilities(self.setup_report)
+
+    @property
+    def primitive_ready_for(self) -> dict[str, bool]:
+        return setup_profile_primitive_ready_for(self)
+
+    @property
+    def primitive_readiness(self) -> dict[str, dict[str, object]]:
+        return setup_profile_primitive_readiness_map(self)
 
     @property
     def ready_for(self) -> dict[str, bool]:
@@ -152,18 +154,10 @@ class LightSetupProfile:
         return _dict_from_mapping(summary)
 
     def ready(self, capability: str) -> bool:
-        if capability in self.ready_for:
-            return self.ready_for[capability]
-        if capability in self.validation_ready_for:
-            return self.validation_ready_for[capability]
-        return False
+        return setup_profile_ready(self, capability)
 
     def unready_capabilities(self, *capabilities: str) -> list[str]:
-        return [
-            capability
-            for capability in capabilities
-            if not self.ready(capability)
-        ]
+        return setup_profile_unready_capabilities(self, capabilities)
 
     def require_ready(self, *capabilities: str) -> LightSetupProfile:
         missing = self.unready_capabilities(*capabilities)
@@ -175,10 +169,13 @@ class LightSetupProfile:
         return setup_profile_primitive_requirements(primitive)
 
     def primitive_ready(self, primitive: str) -> bool:
-        return not self.unready_primitive_capabilities(primitive)
+        return setup_profile_primitive_ready(self, primitive)
 
     def unready_primitive_capabilities(self, primitive: str) -> list[str]:
-        return self.unready_capabilities(*self.primitive_requirements(primitive))
+        return setup_profile_unready_primitive_capabilities(self, primitive)
+
+    def primitive_readiness_for(self, primitive: str) -> dict[str, object]:
+        return setup_profile_primitive_readiness(self, primitive)
 
     def require_primitive(self, primitive: str) -> LightSetupProfile:
         return self.require_ready(*self.primitive_requirements(primitive))
@@ -191,9 +188,12 @@ class LightSetupProfile:
             "created_at": self.created_at,
             "config": self.config.to_dict(),
             "summary": self.summary,
+            "capabilities": self.capabilities,
             "ready_for": self.ready_for,
             "validation_ready_for": self.validation_ready_for,
             "validation_unconfirmed": self.validation_unconfirmed,
+            "primitive_ready_for": self.primitive_ready_for,
+            "primitive_readiness": self.primitive_readiness,
             "setup_report": _dict_from_mapping(self.setup_report),
         }
 
@@ -219,7 +219,7 @@ class SetupProfileMissing(RuntimeError):
 
 
 def setup_profile_primitive_requirements(primitive: str) -> tuple[str, ...]:
-    normalized = primitive.strip().lower().replace("-", "_")
+    normalized = _normalize_primitive(primitive)
     requirements = SETUP_PROFILE_PRIMITIVE_REQUIREMENTS.get(normalized)
     if requirements is None:
         raise ValueError(f"unknown setup profile primitive: {primitive}")
@@ -232,6 +232,99 @@ def setup_profile_primitive_requirements_map() -> dict[str, tuple[str, ...]]:
         for primitive, requirements in sorted(
             SETUP_PROFILE_PRIMITIVE_REQUIREMENTS.items()
         )
+    }
+
+
+def setup_profile_capabilities(
+    payload: LightSetupProfile | Mapping[str, object],
+) -> dict[str, bool]:
+    evidence = _setup_evidence_mapping(payload)
+    capabilities = _bool_mapping(evidence.get("ready_for"))
+    for name, ready in _setup_validation_ready_for(evidence).items():
+        if name in capabilities:
+            capabilities[name] = capabilities[name] and ready
+        else:
+            capabilities[name] = ready
+    return capabilities
+
+
+def setup_profile_ready(
+    payload: LightSetupProfile | Mapping[str, object],
+    capability: str,
+) -> bool:
+    return setup_profile_capabilities(payload).get(capability, False)
+
+
+def setup_profile_unready_capabilities(
+    payload: LightSetupProfile | Mapping[str, object],
+    capabilities: Iterable[str],
+) -> list[str]:
+    readiness = setup_profile_capabilities(payload)
+    return [
+        capability
+        for capability in capabilities
+        if not readiness.get(capability, False)
+    ]
+
+
+def setup_profile_primitive_ready(
+    payload: LightSetupProfile | Mapping[str, object],
+    primitive: str,
+) -> bool:
+    return not setup_profile_unready_primitive_capabilities(payload, primitive)
+
+
+def setup_profile_unready_primitive_capabilities(
+    payload: LightSetupProfile | Mapping[str, object],
+    primitive: str,
+) -> list[str]:
+    return setup_profile_unready_capabilities(
+        payload,
+        setup_profile_primitive_requirements(primitive),
+    )
+
+
+def setup_profile_primitive_readiness(
+    payload: LightSetupProfile | Mapping[str, object],
+    primitive: str,
+) -> dict[str, object]:
+    normalized = _normalize_primitive(primitive)
+    requirements = setup_profile_primitive_requirements(normalized)
+    capabilities = setup_profile_capabilities(payload)
+    unready = [
+        capability
+        for capability in requirements
+        if not capabilities.get(capability, False)
+    ]
+    return {
+        "primitive": normalized,
+        "ready": not unready,
+        "requirements": list(requirements),
+        "capabilities": {
+            capability: capabilities.get(capability, False)
+            for capability in requirements
+        },
+        "unready_capabilities": unready,
+    }
+
+
+def setup_profile_primitive_ready_for(
+    payload: LightSetupProfile | Mapping[str, object],
+) -> dict[str, bool]:
+    return {
+        primitive: not readiness["unready_capabilities"]
+        for primitive, readiness in setup_profile_primitive_readiness_map(
+            payload
+        ).items()
+    }
+
+
+def setup_profile_primitive_readiness_map(
+    payload: LightSetupProfile | Mapping[str, object],
+) -> dict[str, dict[str, object]]:
+    return {
+        primitive: setup_profile_primitive_readiness(payload, primitive)
+        for primitive in setup_profile_primitive_requirements_map()
     }
 
 
@@ -284,6 +377,30 @@ def _optional_mapping(value: object) -> Mapping[object, object] | None:
     if isinstance(value, Mapping):
         return value
     return None
+
+
+def _setup_evidence_mapping(
+    payload: LightSetupProfile | Mapping[str, object],
+) -> dict[str, object]:
+    if isinstance(payload, LightSetupProfile):
+        return _dict_from_mapping(payload.setup_report)
+    if payload.get("kind") == SETUP_PROFILE_KIND:
+        return _mapping(payload, "setup_report")
+    return _dict_from_mapping(payload)
+
+
+def _setup_validation_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:
+    validation_ready = _bool_mapping(payload.get("validation_ready_for"))
+    if validation_ready:
+        return validation_ready
+    summary = _optional_mapping(payload.get("summary"))
+    if summary is None:
+        return {}
+    return _bool_mapping(summary.get("validation_ready_for"))
+
+
+def _normalize_primitive(primitive: str) -> str:
+    return primitive.strip().lower().replace("-", "_")
 
 
 def _dict_from_mapping(payload: Mapping[object, object]) -> dict[str, object]:

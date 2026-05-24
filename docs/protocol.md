@@ -279,7 +279,11 @@ use validation with `allow_control` before enabling production writes.
 status-probed routes, the selected config, readiness, validation readiness, and
 unconfirmed primitive names. It is intended for setup dashboards and media hosts
 that need to decide whether status, object reads, and control writes are
-independently usable on the selected transport.
+independently usable on the selected transport. Reports now also include
+`capabilities`, `primitive_ready_for`, and `primitive_readiness`, which are plain
+JSON projections of the SDK primitive gates. That lets a controller arm or block
+`status`, `read_brightness`, `set_brightness`, cues, scenes, and transitions
+without duplicating the primitive-to-capability map.
 `setup_profile` wraps that report in a portable `LightSetupProfile` JSON object
 with the selected `LightConnectionConfig`, summary booleans, validation
 capabilities, and unconfirmed primitive names. Use
@@ -292,7 +296,10 @@ evidence while failing fast on missing capabilities.
 Profiles also expose primitive-level checks. `primitive_ready("set_brightness")`
 and `require_primitive("read_brightness")` map public SDK operations to the
 evidence capabilities they require (`control_writes`, `object_reads`,
-`control_setup`, or `read_status`). `LightIntegration` and
+`control_setup`, or `read_status`). Standalone helpers
+`setup_profile_primitive_readiness` and
+`setup_profile_primitive_readiness_map` consume either a `LightSetupProfile`,
+profile JSON, or a raw setup report. `LightIntegration` and
 `AsyncLightIntegration` instances created from a profile retain that evidence as
 `setup_profile_evidence` and expose matching
 `setup_profile_primitive_ready`/`require_setup_profile_primitive` helpers.
@@ -300,8 +307,11 @@ When a host talks to a long-running HTTP bridge instead of embedding the
 transport directly, `LightBridgeClient.setup_report`,
 `LightBridgeClient.setup_profile`, and `LightBridgeClient.save_setup_profile`
 produce the same profile shape from bridge `/integration` and `/validate`
-evidence. `bridge_setup_report` and `bridge_connection_config` expose that
-normalization for non-Python clients that fetch the JSON themselves.
+evidence. `LightBridgeClient.setup_primitive_readiness` and
+`setup_primitive_readiness_map` expose the setup gates directly, while
+`bridge_setup_report`, `bridge_setup_primitive_readiness`, and
+`bridge_connection_config` expose that normalization for clients that fetch the
+JSON themselves.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.

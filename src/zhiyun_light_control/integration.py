@@ -46,7 +46,14 @@ from .discovery import (
 )
 from .models import Scene
 from .presets import ScenePresetLibrary
-from .profiles import LightSetupProfile, SetupProfileMissing, load_light_setup_profile
+from .profiles import (
+    LightSetupProfile,
+    SetupProfileMissing,
+    load_light_setup_profile,
+    setup_profile_capabilities,
+    setup_profile_primitive_readiness_map,
+    setup_profile_primitive_ready_for,
+)
 from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .server import (
     capabilities_response,
@@ -3615,7 +3622,7 @@ def _setup_report_payload(
     )
     ok = status_ok and (route_confirmed or not require_confirmed_route)
     errors = [error for error in (route_error, status_error) if error is not None]
-    return {
+    report = {
         "api": "zhiyun-light-control",
         "ok": ok,
         "config": config.to_dict(),
@@ -3646,6 +3653,10 @@ def _setup_report_payload(
             "errors": errors,
         },
     }
+    report["capabilities"] = setup_profile_capabilities(report)
+    report["primitive_ready_for"] = setup_profile_primitive_ready_for(report)
+    report["primitive_readiness"] = setup_profile_primitive_readiness_map(report)
+    return report
 
 
 def _validation_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:

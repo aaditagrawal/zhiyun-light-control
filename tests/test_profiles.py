@@ -12,8 +12,16 @@ from zhiyun_light_control import (
     light_setup_profile_to_json,
     load_light_setup_profile,
     save_light_setup_profile,
+    setup_profile_capabilities,
+    setup_profile_primitive_readiness,
+    setup_profile_primitive_readiness_map,
+    setup_profile_primitive_ready,
+    setup_profile_primitive_ready_for,
     setup_profile_primitive_requirements,
     setup_profile_primitive_requirements_map,
+    setup_profile_ready,
+    setup_profile_unready_capabilities,
+    setup_profile_unready_primitive_capabilities,
 )
 
 
@@ -40,7 +48,25 @@ class SetupProfileTests(unittest.TestCase):
             },
         )
         self.assertEqual(
+            setup_profile_capabilities(profile.to_dict()),
+            {
+                "read_status": True,
+                "control_writes": False,
+            },
+        )
+        self.assertTrue(setup_profile_ready(profile.to_dict(), "read_status"))
+        self.assertFalse(
+            setup_profile_ready(profile.to_dict(), "control_writes")
+        )
+        self.assertEqual(
             profile.unready_capabilities("read_status", "control_writes"),
+            ["control_writes"],
+        )
+        self.assertEqual(
+            setup_profile_unready_capabilities(
+                setup_report(),
+                ["read_status", "control_writes"],
+            ),
             ["control_writes"],
         )
         self.assertEqual(
@@ -53,9 +79,51 @@ class SetupProfileTests(unittest.TestCase):
         )
         self.assertTrue(profile.primitive_ready("status"))
         self.assertFalse(profile.primitive_ready("set_brightness"))
+        self.assertTrue(setup_profile_primitive_ready(setup_report(), "status"))
+        self.assertFalse(
+            setup_profile_primitive_ready(
+                profile.to_dict(),
+                "set-brightness",
+            )
+        )
         self.assertEqual(
             profile.unready_primitive_capabilities("set_brightness"),
             ["control_writes"],
+        )
+        self.assertEqual(
+            setup_profile_unready_primitive_capabilities(
+                profile,
+                "set_brightness",
+            ),
+            ["control_writes"],
+        )
+        self.assertEqual(
+            setup_profile_primitive_readiness(profile, "set-brightness"),
+            {
+                "primitive": "set_brightness",
+                "ready": False,
+                "requirements": ["control_writes"],
+                "capabilities": {"control_writes": False},
+                "unready_capabilities": ["control_writes"],
+            },
+        )
+        self.assertEqual(
+            profile.primitive_readiness_for("status"),
+            {
+                "primitive": "status",
+                "ready": True,
+                "requirements": ["read_status"],
+                "capabilities": {"read_status": True},
+                "unready_capabilities": [],
+            },
+        )
+        self.assertTrue(profile.primitive_ready_for["status"])
+        self.assertFalse(profile.primitive_ready_for["brightness"])
+        self.assertTrue(
+            setup_profile_primitive_ready_for(profile.to_dict())["status"]
+        )
+        self.assertFalse(
+            setup_profile_primitive_readiness_map(profile)["brightness"]["ready"]
         )
         self.assertEqual(
             setup_profile_primitive_requirements("set-brightness"),
@@ -75,6 +143,13 @@ class SetupProfileTests(unittest.TestCase):
         self.assertEqual(payload["created_at"], 42.0)
         self.assertEqual(payload["config"], profile.config.to_dict())
         self.assertEqual(payload["validation_unconfirmed"], ["set_brightness"])
+        self.assertFalse(payload["primitive_ready_for"]["set_brightness"])
+        self.assertEqual(
+            payload["primitive_readiness"]["read_brightness"][
+                "unready_capabilities"
+            ],
+            ["object_reads"],
+        )
 
     def test_profile_json_round_trips(self) -> None:
         profile = LightSetupProfile.from_setup_report(

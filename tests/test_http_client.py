@@ -17,7 +17,12 @@ from zhiyun_light_control import (
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
+    bridge_setup_capabilities,
+    bridge_setup_primitive_readiness,
+    bridge_setup_primitive_readiness_map,
+    bridge_setup_primitive_ready,
     bridge_setup_report,
+    bridge_setup_unready_primitive_capabilities,
     command_result_acknowledged,
     command_result_status,
     control_guard,
@@ -846,6 +851,42 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(setup["source"], "http_bridge")
             self.assertTrue(setup["include_object_reads"])
             self.assertTrue(setup["route_confirmed"])
+            self.assertTrue(setup["capabilities"]["read_status"])
+            self.assertTrue(setup["capabilities"]["object_reads"])
+            self.assertTrue(setup["primitive_ready_for"]["status"])
+            self.assertTrue(setup["primitive_ready_for"]["read_brightness"])
+            self.assertEqual(
+                setup["primitive_readiness"]["brightness"][
+                    "unready_capabilities"
+                ],
+                ["control_writes"],
+            )
+            self.assertEqual(
+                bridge_setup_capabilities(setup)["control_writes"],
+                False,
+            )
+            self.assertTrue(bridge_setup_primitive_ready(setup, "status"))
+            self.assertFalse(
+                bridge_setup_primitive_ready(setup, "set-brightness")
+            )
+            self.assertEqual(
+                bridge_setup_unready_primitive_capabilities(
+                    setup,
+                    "read_brightness",
+                ),
+                [],
+            )
+            self.assertEqual(
+                bridge_setup_primitive_readiness(setup, "brightness")[
+                    "requirements"
+                ],
+                ["control_writes"],
+            )
+            self.assertFalse(
+                bridge_setup_primitive_readiness_map(setup)["brightness"][
+                    "ready"
+                ]
+            )
             self.assertEqual(
                 setup["config"]["port"],
                 "/dev/cu.usbmodem21301",
@@ -871,6 +912,43 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(profile.config.port, "/dev/cu.usbmodem21301")
             self.assertTrue(profile.ready("read_status"))
             self.assertFalse(profile.ready("control_requests"))
+            self.assertTrue(
+                profile.primitive_readiness["status"]["ready"]
+            )
+            self.assertFalse(
+                profile.primitive_readiness["brightness"]["ready"]
+            )
+            with patch(
+                "zhiyun_light_control.server.discover_transport_devices",
+                return_value=devices,
+            ):
+                self.assertFalse(
+                    client.setup_primitive_ready(
+                        "brightness",
+                        include_object_reads=True,
+                        config_timeout=0.2,
+                    )
+                )
+                self.assertEqual(
+                    client.setup_primitive_readiness(
+                        "status",
+                        include_object_reads=True,
+                        config_timeout=0.2,
+                    )["unready_capabilities"],
+                    [],
+                )
+                self.assertTrue(
+                    client.setup_primitive_readiness_map(
+                        include_object_reads=True,
+                        config_timeout=0.2,
+                    )["status"]["ready"]
+                )
+                self.assertTrue(
+                    client.setup_capabilities(
+                        include_object_reads=True,
+                        config_timeout=0.2,
+                    )["read_status"]
+                )
 
             with TemporaryDirectory() as temp_dir:
                 path = f"{temp_dir}/bridge-profile.json"
