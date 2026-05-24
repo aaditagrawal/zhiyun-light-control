@@ -28,17 +28,17 @@ jobs:
         run: uv sync --python ${{ matrix.python-version }} --extra ble --extra dev
 
       - name: Lint
-        run: uv run ruff check .
+        run: uv run --python ${{ matrix.python-version }} ruff check .
 
       - name: Test
-        run: uv run pytest -q
+        run: uv run --python ${{ matrix.python-version }} pytest -q
 
       - name: Compile
-        run: uv run python -m compileall -q src tests examples/sdk_quickstart.py
+        run: uv run --python ${{ matrix.python-version }} python -m compileall -q src tests examples/sdk_quickstart.py
 
       - name: Check no explicit Any in source or tests
         run: |
-          uv run python - <<'PY'
+          uv run --python ${{ matrix.python-version }} python - <<'PY'
           from pathlib import Path
           import re
           import sys
@@ -56,4 +56,4 @@ jobs:
           PY
 
       - name: Build package
-        run: uv build
+        run: uv build --python ${{ matrix.python-version }}
