@@ -1215,6 +1215,11 @@ For multi-fixture setups, `rig.connection_report_all(include_ble=True)` and the
 async equivalent return the same route report per fixture, so a setup tool can
 show which lights are USB-confirmed, BLE-confirmed, or blocked before a show
 profile is saved.
+When the setup tool is ready to collect full evidence for a rig, call
+`rig.setup_report_all(include_ble=True)` or the async equivalent. It runs the
+same route selection, readiness, and validation pipeline per fixture and returns
+the selected config plus capability/primitive readiness payloads keyed by
+fixture name.
 
 Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_transition()`, `plan_sequence()`, `plan_named_cue()`, `plan_all()`,

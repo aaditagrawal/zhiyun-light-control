@@ -568,6 +568,112 @@ class LightRig:
                 break
         return _rig_response("rig_connection_report", responses, stopped=stopped)
 
+    def setup_report(
+        self,
+        name: str,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.integration(name, allow_control=allow_control).setup_report(
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            require_confirmed_route=require_confirmed_route,
+            allow_control=allow_control,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            device_id=device_id,
+            obj=fixture.obj,
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+            red=red,
+            green=green,
+            blue=blue,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+            control_mode=self.control_mode if control_mode is None else control_mode,
+        )
+        return _setup_report_response(name, payload)
+
+    def setup_report_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = self.setup_report(
+                name,
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+                require_confirmed_route=require_confirmed_route,
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=device_id,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+                red=red,
+                green=green,
+                blue=blue,
+                hue=hue,
+                saturation=saturation,
+                intensity=intensity,
+                control_mode=control_mode,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_setup_report", responses, stopped=stopped)
+
     def probe(self, name: str) -> dict[str, object]:
         result = self.controller(name).probe()
         return {"fixture": name, "probe": result.to_dict()}
@@ -1465,6 +1571,115 @@ class AsyncLightRig:
                 stopped = True
                 break
         return _rig_response("rig_connection_report", responses, stopped=stopped)
+
+    async def setup_report(
+        self,
+        name: str,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int | None = None,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = await self.integration(
+            name,
+            allow_control=allow_control,
+        ).setup_report(
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            require_confirmed_route=require_confirmed_route,
+            allow_control=allow_control,
+            include_object_reads=include_object_reads,
+            include_color=include_color,
+            device_id=device_id,
+            obj=fixture.obj,
+            brightness=brightness,
+            kelvin=kelvin,
+            sleep=sleep,
+            red=red,
+            green=green,
+            blue=blue,
+            hue=hue,
+            saturation=saturation,
+            intensity=intensity,
+            control_mode=self.control_mode if control_mode is None else control_mode,
+        )
+        return _setup_report_response(name, payload)
+
+    async def setup_report_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name in self._selected_fixture_names(fixture_names, tag=tag):
+            response = await self.setup_report(
+                name,
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+                require_confirmed_route=require_confirmed_route,
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=device_id,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+                red=red,
+                green=green,
+                blue=blue,
+                hue=hue,
+                saturation=saturation,
+                intensity=intensity,
+                control_mode=control_mode,
+            )
+            responses[name] = response
+            if stop_on_unready and response.get("ok") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_setup_report", responses, stopped=stopped)
 
     async def probe(self, name: str) -> dict[str, object]:
         result = await self.controller(name).probe()
@@ -2620,6 +2835,50 @@ def _connection_report_reason(payload: Mapping[str, object]) -> str:
         if blocker:
             return str(blocker)
     return "no_route"
+
+
+def _setup_report_response(
+    name: str,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    return {
+        "fixture": name,
+        "setup_report": dict(payload),
+        "ok": payload.get("ok") is True,
+        "route_confirmed": payload.get("route_confirmed") is True,
+        "config": payload.get("config"),
+        "ready_for": _bool_map(payload.get("ready_for")),
+        "validation_ready_for": _bool_map(payload.get("validation_ready_for")),
+        "reason": _setup_report_reason(payload),
+    }
+
+
+def _setup_report_reason(payload: Mapping[str, object]) -> str:
+    if payload.get("ok") is True:
+        return "setup_ready"
+    summary = payload.get("summary")
+    if isinstance(summary, Mapping):
+        errors = summary.get("errors")
+        if isinstance(errors, list) and errors:
+            return "; ".join(str(item) for item in errors)
+        blocker = summary.get("ble_blocker")
+        if blocker:
+            return str(blocker)
+    status_error = payload.get("status_error")
+    if status_error:
+        return str(status_error)
+    if (
+        payload.get("require_confirmed_route") is True
+        and payload.get("route_confirmed") is not True
+    ):
+        return "no_route"
+    return "not_ready"
+
+
+def _bool_map(value: object) -> dict[str, bool]:
+    if not isinstance(value, Mapping):
+        return {}
+    return {str(key): item is True for key, item in value.items()}
 
 
 def _readiness_reason(payload: Mapping[str, object]) -> str:

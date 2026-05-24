@@ -348,6 +348,9 @@ primitive names per fixture.
 `connection_report_all(include_ble=true)` provides the same status-probed route
 report per fixture, including selected config and BLE blockers, for setup tools
 that need to arm or save a full multi-light rig.
+`setup_report_all(include_ble=true)` then runs the full setup evidence pipeline
+per fixture: route selection, selected config, readiness, validation readiness,
+and primitive capability maps keyed by fixture name.
 Rig planning helpers (`plan_scene`, `plan_preset`, `plan_transition`,
 `plan_sequence`, `plan_named_cue`, and their group variants) also run without
 opening USB/BLE and return exact per-fixture command plans. `execute_plan` sends

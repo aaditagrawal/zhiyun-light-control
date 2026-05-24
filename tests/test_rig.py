@@ -1006,6 +1006,108 @@ class LightRigTests(unittest.TestCase):
         )
         self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
 
+    def test_setup_report_all_returns_per_fixture_setup_evidence(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "usb",
+                        "port": "/dev/cu.key",
+                        "obj": 2,
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "obj": 3,
+                        "tags": ["set"],
+                    },
+                },
+                "control_mode": 0x33,
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        calls: list[tuple[LightConnectionConfig, dict[str, object]]] = []
+
+        def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            calls.append((config, dict(kwargs)))
+            ready = config.transport == "usb"
+            return {
+                "ok": ready,
+                "config": config.to_dict(),
+                "route_confirmed": ready,
+                "require_confirmed_route": True,
+                "status_ok": ready,
+                "status_error": None if ready else "no status ACK",
+                "ready_for": {
+                    "read_status": ready,
+                    "control_writes": False,
+                },
+                "validation_ready_for": {
+                    "read_status": ready,
+                    "control_writes": False,
+                },
+                "validation_unconfirmed": ["set_brightness"],
+                "summary": {
+                    "ok": ready,
+                    "errors": [] if ready else ["no status ACK"],
+                    "ble_blocker": None
+                    if ready
+                    else "Bluetooth state unauthorized: 3",
+                },
+            }
+
+        with patch(
+            "zhiyun_light_control.integration.local_setup_report",
+            side_effect=fake_report,
+        ):
+            response = rig.setup_report_all(
+                tag="set",
+                include_ble=True,
+                include_ble_status=True,
+                persistent=True,
+                allow_control=True,
+                include_object_reads=True,
+                include_color=True,
+            )
+
+        self.assertEqual(response["action"], "rig_setup_report")
+        self.assertFalse(response["applied"])
+        self.assertEqual(response["fixtures"]["key"]["config"]["port"], "/dev/cu.key")
+        self.assertTrue(response["fixtures"]["key"]["route_confirmed"])
+        self.assertEqual(response["fixtures"]["key"]["reason"], "setup_ready")
+        self.assertEqual(
+            response["fixtures"]["fill"]["reason"],
+            "no status ACK",
+        )
+        self.assertEqual(
+            [config.transport for config, _kwargs in calls],
+            ["usb", "ble"],
+        )
+        self.assertEqual([kwargs["obj"] for _config, kwargs in calls], [2, 3])
+        self.assertTrue(all(kwargs["include_ble"] for _config, kwargs in calls))
+        self.assertTrue(
+            all(kwargs["include_ble_status"] for _config, kwargs in calls)
+        )
+        self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
+        self.assertTrue(all(kwargs["allow_control"] for _config, kwargs in calls))
+        self.assertTrue(
+            all(kwargs["include_object_reads"] for _config, kwargs in calls)
+        )
+        self.assertTrue(all(kwargs["include_color"] for _config, kwargs in calls))
+        self.assertEqual(
+            [kwargs["control_mode"] for _config, kwargs in calls],
+            [0x33, 0x33],
+        )
+
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):
             LightRig([{"name": "key"}, {"name": "key"}])
@@ -1532,6 +1634,91 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(all(kwargs["include_ble"] for _config, kwargs in calls))
         self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
+
+    async def test_async_setup_report_all_returns_fixture_setup_evidence(
+        self,
+    ) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "ble",
+                        "name_contains": "KEY",
+                        "obj": 4,
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "obj": 5,
+                        "tags": ["set"],
+                    },
+                },
+                "control_mode": 0x33,
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        calls: list[tuple[LightConnectionConfig, dict[str, object]]] = []
+
+        async def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            calls.append((config, dict(kwargs)))
+            return {
+                "ok": True,
+                "config": config.to_dict(),
+                "route_confirmed": True,
+                "require_confirmed_route": True,
+                "status_ok": True,
+                "status_error": None,
+                "ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_unconfirmed": ["set_brightness"],
+                "summary": {"ok": True, "errors": []},
+            }
+
+        with patch(
+            "zhiyun_light_control.integration.local_async_setup_report",
+            side_effect=fake_report,
+        ):
+            response = await rig.setup_report_all(
+                tag="set",
+                include_ble=True,
+                persistent=True,
+                include_object_reads=True,
+            )
+
+        self.assertEqual(response["action"], "rig_setup_report")
+        self.assertTrue(response["applied"])
+        self.assertEqual(
+            response["fixtures"]["key"]["config"]["name_contains"],
+            "KEY",
+        )
+        self.assertTrue(
+            response["fixtures"]["fill"]["ready_for"]["read_status"],
+        )
+        self.assertEqual(
+            [config.name_contains for config, _kwargs in calls],
+            ["KEY", "FILL"],
+        )
+        self.assertEqual([kwargs["obj"] for _config, kwargs in calls], [4, 5])
+        self.assertTrue(all(kwargs["include_ble"] for _config, kwargs in calls))
+        self.assertTrue(all(kwargs["persistent"] for _config, kwargs in calls))
+        self.assertTrue(
+            all(kwargs["include_object_reads"] for _config, kwargs in calls)
+        )
 
 
 def _result(
