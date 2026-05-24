@@ -24,10 +24,12 @@ from zhiyun_light_control import (
     load_rig,
     rig_from_json,
     rig_from_mapping,
+    rig_profile_bundle_mapping,
     rig_setup_profiles_from_report,
     rig_to_json,
     save_light_setup_profile,
     save_rig,
+    save_rig_profile_bundle,
 )
 from zhiyun_light_control.protocol import (
     RUNTIME_TYPE,
@@ -1203,6 +1205,56 @@ class LightRigTests(unittest.TestCase):
 
         self.assertTrue(restored.require_setup_profile("key", "read_status").ok)
         self.assertIsNotNone(restored.fixture("fill").setup_profile)
+
+    def test_save_rig_profile_bundle_writes_relative_profile_paths(self) -> None:
+        rig = LightRig(
+            [
+                LightFixture.from_setup_profile(
+                    "key",
+                    setup_profile(control_writes=True),
+                    obj=2,
+                    tags=("set",),
+                ),
+                LightFixture(
+                    "practical",
+                    LightConnectionConfig.usb(port="/dev/cu.practical"),
+                    obj=3,
+                    tags=("set",),
+                ),
+            ],
+            require_setup_profile_controls=True,
+        )
+        bundle = rig_profile_bundle_mapping(rig, profile_dir="setup")
+        fixtures = bundle["fixtures"]
+        self.assertIsInstance(fixtures, list)
+        key = fixtures[0]
+        practical = fixtures[1]
+        self.assertEqual(key["profile_path"], "setup/key.json")
+        self.assertNotIn("setup_profile", key)
+        self.assertEqual(practical["config"]["port"], "/dev/cu.practical")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = save_rig_profile_bundle(
+                rig,
+                root / "show" / "rig.json",
+                profile_dir="setup",
+            )
+            rig_path = Path(output["rig_path"])
+            restored = load_rig(rig_path)
+
+        self.assertEqual(rig_path.name, "rig.json")
+        self.assertTrue(restored.require_setup_profile("key", "read_status").ok)
+        self.assertEqual(restored.fixture("key").config.port, "/dev/cu.usbmodem21301")
+        self.assertEqual(restored.fixture("practical").config.port, "/dev/cu.practical")
+        self.assertEqual(
+            output["mapping"]["fixtures"][0]["profile_path"],
+            "setup/key.json",
+        )
+        self.assertEqual(Path(output["profile_paths"]["key"]).name, "key.json")
+
+        with self.assertRaisesRegex(ValueError, "profile_dir must be a relative path"):
+            rig_profile_bundle_mapping(rig, profile_dir="/tmp/profiles")
 
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):

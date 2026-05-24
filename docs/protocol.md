@@ -355,6 +355,9 @@ and primitive capability maps keyed by fixture name.
 those per-fixture reports into `LightSetupProfile` objects. `with_setup_profiles`
 attaches them back to a sync or async rig so `save_rig` can persist a reusable
 profiled rig definition.
+`rig_profile_bundle_mapping(...)` and `save_rig_profile_bundle(...)` produce the
+split-file variant: a rig JSON document with relative `profile_path` entries and
+separate profile JSON files beside it.
 Rig planning helpers (`plan_scene`, `plan_preset`, `plan_transition`,
 `plan_sequence`, `plan_named_cue`, and their group variants) also run without
 opening USB/BLE and return exact per-fixture command plans. `execute_plan` sends

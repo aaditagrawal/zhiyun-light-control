@@ -1225,6 +1225,9 @@ Use `rig.setup_profiles_all(...)` or
 evidence into `LightSetupProfile` objects, then `rig.with_setup_profiles(...)`
 and `save_rig()` when the host wants a reusable profiled rig JSON file for later
 show runs.
+For repository-friendly project files, `rig_profile_bundle_mapping(...)` and
+`save_rig_profile_bundle(...)` write `rig.json` with relative `profile_path`
+entries plus one profile JSON per fixture.
 
 Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_transition()`, `plan_sequence()`, `plan_named_cue()`, `plan_all()`,

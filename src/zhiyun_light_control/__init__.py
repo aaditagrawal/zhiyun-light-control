@@ -258,9 +258,11 @@ from .rig import (
     load_rig_mapping,
     rig_from_json,
     rig_from_mapping,
+    rig_profile_bundle_mapping,
     rig_setup_profiles_from_report,
     rig_to_json,
     save_rig,
+    save_rig_profile_bundle,
 )
 from .sacn import SacnPacket, decode_sacn, encode_sacn, sacn_multicast_address
 from .state import SceneState, SceneStateTracker
@@ -552,10 +554,12 @@ __all__ = [
     "open_macos_bluetooth_settings",
     "open_light",
     "open_async_light",
+    "rig_profile_bundle_mapping",
     "rig_from_mapping",
     "rig_from_json",
     "rig_setup_profiles_from_report",
     "rig_to_json",
+    "save_rig_profile_bundle",
     "save_rig",
     "scene_from_mapping",
     "scene_from_dmx",

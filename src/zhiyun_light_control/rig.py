@@ -22,6 +22,7 @@ from .presets import ScenePresetLibrary, scene_from_mapping
 from .profiles import (
     LightSetupProfile,
     load_light_setup_profile,
+    save_light_setup_profile,
     setup_profile_primitive_readiness,
 )
 from .profiles import (
@@ -2431,6 +2432,70 @@ def rig_setup_profiles_from_report(
     return profiles
 
 
+def rig_profile_bundle_mapping(
+    rig: LightRig | AsyncLightRig,
+    profiles: Mapping[str, object] | None = None,
+    *,
+    profile_dir: str = "profiles",
+) -> dict[str, object]:
+    profile_map = _rig_profile_map(rig, profiles)
+    _require_known_profile_fixtures(profile_map, rig.fixtures)
+    profile_paths = _profile_relative_paths(profile_map, profile_dir)
+    data: dict[str, object] = {
+        "fixtures": [
+            _fixture_bundle_mapping(fixture, profile_paths.get(name))
+            for name, fixture in rig.fixtures.items()
+        ],
+        "control_mode": rig.control_mode,
+        "require_acknowledged": rig.require_acknowledged,
+        "require_setup_profile_controls": rig.require_setup_profile_controls,
+    }
+    if rig.preset_library is not None:
+        data["presets"] = rig.preset_library.to_dict()
+    if rig.cue_library is not None:
+        data["cues"] = rig.cue_library.to_dict()
+    return data
+
+
+def save_rig_profile_bundle(
+    rig: LightRig | AsyncLightRig,
+    path: str | Path,
+    profiles: Mapping[str, object] | None = None,
+    *,
+    profile_dir: str = "profiles",
+    indent: int | None = 2,
+    profile_indent: int | None = 2,
+) -> dict[str, object]:
+    profile_map = _rig_profile_map(rig, profiles)
+    _require_known_profile_fixtures(profile_map, rig.fixtures)
+    bundle = rig_profile_bundle_mapping(
+        rig,
+        profile_map,
+        profile_dir=profile_dir,
+    )
+    rig_path = Path(path)
+    rig_path.parent.mkdir(parents=True, exist_ok=True)
+    written_profiles: dict[str, str] = {}
+    for name, relative_path in _profile_relative_paths(
+        profile_map,
+        profile_dir,
+    ).items():
+        target = rig_path.parent / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        save_light_setup_profile(
+            profile_map[name],
+            target,
+            indent=profile_indent,
+        )
+        written_profiles[name] = str(target)
+    save_rig(bundle, rig_path, indent=indent)
+    return {
+        "rig_path": str(rig_path),
+        "profile_paths": written_profiles,
+        "mapping": bundle,
+    }
+
+
 def rig_to_json(
     rig: LightRig | AsyncLightRig | Mapping[str, object],
     *,
@@ -2795,6 +2860,65 @@ def _require_known_profile_fixtures(
 
 def _string_key_dict(payload: Mapping[object, object]) -> dict[str, object]:
     return {str(key): value for key, value in payload.items()}
+
+
+def _rig_profile_map(
+    rig: LightRig | AsyncLightRig,
+    profiles: Mapping[str, object] | None,
+) -> dict[str, LightSetupProfile]:
+    if profiles is not None:
+        return _setup_profile_map(profiles)
+    return {
+        name: fixture.setup_profile
+        for name, fixture in rig.fixtures.items()
+        if fixture.setup_profile is not None
+    }
+
+
+def _fixture_bundle_mapping(
+    fixture: LightFixture,
+    profile_path: str | None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "name": fixture.name,
+        "obj": fixture.obj,
+        "tags": list(fixture.tags),
+    }
+    if profile_path is None:
+        payload["config"] = fixture.config.to_dict()
+    else:
+        payload["profile_path"] = profile_path
+    return payload
+
+
+def _profile_relative_paths(
+    profiles: Mapping[str, LightSetupProfile],
+    profile_dir: str,
+) -> dict[str, str]:
+    directory = Path(profile_dir)
+    if directory.is_absolute():
+        raise ValueError("profile_dir must be a relative path")
+    used: set[str] = set()
+    paths: dict[str, str] = {}
+    for name in profiles:
+        filename = _profile_filename(name)
+        base = filename.removesuffix(".json")
+        candidate = filename
+        index = 2
+        while candidate in used:
+            candidate = f"{base}-{index}.json"
+            index += 1
+        used.add(candidate)
+        paths[name] = str(directory / candidate)
+    return paths
+
+
+def _profile_filename(name: str) -> str:
+    stem = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "_"
+        for char in name.strip()
+    ).strip("_")
+    return f"{stem or 'fixture'}.json"
 
 
 def _resolve_rig_profile_paths(
