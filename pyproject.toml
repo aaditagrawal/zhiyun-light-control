@@ -17,6 +17,9 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Topic :: Multimedia :: Video",
   "Topic :: System :: Hardware",
 ]
@@ -34,8 +37,17 @@ dev = [
 [project.scripts]
 zlight = "zhiyun_light_control.cli:main"
 
+[project.urls]
+Homepage = "https://github.com/aaditagrawal/zhiyun-light-control"
+Repository = "https://github.com/aaditagrawal/zhiyun-light-control"
+Issues = "https://github.com/aaditagrawal/zhiyun-light-control/issues"
+Changelog = "https://github.com/aaditagrawal/zhiyun-light-control/blob/main/CHANGELOG.md"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+zhiyun_light_control = ["py.typed"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "ANN401"]

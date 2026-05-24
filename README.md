@@ -1,5 +1,7 @@
 # Zhiyun Light Control
 
+[![CI](https://github.com/aaditagrawal/zhiyun-light-control/actions/workflows/ci.yml/badge.svg)](https://github.com/aaditagrawal/zhiyun-light-control/actions/workflows/ci.yml)
+
 Python SDK tooling for controlling Zhiyun MOLUS lights over USB CDC and, where
 the local Bluetooth stack is stable, BLE. The project started from live protocol
 work against a MOLUS G60 on macOS and is built for local media-production
