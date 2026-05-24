@@ -18,8 +18,9 @@ observes the expected light change.
   `sent_no_response` and `echoed_write` are unconfirmed.
 - On the current local MOLUS G60 firmware `1.6.4`, global USB status/register
   commands ACK, but default `0x0100` object-control writes time out.
-- The physically observed G60 USB control route is first word `0x0301`: sleep
-  control blinked the light while returning `echoed_write`, not an ACK.
+- The physically observed G60 USB control evidence is first word `0x0301`:
+  sleep control blinked the light, and a broad brightness/CCT candidate pass
+  reached `2700K` at `20%`, while returning `echoed_write`, not an ACK.
 - Document new hardware observations in `docs/hardware-notes.md` and keep tests
   updated when CLI or SDK behavior changes.
 
@@ -47,19 +48,30 @@ uv run zlight discover-usb --g60-matrix --json
 Use `--allow-control` only when the user explicitly wants state-changing
 hardware probes.
 
-## Current G60 Control Route
+## Current G60 Control Evidence
 
-For the locally validated G60, use `0x0301` when the goal is actual control:
+For the locally observed G60, use `0x0301` when probing control:
 
 ```sh
 uv run zlight apply --transport usb --first-word 0x0301 --accept-echo --sleep 0 --brightness 50 --kelvin 3200 --yes
 ```
 
 Expect `transport_status: "echoed_write"` on this route. That is not
-ACK-confirmed, but sleep control has been physically observed to take effect on
-the local unit. `--accept-echo` makes shell automation return exit code `0` for
-exact echoes while preserving `acknowledged: false` in JSON. Ask the user to
-visually confirm brightness and CCT changes.
+ACK-confirmed. `--accept-echo` makes shell automation return exit code `0` for
+exact echoes while preserving `acknowledged: false` in JSON.
+
+For the currently confirmed stable look, repeat brightness/CCT writes across
+responsive `0x0301` candidates:
+
+```sh
+for obj in 0 1 2; do
+  for mode in 0x33 0x01; do
+    uv run zlight apply --transport usb --first-word 0x0301 --control-mode "$mode" --obj "$obj" --accept-echo --brightness 20 --kelvin 2700 --yes
+  done
+done
+```
+
+Ask the user to visually confirm brightness and CCT changes.
 
 For reusable agent workflows and interpretation details, read
 `references/control-workflows.md`.

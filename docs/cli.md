@@ -69,7 +69,9 @@ On the locally tested G60 firmware `1.6.4`, this route can return
 `echoed_write` rather than an ACK. Treat that as transport evidence only and
 ask for physical confirmation before reporting user-visible success.
 `--accept-echo` only changes the process exit code for exact echoes; the JSON
-still reports `acknowledged: false`.
+still reports `acknowledged: false`. A broad `0x0301` candidate pass was
+physically observed to reach `2700K` at `20%`, but the exact minimal
+brightness/CCT route is still under test.
 
 `zlight frame` exposes the lower-level `exchange_frame()` primitive for direct
 bench checks:

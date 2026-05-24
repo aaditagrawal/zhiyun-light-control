@@ -49,9 +49,16 @@ ACK-confirmed object control.
 On 2026-05-24, a narrowed USB sleep probe using first word `0x0301`, object id
 `1`, and op bytes `0x33`/`0x01` physically blinked the attached G60 while the
 transport result remained `echoed_write`. A follow-up warm scene command
-(`sleep=0`, `brightness=50`, `kelvin=3200`) also returned `echoed_write` for
-all three frames. Treat this route as physically promising but protocol
-unconfirmed until more visual checks and repeatability data are captured.
+(`sleep=0`, `brightness=50`, `kelvin=3200`) returned `echoed_write` for all
+three frames but did not visibly change the light.
+
+A broader state-changing matrix using first word `0x0301`, object ids `0`, `1`,
+and `2`, op bytes `0x33` and `0x01`, and target values `brightness=20` /
+`kelvin=2700` was physically observed to reach `2700K` at `20%`. The matrix
+still produced only `echoed_write` for object-control candidates, so the exact
+minimal write route remains unconfirmed. For now, repeat brightness/CCT writes
+across the responsive `0x0301` object/mode candidates when a stable setting is
+more important than identifying the smallest route.
 
 A post-registration read pass then registered device id `1` to group `0` and
 immediately retried all object-read candidates for object id `1`; registration

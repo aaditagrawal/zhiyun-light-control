@@ -24,12 +24,18 @@ updater identity reads.
 Do not collapse these states into a single success/failure boolean in agent
 output. Report both the transport evidence and physical observation.
 
-## Local G60 Warm Light
+## Local G60 Stable Light
 
-Use the direct `apply` route with `--first-word 0x0301`:
+The physically observed stable look is `2700K` at `20%`. The exact minimal
+route is still being narrowed down, so use a small fanout across responsive
+`0x0301` candidates:
 
 ```sh
-uv run zlight apply --transport usb --first-word 0x0301 --accept-echo --sleep 0 --brightness 50 --kelvin 3200 --yes
+for obj in 0 1 2; do
+  for mode in 0x33 0x01; do
+    uv run zlight apply --transport usb --first-word 0x0301 --control-mode "$mode" --obj "$obj" --accept-echo --brightness 20 --kelvin 2700 --yes
+  done
+done
 ```
 
 If a USB lock timeout occurs, another `zlight` process is still holding the
@@ -54,7 +60,8 @@ uv run zlight discover-usb --g60-matrix --allow-control --control-kinds sleep --
 ```
 
 The sleep probe has physically blinked the local G60 while reporting
-`echoed_write`.
+`echoed_write`. A broader brightness/CCT pass reached `2700K` at `20%`, also
+while reporting `echoed_write`.
 
 ## SDK Use
 
@@ -70,7 +77,8 @@ with LightController(config) as controller:
 ```
 
 For the current G60 `0x0301` route, use frame planning/execution so the first
-word is explicit:
+word is explicit. Repeat across candidate object ids and operation bytes until
+the minimal route is isolated:
 
 ```python
 from zhiyun_light_control import (
@@ -82,12 +90,15 @@ from zhiyun_light_control import (
 )
 
 config = LightConnectionConfig.usb()
-plan = scene_command_plan(
-    Scene(obj=1, sleep=0, brightness=50, kelvin=3200),
-    first_word=0x0301,
-)
 with open_light(config) as light:
-    results = execute_frame_plan(light, plan)
+    for obj in (0, 1, 2):
+        for control_mode in (0x33, 0x01):
+            plan = scene_command_plan(
+                Scene(obj=obj, brightness=20, kelvin=2700),
+                control_mode=control_mode,
+                first_word=0x0301,
+            )
+            results = execute_frame_plan(light, plan)
 ```
 
 Report `result.transport_status` values to the caller and ask for physical
