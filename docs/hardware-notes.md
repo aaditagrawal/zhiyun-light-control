@@ -46,6 +46,13 @@ A later sleep-only matrix tested control first words `0x0001`, `0x0100`,
 returned exact write echoes, while the other first words timed out; none were
 ACK-confirmed object control.
 
+On 2026-05-24, a narrowed USB sleep probe using first word `0x0301`, object id
+`1`, and op bytes `0x33`/`0x01` physically blinked the attached G60 while the
+transport result remained `echoed_write`. A follow-up warm scene command
+(`sleep=0`, `brightness=50`, `kelvin=3200`) also returned `echoed_write` for
+all three frames. Treat this route as physically promising but protocol
+unconfirmed until more visual checks and repeatability data are captured.
+
 A post-registration read pass then registered device id `1` to group `0` and
 immediately retried all object-read candidates for object id `1`; registration
 ACKed, but all nine post-register object reads still returned

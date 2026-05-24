@@ -1,0 +1,4 @@
+interface:
+  display_name: "Zhiyun Light Control"
+  short_description: "Use the Zhiyun MOLUS light SDK safely"
+  default_prompt: "Use $zhiyun-light-control to validate a Zhiyun MOLUS light and control it safely."

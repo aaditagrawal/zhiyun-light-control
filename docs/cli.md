@@ -59,6 +59,18 @@ The direct commands `register`, `read`, `set`, and `apply` use the same ACK
 definition as the SDK. They print the full `CommandResult` payload either way,
 but unacknowledged transmissions return exit code `1`.
 
+`apply` can also send exact scene frames over an experimental first-word route:
+
+```sh
+uv run zlight apply --transport usb --first-word 0x0301 --accept-echo --sleep 0 --brightness 50 --kelvin 3200 --yes
+```
+
+On the locally tested G60 firmware `1.6.4`, this route can return
+`echoed_write` rather than an ACK. Treat that as transport evidence only and
+ask for physical confirmation before reporting user-visible success.
+`--accept-echo` only changes the process exit code for exact echoes; the JSON
+still reports `acknowledged: false`.
+
 `zlight frame` exposes the lower-level `exchange_frame()` primitive for direct
 bench checks:
 

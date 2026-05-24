@@ -12,7 +12,9 @@ from .async_client import AsyncZhiyunLight
 from .bridge import LightConnectionConfig, make_light_factory
 from .client import ZhiyunLight
 from .commands import (
+    execute_async_frame_plan,
     execute_async_serialized_frame_plan,
+    execute_frame_plan,
     execute_serialized_frame_plan,
     load_serialized_plan_bundle,
     scene_command_plan,
@@ -513,6 +515,15 @@ def build_parser() -> argparse.ArgumentParser:
     apply.add_argument("--intensity", type=int)
     add_control_mode_arg(apply)
     apply.add_argument(
+        "--first-word",
+        type=parse_int,
+        default=RUNTIME_TYPE,
+        help=(
+            "Frame first word for experimental routes. Default is 0x0100; "
+            "some G60 USB control writes are physically effectful on 0x0301."
+        ),
+    )
+    apply.add_argument(
         "--preset-file", help="JSON file containing named scene presets."
     )
     apply.add_argument("--preset", help="Named preset to apply before CLI overrides.")
@@ -520,6 +531,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Resolve the scene without sending commands.",
+    )
+    apply.add_argument(
+        "--accept-echo",
+        action="store_true",
+        help=(
+            "Return exit code 0 when every unacknowledged command is an exact "
+            "write echo. JSON output still reports acknowledged=false."
+        ),
     )
     apply.add_argument("--yes", action="store_true")
     apply.set_defaults(func=cmd_apply)
@@ -1399,7 +1418,15 @@ async def _set_ble(args: argparse.Namespace):
 def cmd_apply(args: argparse.Namespace) -> int:
     scene = scene_from_args(args)
     if args.dry_run:
-        print_json({"dry_run": True, "scene": scene.to_dict(), "results": []})
+        print_json(
+            {
+                "dry_run": True,
+                "scene": scene.to_dict(),
+                "first_word": args.first_word,
+                "first_word_hex": f"0x{args.first_word:04x}",
+                "results": [],
+            }
+        )
         return 0
     require_yes(args, "apply sends one or more control commands to the light")
     if args.transport == "ble":
@@ -1409,11 +1436,25 @@ def cmd_apply(args: argparse.Namespace) -> int:
             return print_ble_runtime_error(exc)
     else:
         with sync_usb_light_from_args(args) as light:
-            results = light.apply_scene(scene, control_mode=args.control_mode)
+            if args.first_word == RUNTIME_TYPE:
+                results = light.apply_scene(scene, control_mode=args.control_mode)
+            else:
+                plan = scene_command_plan(
+                    scene,
+                    control_mode=args.control_mode,
+                    first_word=args.first_word,
+                )
+                results = execute_frame_plan(light, plan, timeout=args.timeout)
     print_json(
-        {"scene": scene.to_dict(), "results": [result.to_dict() for result in results]}
+        {
+            "scene": scene.to_dict(),
+            "first_word": args.first_word,
+            "first_word_hex": f"0x{args.first_word:04x}",
+            "accepted_echo": args.accept_echo,
+            "results": [result.to_dict() for result in results],
+        }
     )
-    return command_results_exit_code(results)
+    return command_results_exit_code(results, accept_echo=args.accept_echo)
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -1562,8 +1603,16 @@ def command_result_exit_code(result: CommandResult) -> int:
     return 0 if result.acknowledged else 1
 
 
-def command_results_exit_code(results: list[CommandResult]) -> int:
-    return 0 if all(result.acknowledged for result in results) else 1
+def command_results_exit_code(
+    results: list[CommandResult],
+    *,
+    accept_echo: bool = False,
+) -> int:
+    accepted = all(
+        result.acknowledged or (accept_echo and result.echoed)
+        for result in results
+    )
+    return 0 if accepted else 1
 
 
 def sync_usb_light_from_args(args: argparse.Namespace) -> ZhiyunLight:
@@ -1576,6 +1625,13 @@ def sync_usb_light_from_args(args: argparse.Namespace) -> ZhiyunLight:
 
 async def _apply_ble(args: argparse.Namespace, scene: Scene) -> list[CommandResult]:
     async with async_ble_light_from_args(args) as light:
+        if args.first_word != RUNTIME_TYPE:
+            plan = scene_command_plan(
+                scene,
+                control_mode=args.control_mode,
+                first_word=args.first_word,
+            )
+            return await execute_async_frame_plan(light, plan, timeout=args.timeout)
         return await light.apply_scene(scene, control_mode=args.control_mode)
 
 

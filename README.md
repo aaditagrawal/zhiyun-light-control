@@ -182,6 +182,16 @@ uv run zlight set brightness --transport usb --obj 1 --value 35 --yes
 uv run zlight apply --transport usb --brightness 35 --kelvin 5600 --yes
 ```
 
+For the locally validated G60 echo route, make the frame first word explicit:
+
+```sh
+uv run zlight apply --transport usb --first-word 0x0301 --accept-echo --sleep 0 --brightness 50 --kelvin 3200 --yes
+```
+
+This route may report `echoed_write`, not an ACK. The CLI keeps that distinction
+visible even when `--accept-echo` lets shell automation treat the local
+physically observed echo route as an accepted result.
+
 Build a plan without opening hardware:
 
 ```sh

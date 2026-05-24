@@ -887,6 +887,119 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertEqual(payload["results"][0]["transport_status"], "sent_no_response")
 
+    def test_apply_can_use_custom_first_word_frame_route(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.calls: list[tuple[bytes, int, float]] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_prebuilt_frame(self, frame, command, *, timeout=0.8):
+                self.calls.append((frame, command, timeout))
+                parsed = first_frame(frame)
+                assert parsed is not None
+                rx = build_frame(parsed.first_word, parsed.seq, command, b"\x00")
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    command,
+                    frame,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=frame, cmd=command),
+                )
+
+        fake = FakeLight()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=fake,
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "apply",
+                    "--first-word",
+                    "0x0301",
+                    "--timeout",
+                    "0.25",
+                    "--sleep",
+                    "0",
+                    "--brightness",
+                    "50",
+                    "--kelvin",
+                    "3200",
+                    "--yes",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["first_word_hex"], "0x0301")
+        self.assertEqual(
+            [first_frame(call[0]).first_word for call in fake.calls],
+            [0x0301, 0x0301, 0x0301],
+        )
+        self.assertEqual(
+            [call[1] for call in fake.calls],
+            [
+                RuntimeCommand.SLEEP,
+                RuntimeCommand.BRIGHTNESS,
+                RuntimeCommand.CCT,
+            ],
+        )
+        self.assertEqual([call[2] for call in fake.calls], [0.25, 0.25, 0.25])
+
+    def test_apply_accept_echo_allows_echo_only_route_exit_zero(self) -> None:
+        class FakeLight:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_prebuilt_frame(self, frame, command, *, timeout=0.8):
+                del timeout
+                frames = tuple(iter_frames(frame))
+                return CommandResult(
+                    command,
+                    frame,
+                    frame,
+                    frames,
+                    first_response_frame(frame, tx=frame, cmd=command),
+                )
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "apply",
+                    "--first-word",
+                    "0x0301",
+                    "--accept-echo",
+                    "--brightness",
+                    "50",
+                    "--yes",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["accepted_echo"])
+        self.assertFalse(payload["results"][0]["acknowledged"])
+        self.assertEqual(payload["results"][0]["transport_status"], "echoed_write")
+
     def test_plan_cli_writes_serialized_scene_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "plan.json"
