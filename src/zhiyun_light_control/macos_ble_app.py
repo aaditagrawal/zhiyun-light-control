@@ -9,6 +9,7 @@ runs a Swift helper inside that bundle.
 from __future__ import annotations
 
 import json
+import os
 import plistlib
 import shutil
 import stat
@@ -21,6 +22,8 @@ from pathlib import Path
 
 APP_BUNDLE_NAME = "ZhiyunBleScan"
 APP_BUNDLE_ID = "local.zhiyun-light-control.ble-scan"
+APP_BUNDLE_NAME_ENV = "ZLIGHT_BLE_HELPER_NAME"
+APP_BUNDLE_ID_ENV = "ZLIGHT_BLE_HELPER_BUNDLE_ID"
 BLUETOOTH_USAGE = "Scan nearby Zhiyun lights for local control."
 BLUETOOTH_SETTINGS_URL = (
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth"
@@ -66,11 +69,13 @@ class MacosBleIpcSession:
         args: list[str],
         *,
         timeout: float,
-        bundle_name: str = APP_BUNDLE_NAME,
+        bundle_name: str | None = None,
+        bundle_id: str | None = None,
     ):
         self.args = args
         self.timeout = timeout
-        self.bundle_name = bundle_name
+        self.bundle_name = _resolve_bundle_name(bundle_name)
+        self.bundle_id = _resolve_bundle_id(bundle_id)
         self._tmp = tempfile.TemporaryDirectory(prefix="zhiyun-ble-ipc-")
         self.session_dir = Path(self._tmp.name) / "session"
         self.output = Path(self._tmp.name) / "result.json"
@@ -93,6 +98,7 @@ class MacosBleIpcSession:
             raise RuntimeError("Swift compiler not found")
         app_path = ensure_macos_ble_app(
             bundle_name=self.bundle_name,
+            bundle_id=self.bundle_id,
             swift_path=swiftc_path,
         )
         command = [
@@ -210,10 +216,13 @@ class MacosBleIpcSession:
 
 def macos_ble_app_info(
     *,
-    bundle_name: str = APP_BUNDLE_NAME,
+    bundle_name: str | None = None,
+    bundle_id: str | None = None,
     ensure: bool = False,
     swift_path: str | None = None,
 ) -> dict[str, object]:
+    bundle_name = _resolve_bundle_name(bundle_name)
+    bundle_id = _resolve_bundle_id(bundle_id)
     app_path = _bundle_root(bundle_name)
     error: str | None = None
     if ensure:
@@ -227,6 +236,7 @@ def macos_ble_app_info(
                 try:
                     app_path = ensure_macos_ble_app(
                         bundle_name=bundle_name,
+                        bundle_id=bundle_id,
                         swift_path=resolved_swiftc,
                     )
                 except RuntimeError as exc:
@@ -235,7 +245,9 @@ def macos_ble_app_info(
         "ok": error is None,
         "available": sys.platform == "darwin",
         "bundle_name": bundle_name,
-        "bundle_id": APP_BUNDLE_ID,
+        "bundle_id": bundle_id,
+        "bundle_name_env": APP_BUNDLE_NAME_ENV,
+        "bundle_id_env": APP_BUNDLE_ID_ENV,
         "app_path": str(app_path),
         "exists": app_path.exists(),
         "usage_description": BLUETOOTH_USAGE,
@@ -244,8 +256,8 @@ def macos_ble_app_info(
             f"Allow {bundle_name} in macOS Privacy & Security > Bluetooth, "
             "then rerun the BLE scan."
         ),
-        "status_command": "zlight ble-helper --status --json",
-        "authorize_command": "zlight ble-helper --ensure --authorize",
+        "status_command": _helper_command("status", bundle_name, bundle_id),
+        "authorize_command": _helper_command("authorize", bundle_name, bundle_id),
         "error": error,
     }
 
@@ -253,30 +265,44 @@ def macos_ble_app_info(
 def macos_ble_app_status(
     *,
     timeout: float = 3.0,
-    bundle_name: str = APP_BUNDLE_NAME,
+    bundle_name: str | None = None,
+    bundle_id: str | None = None,
 ) -> dict[str, object]:
+    bundle_name = _resolve_bundle_name(bundle_name)
+    bundle_id = _resolve_bundle_id(bundle_id)
     run = run_macos_ble_app(
         ["status", "--timeout", str(timeout)],
         timeout=timeout,
         bundle_name=bundle_name,
+        bundle_id=bundle_id,
     )
-    return _macos_ble_status_payload(run, timeout=timeout, bundle_name=bundle_name)
+    return _macos_ble_status_payload(
+        run,
+        timeout=timeout,
+        bundle_name=bundle_name,
+        bundle_id=bundle_id,
+    )
 
 
 def macos_ble_app_authorize(
     *,
     timeout: float = 60.0,
-    bundle_name: str = APP_BUNDLE_NAME,
+    bundle_name: str | None = None,
+    bundle_id: str | None = None,
 ) -> dict[str, object]:
+    bundle_name = _resolve_bundle_name(bundle_name)
+    bundle_id = _resolve_bundle_id(bundle_id)
     run = run_macos_ble_app(
         ["authorize", "--timeout", str(timeout)],
         timeout=timeout,
         bundle_name=bundle_name,
+        bundle_id=bundle_id,
     )
     status = _macos_ble_status_payload(
         run,
         timeout=timeout,
         bundle_name=bundle_name,
+        bundle_id=bundle_id,
     )
     status["authorize_timeout"] = timeout
     return status
@@ -287,6 +313,7 @@ def _macos_ble_status_payload(
     *,
     timeout: float,
     bundle_name: str,
+    bundle_id: str,
 ) -> dict[str, object]:
     status = dict(run.payload)
     if "ok" not in status:
@@ -309,7 +336,7 @@ def _macos_ble_status_payload(
     status.update(
         {
             "bundle_name": bundle_name,
-            "bundle_id": APP_BUNDLE_ID,
+            "bundle_id": bundle_id,
             "app_path": str(_bundle_root(bundle_name)),
             "returncode": run.returncode,
             "settings_url": BLUETOOTH_SETTINGS_URL,
@@ -349,8 +376,11 @@ def run_macos_ble_app(
     args: list[str],
     *,
     timeout: float,
-    bundle_name: str = APP_BUNDLE_NAME,
+    bundle_name: str | None = None,
+    bundle_id: str | None = None,
 ) -> MacosBleAppRun:
+    bundle_name = _resolve_bundle_name(bundle_name)
+    bundle_id = _resolve_bundle_id(bundle_id)
     if sys.platform != "darwin":
         return MacosBleAppRun(
             ok=False,
@@ -370,6 +400,7 @@ def run_macos_ble_app(
     try:
         app_path = ensure_macos_ble_app(
             bundle_name=bundle_name,
+            bundle_id=bundle_id,
             swift_path=swiftc_path,
         )
     except RuntimeError as exc:
@@ -442,16 +473,19 @@ def run_macos_ble_app(
 
 def ensure_macos_ble_app(
     *,
-    bundle_name: str = APP_BUNDLE_NAME,
+    bundle_name: str | None = None,
+    bundle_id: str | None = None,
     swift_path: str = "/usr/bin/swiftc",
 ) -> Path:
+    bundle_name = _resolve_bundle_name(bundle_name)
+    bundle_id = _resolve_bundle_id(bundle_id)
     app_path = _bundle_root(bundle_name)
     contents = app_path / "Contents"
     macos = contents / "MacOS"
     resources = contents / "Resources"
     macos.mkdir(parents=True, exist_ok=True)
     resources.mkdir(parents=True, exist_ok=True)
-    _write_if_changed(contents / "Info.plist", _info_plist(bundle_name))
+    _write_if_changed(contents / "Info.plist", _info_plist(bundle_name, bundle_id))
     helper = resources / "helper.swift"
     source_changed = _write_if_changed(helper, _swift_source().encode("utf-8"))
     launcher = macos / bundle_name
@@ -467,7 +501,7 @@ def ensure_macos_ble_app(
             raise RuntimeError(f"could not compile macOS BLE helper: {error}")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
     _clear_quarantine(app_path)
-    _sign_app_bundle(app_path)
+    _sign_app_bundle(app_path, bundle_id)
     return app_path
 
 
@@ -476,12 +510,44 @@ def _bundle_root(bundle_name: str) -> Path:
     return cache / f"{bundle_name}.app"
 
 
-def _info_plist(bundle_name: str) -> bytes:
+def _resolve_bundle_name(bundle_name: str | None = None) -> str:
+    raw_value = bundle_name or os.environ.get(APP_BUNDLE_NAME_ENV) or APP_BUNDLE_NAME
+    value = raw_value.strip()
+    if not value:
+        raise RuntimeError("macOS BLE helper bundle name cannot be empty")
+    if "/" in value or ":" in value:
+        raise RuntimeError("macOS BLE helper bundle name cannot contain '/' or ':'")
+    return value
+
+
+def _resolve_bundle_id(bundle_id: str | None = None) -> str:
+    value = (bundle_id or os.environ.get(APP_BUNDLE_ID_ENV) or APP_BUNDLE_ID).strip()
+    if not value:
+        raise RuntimeError("macOS BLE helper bundle id cannot be empty")
+    if not all(char.isalnum() or char in ".-" for char in value):
+        raise RuntimeError(
+            "macOS BLE helper bundle id can only contain letters, digits, dots, "
+            "and hyphens"
+        )
+    return value
+
+
+def _helper_command(action: str, bundle_name: str, bundle_id: str) -> str:
+    ensure = " --ensure" if action == "authorize" else ""
+    command = f"zlight ble-helper{ensure} --{action} --json"
+    if bundle_name != APP_BUNDLE_NAME:
+        command += f" --bundle-name {bundle_name}"
+    if bundle_id != APP_BUNDLE_ID:
+        command += f" --bundle-id {bundle_id}"
+    return command
+
+
+def _info_plist(bundle_name: str, bundle_id: str) -> bytes:
     return plistlib.dumps(
         {
             "CFBundleDevelopmentRegion": "en",
             "CFBundleExecutable": bundle_name,
-            "CFBundleIdentifier": APP_BUNDLE_ID,
+            "CFBundleIdentifier": bundle_id,
             "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleName": bundle_name,
             "CFBundlePackageType": "APPL",
@@ -532,7 +598,7 @@ def _clear_quarantine(app_path: Path) -> None:
     )
 
 
-def _sign_app_bundle(app_path: Path) -> None:
+def _sign_app_bundle(app_path: Path, bundle_id: str) -> None:
     codesign_path = shutil.which("codesign")
     if codesign_path is None:
         raise RuntimeError("codesign command not found")
@@ -544,7 +610,7 @@ def _sign_app_bundle(app_path: Path) -> None:
             "--sign",
             "-",
             "--requirements",
-            f'=designated => identifier "{APP_BUNDLE_ID}"',
+            f'=designated => identifier "{bundle_id}"',
             str(app_path),
         ],
         capture_output=True,
@@ -740,6 +806,8 @@ func bluetoothAuthorizationStatus() -> (String, Int)? {{
 
 func activateAppForPrompt() {{
     NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.finishLaunching()
+    NSApplication.shared.unhide(nil)
     NSApplication.shared.activate(ignoringOtherApps: true)
 }}
 
@@ -1261,6 +1329,6 @@ if mode == "exchange-ipc" && argument("--session-dir") == nil {{
 }}
 let tool = BleTool(mode: mode)
 withExtendedLifetime(tool) {{
-    RunLoop.main.run()
+    NSApplication.shared.run()
 }}
 """

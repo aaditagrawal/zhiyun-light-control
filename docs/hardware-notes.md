@@ -198,6 +198,20 @@ The scan helper also reports a Bluetooth state error when CoreBluetooth never
 reaches `poweredOn`; earlier broad scans could report `ok=true` with zero
 devices even while authorization was still stuck at `not_determined`.
 
+A follow-up diagnostic added fresh helper identities via `--bundle-name`,
+`--bundle-id`, `ZLIGHT_BLE_HELPER_NAME`, and `ZLIGHT_BLE_HELPER_BUNDLE_ID`, and
+changed the Swift helper to run a foreground `NSApplication` event loop. Fresh
+helpers such as `ZhiyunBleScanPrompt` still reported
+`authorization=not_determined` and `Bluetooth state unknown: 0` on the local
+Mac, so the current BLE blocker is still macOS authorization state rather than
+the built app identity.
+
+USB serial line-control settings were also checked with pyserial. Baud rates
+`9600` and `115200`, and all DTR/RTS combinations, still ACKed
+`0x0006` register-default-group and still returned exact `0x0301` echoes for
+sleep, brightness, and CCT object writes. That rules out baud rate or DTR/RTS
+as the missing USB control unlock on the attached G60.
+
 Current local BLE scan validation:
 
 | Runtime | BLE stack | Result |

@@ -576,6 +576,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=3.0,
         help="Seconds to wait for --status or --authorize.",
     )
+    helper.add_argument(
+        "--bundle-name",
+        help="Override the macOS helper app name for Bluetooth authorization tests.",
+    )
+    helper.add_argument(
+        "--bundle-id",
+        help="Override the macOS helper bundle id for a fresh Bluetooth TCC prompt.",
+    )
     helper.add_argument("--json", action="store_true", help="Print compact JSON.")
     helper.set_defaults(func=cmd_ble_helper)
 
@@ -1618,17 +1626,21 @@ def cmd_devices(args: argparse.Namespace) -> int:
 
 
 def cmd_ble_helper(args: argparse.Namespace) -> int:
-    payload = {"helper": macos_ble_app_info(ensure=args.ensure)}
+    helper_kwargs = {
+        "bundle_name": args.bundle_name,
+        "bundle_id": args.bundle_id,
+    }
+    payload = {"helper": macos_ble_app_info(ensure=args.ensure, **helper_kwargs)}
     code = 0
     if args.ensure and not payload["helper"]["ok"]:
         code = 2
     if args.status:
-        status = macos_ble_app_status(timeout=args.timeout)
+        status = macos_ble_app_status(timeout=args.timeout, **helper_kwargs)
         payload["status"] = status
         if not status["ok"]:
             code = 2
     if args.authorize:
-        authorization = macos_ble_app_authorize(timeout=args.timeout)
+        authorization = macos_ble_app_authorize(timeout=args.timeout, **helper_kwargs)
         payload["authorization"] = authorization
         if not authorization["ok"]:
             code = 2

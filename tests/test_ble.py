@@ -131,6 +131,7 @@ class SafeBleScanTests(unittest.TestCase):
             ["status", "--timeout", "1.25"],
             timeout=1.25,
             bundle_name="ZhiyunBleScan",
+            bundle_id=APP_BUNDLE_ID,
         )
 
     def test_macos_ble_app_status_names_pending_bluetooth_prompt(self) -> None:
@@ -183,6 +184,7 @@ class SafeBleScanTests(unittest.TestCase):
             ["authorize", "--timeout", "30.0"],
             timeout=30.0,
             bundle_name="ZhiyunBleScan",
+            bundle_id=APP_BUNDLE_ID,
         )
 
     def test_macos_ble_app_ensure_compiles_visible_bundle(self) -> None:
@@ -229,6 +231,45 @@ class SafeBleScanTests(unittest.TestCase):
             self.assertNotIn("LSBackgroundOnly", info)
             self.assertTrue(
                 (app_path / "Contents" / "MacOS" / "ZhiyunBleScan").exists()
+            )
+
+    def test_macos_ble_app_can_use_fresh_bundle_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            app_path = Path(tmp) / "ZhiyunBleScan2.app"
+            sign_calls = []
+
+            def fake_run(args, **_kwargs):
+                if args[0] == "/usr/bin/swiftc":
+                    Path(args[-1]).write_bytes(b"mach-o")
+                elif args[0] == "/usr/bin/codesign":
+                    sign_calls.append(args)
+                return types.SimpleNamespace(returncode=0, stderr="", stdout="")
+
+            with (
+                patch(
+                    "zhiyun_light_control.macos_ble_app._bundle_root",
+                    return_value=app_path,
+                ),
+                patch(
+                    "zhiyun_light_control.macos_ble_app.shutil.which",
+                    side_effect=lambda name: f"/usr/bin/{name}",
+                ),
+                patch("zhiyun_light_control.macos_ble_app.subprocess.run", fake_run),
+            ):
+                ensure_macos_ble_app(
+                    bundle_name="ZhiyunBleScan2",
+                    bundle_id="local.zhiyun-light-control.ble-scan2",
+                    swift_path="/usr/bin/swiftc",
+                )
+
+            info = plistlib.loads((app_path / "Contents" / "Info.plist").read_bytes())
+            self.assertEqual(
+                info["CFBundleIdentifier"],
+                "local.zhiyun-light-control.ble-scan2",
+            )
+            self.assertIn(
+                '=designated => identifier "local.zhiyun-light-control.ble-scan2"',
+                sign_calls[0],
             )
 
     def test_safe_scan_parses_worker_devices(self) -> None:

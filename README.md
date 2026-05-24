@@ -194,6 +194,16 @@ echo route as an accepted transport result. Physical testing showed that a
 broad `0x0301` candidate pass reached `2700K` at `20%`; exact brightness/CCT
 control routing is still being narrowed down.
 
+For macOS BLE authorization diagnostics, the helper can use a fresh bundle
+identity:
+
+```sh
+uv run zlight ble-helper --ensure --authorize \
+  --bundle-name ZhiyunBleScanFresh \
+  --bundle-id local.zhiyun-light-control.ble-scan-fresh \
+  --timeout 60 --json
+```
+
 Build a plan without opening hardware:
 
 ```sh

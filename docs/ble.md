@@ -93,6 +93,23 @@ completed the Bluetooth authorization decision yet; click Allow on the
 `ZhiyunBleScan` Bluetooth prompt or allow it in the Bluetooth privacy pane,
 then rerun the scan.
 
+If macOS appears to have stale TCC state for the default helper, build a fresh
+helper identity for diagnosis:
+
+```sh
+uv run zlight ble-helper --ensure --authorize \
+  --bundle-name ZhiyunBleScanFresh \
+  --bundle-id local.zhiyun-light-control.ble-scan-fresh \
+  --timeout 60 --json
+```
+
+The same identity can be reused by macOS-app scans or mesh sessions with:
+
+```sh
+export ZLIGHT_BLE_HELPER_NAME=ZhiyunBleScanFresh
+export ZLIGHT_BLE_HELPER_BUNDLE_ID=local.zhiyun-light-control.ble-scan-fresh
+```
+
 When the HTTP bridge is configured as `transport=ble` with
 `ble_backend=macos-app`, the embedded `devices.ble.macos_status` field includes
 the helper authorization/state report without scanning.
