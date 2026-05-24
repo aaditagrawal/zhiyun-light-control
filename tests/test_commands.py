@@ -12,16 +12,21 @@ from zhiyun_light_control import (
     execute_async_command_plan,
     execute_async_command_plan_confirmed,
     execute_async_frame_plan,
+    execute_async_serialized_frame_plan,
+    execute_async_serialized_frame_plan_confirmed,
     execute_async_transition_frame_plans,
     execute_async_transition_plans,
     execute_command_plan,
     execute_command_plan_confirmed,
     execute_frame_plan,
+    execute_serialized_frame_plan,
+    execute_serialized_frame_plan_confirmed,
     execute_transition_frame_plans,
     execute_transition_plans,
     scene_command_plan,
     scene_command_specs,
     scene_frame_specs,
+    serialized_frame_commands,
     transition_command_plans,
 )
 from zhiyun_light_control.protocol import (
@@ -279,6 +284,50 @@ class CommandPlanningTests(unittest.TestCase):
         )
         self.assertTrue(all(result.acknowledged for result in results))
 
+    def test_execute_serialized_frame_plan_uses_planned_frame_hex(self) -> None:
+        light = FakeFrameLight()
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25, kelvin=5600),
+            first_word=0x0301,
+            start_seq=51,
+        ).to_dict()
+
+        frames = serialized_frame_commands({"command_plan": plan})
+        results = execute_serialized_frame_plan(
+            light,
+            {"command_plan": plan},
+            timeout=0.25,
+        )
+
+        self.assertEqual([command for _frame, command in frames], [0x1001, 0x1002])
+        self.assertEqual(
+            [tx for tx, _timeout in light.transport.sent],
+            [frame for frame, _command in frames],
+        )
+        self.assertEqual(
+            [timeout for _tx, timeout in light.transport.sent],
+            [0.25, 0.25],
+        )
+        self.assertEqual([first_frame(result.tx).seq for result in results], [51, 52])
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    def test_execute_serialized_frame_plan_confirmed_fails_closed(self) -> None:
+        class TimeoutFrameTransport:
+            def exchange(self, tx: bytes, timeout: float | None = None) -> bytes:
+                del tx, timeout
+                return b""
+
+        class TimeoutFrameLight:
+            transport = TimeoutFrameTransport()
+
+        plan = scene_command_plan(Scene(obj=1, brightness=25)).to_dict()
+
+        with self.assertRaises(UnconfirmedCommandError):
+            execute_serialized_frame_plan_confirmed(
+                TimeoutFrameLight(),
+                {"command_plan": plan},
+            )
+
     def test_execute_transition_frame_plans_preserves_batch_frames(self) -> None:
         light = FakeFrameLight()
         plans = transition_command_plans(
@@ -367,6 +416,53 @@ class AsyncCommandExecutionTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([first_frame(result.tx).seq for result in results], [41, 42])
         self.assertTrue(all(result.acknowledged for result in results))
+
+    async def test_execute_async_serialized_frame_plan_uses_frame_hex(self) -> None:
+        light = AsyncFakeFrameLight()
+        plan = scene_command_plan(
+            Scene(obj=1, brightness=25, kelvin=5600),
+            first_word=0x0301,
+            start_seq=61,
+        ).to_dict()
+
+        results = await execute_async_serialized_frame_plan(
+            light,
+            {"command_plan": plan},
+            timeout=0.25,
+        )
+
+        self.assertEqual(
+            [first_frame(tx).seq for tx, _timeout in light.transport.sent],
+            [61, 62],
+        )
+        self.assertEqual(
+            [timeout for _tx, timeout in light.transport.sent],
+            [0.25, 0.25],
+        )
+        self.assertTrue(all(result.acknowledged for result in results))
+
+    async def test_execute_async_serialized_frame_plan_confirmed_fails(
+        self,
+    ) -> None:
+        class TimeoutFrameTransport:
+            async def exchange(
+                self,
+                tx: bytes,
+                timeout: float | None = None,
+            ) -> bytes:
+                del tx, timeout
+                return b""
+
+        class TimeoutFrameLight:
+            transport = TimeoutFrameTransport()
+
+        plan = scene_command_plan(Scene(obj=1, brightness=25)).to_dict()
+
+        with self.assertRaises(UnconfirmedCommandError):
+            await execute_async_serialized_frame_plan_confirmed(
+                TimeoutFrameLight(),
+                {"command_plan": plan},
+            )
 
     async def test_execute_async_transition_frame_plans_preserves_batches(
         self,

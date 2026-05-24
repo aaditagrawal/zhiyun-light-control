@@ -189,6 +189,7 @@ class FakeSceneLight:
     def __init__(self) -> None:
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.prebuilt_frames: list[bytes] = []
         self.primitive_calls: list[tuple[str, int, object, int]] = []
 
     def __enter__(self) -> FakeSceneLight:
@@ -206,6 +207,17 @@ class FakeSceneLight:
         self.scenes.append(scene)
         self.control_modes.append(control_mode)
         return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
+
+    def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        del timeout
+        self.prebuilt_frames.append(frame)
+        return _prebuilt_result(frame, command)
 
     def set_brightness(
         self,
@@ -331,6 +343,7 @@ class AsyncFakeSceneLight:
     def __init__(self) -> None:
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.prebuilt_frames: list[bytes] = []
         self.primitive_calls: list[tuple[str, int, object, int]] = []
 
     async def __aenter__(self) -> AsyncFakeSceneLight:
@@ -348,6 +361,17 @@ class AsyncFakeSceneLight:
         self.scenes.append(scene)
         self.control_modes.append(control_mode)
         return [_result(RUNTIME_TYPE, RuntimeCommand.BRIGHTNESS, b"\x00")]
+
+    async def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        del timeout
+        self.prebuilt_frames.append(frame)
+        return _prebuilt_result(frame, command)
 
     async def set_brightness(
         self,
@@ -1493,6 +1517,34 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(cue["cue"], "intro")
         self.assertFalse(cue["stop_on_unconfirmed"])
 
+    def test_light_integration_executes_serialized_scene_plan(self) -> None:
+        light = FakeSceneLight()
+        integration = LightIntegration(
+            config=LightConnectionConfig(transport="usb", port="/dev/cu.test"),
+            light_factory=FakeFactory(light),
+        )
+        plan = integration.plan_scene(
+            {"brightness": 12},
+            first_word=0x0301,
+            start_seq=7,
+        )
+
+        response = integration.execute_plan(plan, timeout=0.25)
+
+        self.assertEqual(response["action"], "execute_plan")
+        self.assertEqual(response["planned_action"], "scene")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["scene"]["brightness"], 12.0)
+        self.assertEqual(
+            [first_frame(frame).first_word for frame in light.prebuilt_frames],
+            [0x0301],
+        )
+        self.assertEqual(
+            [first_frame(frame).seq for frame in light.prebuilt_frames],
+            [7],
+        )
+        self.assertEqual(integration.state()["action"], "execute_plan")
+
     def test_local_validation_reports_open_errors_without_raising(self) -> None:
         payload = local_validation(light_factory=FakeFactory(FailingLight()))
 
@@ -2481,6 +2533,36 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cue["cue"], "intro")
         self.assertFalse(cue["stop_on_unconfirmed"])
 
+    async def test_async_light_integration_executes_serialized_scene_plan(
+        self,
+    ) -> None:
+        light = AsyncFakeSceneLight()
+        integration = AsyncLightIntegration(
+            config=LightConnectionConfig(transport="ble", name_contains="MOLUS"),
+            light_factory=AsyncFakeFactory(light),
+        )
+        plan = integration.plan_scene(
+            {"brightness": 12},
+            first_word=0x0301,
+            start_seq=7,
+        )
+
+        response = await integration.execute_plan(plan, timeout=0.25)
+
+        self.assertEqual(response["action"], "execute_plan")
+        self.assertEqual(response["planned_action"], "scene")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["scene"]["brightness"], 12.0)
+        self.assertEqual(
+            [first_frame(frame).first_word for frame in light.prebuilt_frames],
+            [0x0301],
+        )
+        self.assertEqual(
+            [first_frame(frame).seq for frame in light.prebuilt_frames],
+            [7],
+        )
+        self.assertEqual(integration.state()["action"], "execute_plan")
+
     async def test_local_async_validation_reports_open_errors(self) -> None:
         payload = await local_async_validation(
             light_factory=AsyncFakeFactory(AsyncFailingLight())
@@ -2496,6 +2578,14 @@ def _result(first_word: int, cmd: int, payload: bytes) -> CommandResult:
     rx = build_frame(first_word, 1, cmd, payload)
     ack = first_frame(rx, cmd=cmd)
     return CommandResult(cmd, tx, rx, (ack,), ack)
+
+
+def _prebuilt_result(tx: bytes, command: int) -> CommandResult:
+    frame = first_frame(tx)
+    assert frame is not None
+    rx = build_frame(frame.first_word, frame.seq, command, b"\x00")
+    ack = first_frame(rx, cmd=command)
+    return CommandResult(command, tx, rx, (ack,), ack)
 
 
 def setup_profile(

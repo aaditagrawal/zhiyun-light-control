@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from inspect import isawaitable
 
@@ -361,6 +361,25 @@ def execute_frame_plan(
     ]
 
 
+def execute_serialized_frame_plan(
+    light: object,
+    plan: Mapping[str, object],
+    *,
+    timeout: float | None = None,
+) -> list[CommandResult]:
+    """Execute exact frame bytes from a serialized command plan dictionary."""
+
+    return [
+        _exchange_prebuilt_frame_bytes(
+            light,
+            frame,
+            command,
+            timeout=timeout,
+        )
+        for frame, command in serialized_frame_commands(plan)
+    ]
+
+
 def execute_frame_plan_confirmed(
     light: object,
     plan: SceneCommandPlan,
@@ -372,6 +391,21 @@ def execute_frame_plan_confirmed(
 
     return require_command_results(
         execute_frame_plan(light, plan, timeout=timeout),
+        action=action,
+    )
+
+
+def execute_serialized_frame_plan_confirmed(
+    light: object,
+    plan: Mapping[str, object],
+    *,
+    timeout: float | None = None,
+    action: str = "serialized frame plan",
+) -> list[CommandResult]:
+    """Execute serialized frame bytes and require ACK evidence."""
+
+    return require_command_results(
+        execute_serialized_frame_plan(light, plan, timeout=timeout),
         action=action,
     )
 
@@ -501,6 +535,27 @@ async def execute_async_frame_plan(
     return results
 
 
+async def execute_async_serialized_frame_plan(
+    light: object,
+    plan: Mapping[str, object],
+    *,
+    timeout: float | None = None,
+) -> list[CommandResult]:
+    """Execute exact frame bytes from a serialized command plan asynchronously."""
+
+    results: list[CommandResult] = []
+    for frame, command in serialized_frame_commands(plan):
+        results.append(
+            await _exchange_prebuilt_frame_bytes_async(
+                light,
+                frame,
+                command,
+                timeout=timeout,
+            )
+        )
+    return results
+
+
 async def execute_async_frame_plan_confirmed(
     light: object,
     plan: SceneCommandPlan,
@@ -512,6 +567,21 @@ async def execute_async_frame_plan_confirmed(
 
     return require_command_results(
         await execute_async_frame_plan(light, plan, timeout=timeout),
+        action=action,
+    )
+
+
+async def execute_async_serialized_frame_plan_confirmed(
+    light: object,
+    plan: Mapping[str, object],
+    *,
+    timeout: float | None = None,
+    action: str = "serialized frame plan",
+) -> list[CommandResult]:
+    """Execute serialized frame bytes asynchronously and require ACK evidence."""
+
+    return require_command_results(
+        await execute_async_serialized_frame_plan(light, plan, timeout=timeout),
         action=action,
     )
 
@@ -587,23 +657,35 @@ async def _exchange_runtime_async(
     return result
 
 
-def _exchange_prebuilt_frame(
+def _exchange_prebuilt_frame_bytes(
     light: object,
-    frame: RuntimeFrameSpec,
+    frame: bytes,
+    command: int,
     *,
     timeout: float | None,
 ) -> CommandResult:
     exchange_frame = getattr(light, "exchange_prebuilt_frame", None)
     if callable(exchange_frame):
         if timeout is None:
-            return exchange_frame(frame.frame, frame.command.command)
-        return exchange_frame(frame.frame, frame.command.command, timeout=timeout)
+            return exchange_frame(frame, command)
+        return exchange_frame(frame, command, timeout=timeout)
     exchange = _transport_exchange(light)
-    if timeout is None:
-        rx = exchange(frame.frame)
-    else:
-        rx = exchange(frame.frame, timeout=timeout)
-    return _command_result_from_frame(frame.frame, rx, frame.command.command)
+    rx = exchange(frame) if timeout is None else exchange(frame, timeout=timeout)
+    return _command_result_from_frame(frame, rx, command)
+
+
+def _exchange_prebuilt_frame(
+    light: object,
+    frame: RuntimeFrameSpec,
+    *,
+    timeout: float | None,
+) -> CommandResult:
+    return _exchange_prebuilt_frame_bytes(
+        light,
+        frame.frame,
+        frame.command.command,
+        timeout=timeout,
+    )
 
 
 async def _exchange_prebuilt_frame_async(
@@ -612,26 +694,70 @@ async def _exchange_prebuilt_frame_async(
     *,
     timeout: float | None,
 ) -> CommandResult:
+    return await _exchange_prebuilt_frame_bytes_async(
+        light,
+        frame.frame,
+        frame.command.command,
+        timeout=timeout,
+    )
+
+
+async def _exchange_prebuilt_frame_bytes_async(
+    light: object,
+    frame: bytes,
+    command: int,
+    *,
+    timeout: float | None,
+) -> CommandResult:
     exchange_frame = getattr(light, "exchange_prebuilt_frame", None)
     if callable(exchange_frame):
         if timeout is None:
-            result = exchange_frame(frame.frame, frame.command.command)
+            result = exchange_frame(frame, command)
         else:
-            result = exchange_frame(
-                frame.frame,
-                frame.command.command,
-                timeout=timeout,
-            )
+            result = exchange_frame(frame, command, timeout=timeout)
         if isawaitable(result):
             return await result
         return result
     exchange = _transport_exchange(light)
-    if timeout is None:
-        result = exchange(frame.frame)
-    else:
-        result = exchange(frame.frame, timeout=timeout)
+    result = exchange(frame) if timeout is None else exchange(frame, timeout=timeout)
     rx = await result if isawaitable(result) else result
-    return _command_result_from_frame(frame.frame, rx, frame.command.command)
+    return _command_result_from_frame(frame, rx, command)
+
+
+def serialized_frame_commands(
+    plan: Mapping[str, object],
+) -> tuple[tuple[bytes, int], ...]:
+    """Extract ``(frame, command)`` entries from a serialized SDK command plan."""
+
+    command_plan = _serialized_command_plan(plan)
+    raw_frames = command_plan.get("frames")
+    if not isinstance(raw_frames, list | tuple):
+        raise ValueError("serialized command plan must contain a frames list")
+    frames: list[tuple[bytes, int]] = []
+    for index, raw_frame in enumerate(raw_frames):
+        if not isinstance(raw_frame, Mapping):
+            raise ValueError(f"frame {index} must be an object")
+        frame_hex = raw_frame.get("frame_hex")
+        command = raw_frame.get("command")
+        if not isinstance(frame_hex, str) or not frame_hex:
+            raise ValueError(f"frame {index} must contain frame_hex")
+        if not isinstance(command, int):
+            raise ValueError(f"frame {index} must contain integer command")
+        try:
+            frame = bytes.fromhex(frame_hex)
+        except ValueError as exc:
+            raise ValueError(f"frame {index} has invalid frame_hex") from exc
+        frames.append((frame, command))
+    return tuple(frames)
+
+
+def _serialized_command_plan(
+    plan: Mapping[str, object],
+) -> Mapping[str, object]:
+    nested = plan.get("command_plan")
+    if isinstance(nested, Mapping):
+        return nested
+    return plan
 
 
 def _transport_exchange(light: object):

@@ -774,6 +774,53 @@ class LightRig:
         )
         return {"fixture": name, **response}
 
+    def execute_plan(
+        self,
+        name: str,
+        plan: Mapping[str, object],
+        *,
+        timeout: float | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            _plan_primitive_name(plan),
+            require_setup_profile,
+        )
+        response = self.controller(name).execute_plan(
+            plan,
+            timeout=timeout,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    def execute_plan_map(
+        self,
+        plans: Mapping[str, object],
+        *,
+        stop_on_unconfirmed: bool = False,
+        timeout: float | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name, plan in _fixture_plan_map(plans).items():
+            response = self.execute_plan(
+                name,
+                plan,
+                timeout=timeout,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and response.get("applied") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_execute_plan_map", responses, stopped=stopped)
+
     def apply_all(
         self,
         scene: SceneInput,
@@ -1573,6 +1620,53 @@ class AsyncLightRig:
         )
         return {"fixture": name, **response}
 
+    async def execute_plan(
+        self,
+        name: str,
+        plan: Mapping[str, object],
+        *,
+        timeout: float | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            _plan_primitive_name(plan),
+            require_setup_profile,
+        )
+        response = await self.controller(name).execute_plan(
+            plan,
+            timeout=timeout,
+            require_acknowledged=require_acknowledged,
+        )
+        return {"fixture": name, **response}
+
+    async def execute_plan_map(
+        self,
+        plans: Mapping[str, object],
+        *,
+        stop_on_unconfirmed: bool = False,
+        timeout: float | None = None,
+        require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
+    ) -> dict[str, object]:
+        responses: dict[str, object] = {}
+        stopped = False
+        for name, plan in _fixture_plan_map(plans).items():
+            response = await self.execute_plan(
+                name,
+                plan,
+                timeout=timeout,
+                require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
+            )
+            responses[name] = response
+            if stop_on_unconfirmed and response.get("applied") is not True:
+                stopped = True
+                break
+        return _rig_response("rig_execute_plan_map", responses, stopped=stopped)
+
     async def apply_all(
         self,
         scene: SceneInput,
@@ -2272,6 +2366,24 @@ def _rig_plan_next_seq(fixture_responses: Mapping[str, object]) -> int | None:
         and isinstance((value := response.get("next_seq")), int)
     ]
     return max(next_values) if next_values else None
+
+
+def _fixture_plan_map(plans: Mapping[str, object]) -> dict[str, Mapping[str, object]]:
+    raw_plans = plans.get("fixtures")
+    source = raw_plans if isinstance(raw_plans, Mapping) else plans
+    fixture_plans: dict[str, Mapping[str, object]] = {}
+    for name, plan in source.items():
+        if not isinstance(plan, Mapping):
+            raise ValueError(f"plan for fixture {name!r} must be an object")
+        fixture_plans[str(name)] = plan
+    return fixture_plans
+
+
+def _plan_primitive_name(plan: Mapping[str, object]) -> str:
+    action = str(plan.get("action", "scene"))
+    if action in {"preset", "sequence", "cue", "run_named_cue"}:
+        return action
+    return "scene"
 
 
 def _status_response(name: str, status: StatusSnapshot) -> dict[str, object]:

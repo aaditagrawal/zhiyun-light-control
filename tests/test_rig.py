@@ -50,6 +50,7 @@ class FakeLight:
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.prebuilt_frames: list[bytes] = []
         self.payloads: list[tuple[int, bytes]] = []
 
     def __enter__(self) -> FakeLight:
@@ -92,6 +93,21 @@ class FakeLight:
             acknowledged=self.acknowledged,
         )
 
+    def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        del timeout
+        self.prebuilt_frames.append(frame)
+        return _prebuilt_result(
+            frame,
+            command,
+            acknowledged=self.acknowledged,
+        )
+
 
 class AsyncFakeLight:
     def __init__(self, name: str, *, acknowledged: bool = True) -> None:
@@ -99,6 +115,7 @@ class AsyncFakeLight:
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
         self.control_modes: list[int] = []
+        self.prebuilt_frames: list[bytes] = []
         self.payloads: list[tuple[int, bytes]] = []
 
     async def __aenter__(self) -> AsyncFakeLight:
@@ -138,6 +155,21 @@ class AsyncFakeLight:
         return _result(
             cmd,
             payload=payload_by_cmd.get(cmd, b"\x00"),
+            acknowledged=self.acknowledged,
+        )
+
+    async def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 1.5,
+    ) -> CommandResult:
+        del timeout
+        self.prebuilt_frames.append(frame)
+        return _prebuilt_result(
+            frame,
+            command,
             acknowledged=self.acknowledged,
         )
 
@@ -475,6 +507,38 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(cue_plan["fixtures"]["fill"]["steps"][0]["scene"]["obj"], 2)
         self.assertEqual(key.scenes, [])
         self.assertEqual(fill.scenes, [])
+
+    def test_rig_executes_serialized_plan_maps(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {"transport": "usb", "obj": 1, "tags": ["set"]},
+                    "fill": {"transport": "usb", "obj": 2, "tags": ["set"]},
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        plan = rig.plan_all({"brightness": 12}, tag="set", first_word=0x0301)
+
+        response = rig.execute_plan_map(plan, timeout=0.25)
+
+        self.assertEqual(response["action"], "rig_execute_plan_map")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["fixtures"]["key"]["planned_action"], "scene")
+        self.assertEqual(response["fixtures"]["fill"]["scene"]["obj"], 2)
+        self.assertEqual(
+            [first_frame(frame).first_word for frame in key.prebuilt_frames],
+            [0x0301],
+        )
+        self.assertEqual(
+            [first_frame(frame).first_word for frame in fill.prebuilt_frames],
+            [0x0301],
+        )
 
     def test_rig_can_guard_fixture_controls_with_setup_profiles(self) -> None:
         key = FakeLight("key")
@@ -1013,6 +1077,38 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(key.scenes, [])
         self.assertEqual(fill.scenes, [])
 
+    async def test_async_rig_executes_serialized_plan_maps(self) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {"transport": "ble", "name_contains": "KEY", "obj": 3},
+                    "fill": {"transport": "ble", "name_contains": "FILL", "obj": 4},
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+        plan = rig.plan_all({"brightness": 20}, first_word=0x0301)
+
+        response = await rig.execute_plan_map(plan, timeout=0.25)
+
+        self.assertEqual(response["action"], "rig_execute_plan_map")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["fixtures"]["key"]["planned_action"], "scene")
+        self.assertEqual(response["fixtures"]["fill"]["scene"]["obj"], 4)
+        self.assertEqual(
+            [first_frame(frame).first_word for frame in key.prebuilt_frames],
+            [0x0301],
+        )
+        self.assertEqual(
+            [first_frame(frame).first_word for frame in fill.prebuilt_frames],
+            [0x0301],
+        )
+
     async def test_async_apply_all_uses_fixture_object_defaults(self) -> None:
         key = AsyncFakeLight("key")
         fill = AsyncFakeLight("fill")
@@ -1198,6 +1294,21 @@ def _result(
     rx = build_frame(RUNTIME_TYPE, 1, cmd, payload)
     ack = first_frame(rx, cmd=cmd)
     return CommandResult(cmd, tx, rx, (ack,), ack)
+
+
+def _prebuilt_result(
+    tx: bytes,
+    command: int,
+    *,
+    acknowledged: bool,
+) -> CommandResult:
+    if not acknowledged:
+        return CommandResult(command, tx, b"", (), None)
+    frame = first_frame(tx)
+    assert frame is not None
+    rx = build_frame(frame.first_word, frame.seq, command, b"\x00")
+    ack = first_frame(rx, cmd=command)
+    return CommandResult(command, tx, rx, (ack,), ack)
 
 
 def setup_profile(

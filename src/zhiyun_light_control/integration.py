@@ -1265,6 +1265,32 @@ class LightIntegration:
             start_seq=start_seq,
         )
 
+    def execute_plan(
+        self,
+        plan: Mapping[str, object],
+        *,
+        timeout: float | None = None,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
+    ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            _plan_primitive_name(plan),
+            require_setup_profile,
+        )
+        self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return self._call_controller(
+            "execute_plan",
+            plan,
+            require_acknowledged=require_acknowledged,
+            timeout=timeout,
+        )
+
     def snapshot(
         self,
         *,
@@ -2577,6 +2603,32 @@ class AsyncLightIntegration:
             start_seq=start_seq,
         )
 
+    async def execute_plan(
+        self,
+        plan: Mapping[str, object],
+        *,
+        timeout: float | None = None,
+        require_acknowledged: bool = False,
+        require_ready: bool = False,
+        required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
+    ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            _plan_primitive_name(plan),
+            require_setup_profile,
+        )
+        await self._require_control_readiness(
+            require_ready,
+            required_readiness,
+            require_acknowledged=require_acknowledged,
+        )
+        return await self._call_controller(
+            "execute_plan",
+            plan,
+            require_acknowledged=require_acknowledged,
+            timeout=timeout,
+        )
+
     async def snapshot(
         self,
         *,
@@ -2777,6 +2829,13 @@ def _integration_scene_payload(
     payload = dict(scene)
     payload.setdefault("obj", obj)
     return payload
+
+
+def _plan_primitive_name(plan: Mapping[str, object]) -> str:
+    action = str(plan.get("action", "scene"))
+    if action in {"preset", "sequence", "cue", "run_named_cue"}:
+        return action
+    return "scene"
 
 
 def _control_readiness_capabilities(

@@ -1208,6 +1208,11 @@ Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_sequence()`, `plan_named_cue()`, `plan_all()`, `plan_scene_map()`, or
 `plan_named_cue_all()` to preview exact per-fixture command plans before a
 timeline, show controller, or bridge decides to send USB/BLE writes.
+When a host is ready to send exact planned bytes for a scene or preset, pass the
+returned command plan to `execute_plan()` or pass a grouped `plan_all()` /
+`plan_scene_map()` result to `execute_plan_map()`. This is the portable SDK
+pipeline for media systems that want to inspect, schedule, log, and then execute
+the same command frames over USB or BLE.
 
 Use `rig.require_setup_profile("key", "read_status")` to fail fast from saved
 profile evidence before opening the transport, or

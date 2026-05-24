@@ -12,6 +12,7 @@ from zhiyun_light_control import (
 from zhiyun_light_control.models import CommandResult
 from zhiyun_light_control.protocol import (
     RuntimeCommand,
+    build_frame,
     build_runtime_frame,
     first_frame,
 )
@@ -22,6 +23,7 @@ class FakeLight:
         self.acknowledged = acknowledged
         self.scenes: list[Scene] = []
         self.runtime_requests: list[tuple[int, bytes]] = []
+        self.prebuilt_frames: list[bytes] = []
         self.primitive_calls: list[tuple[str, int, object, int]] = []
         self.transitions: list[tuple[Scene, Scene, int, float, str]] = []
 
@@ -62,6 +64,21 @@ class FakeLight:
                 payload=bytes.fromhex("01000000"),
             )
         return _result(cmd, acknowledged=self.acknowledged)
+
+    def exchange_prebuilt_frame(
+        self,
+        frame: bytes,
+        command: int,
+        *,
+        timeout: float = 0.8,
+    ) -> CommandResult:
+        del timeout
+        self.prebuilt_frames.append(frame)
+        return _prebuilt_result(
+            frame,
+            command,
+            acknowledged=self.acknowledged,
+        )
 
     def set_brightness(
         self,
@@ -306,6 +323,33 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(light.scenes, [])
         self.assertEqual(light.transitions, [])
 
+    def test_controller_executes_serialized_scene_plan_frames(self) -> None:
+        light = FakeLight()
+        controller = LightController(light_factory=FakeFactory(light))
+        plan = controller.plan_scene(
+            {"brightness": 12},
+            first_word=0x0301,
+            start_seq=7,
+        )
+
+        response = controller.execute_plan(plan, timeout=0.25)
+
+        self.assertEqual(response["action"], "execute_plan")
+        self.assertEqual(response["planned_action"], "scene")
+        self.assertTrue(response["applied"])
+        self.assertEqual(response["scene"]["brightness"], 12.0)
+        self.assertEqual(len(response["results"]), 1)
+        self.assertEqual(
+            [first_frame(frame).first_word for frame in light.prebuilt_frames],
+            [0x0301],
+        )
+        self.assertEqual(
+            [first_frame(frame).seq for frame in light.prebuilt_frames],
+            [7],
+        )
+        self.assertEqual(controller.state()["action"], "execute_plan")
+        self.assertEqual(controller.state()["scene"]["brightness"], 12.0)
+
     def test_controller_runs_named_cues_and_transitions(self) -> None:
         light = FakeLight()
         cues = CueLibrary.from_mapping(
@@ -409,6 +453,21 @@ def _result(
     if not acknowledged:
         return CommandResult(command, tx, b"", (), None)
     rx = build_runtime_frame(1, command, payload)
+    ack = first_frame(rx, cmd=command)
+    return CommandResult(command, tx, rx, (ack,), ack)
+
+
+def _prebuilt_result(
+    tx: bytes,
+    command: int,
+    *,
+    acknowledged: bool,
+) -> CommandResult:
+    if not acknowledged:
+        return CommandResult(command, tx, b"", (), None)
+    frame = first_frame(tx)
+    assert frame is not None
+    rx = build_frame(frame.first_word, frame.seq, command, b"\x00")
     ack = first_frame(rx, cmd=command)
     return CommandResult(command, tx, rx, (ack,), ack)
 

@@ -12,7 +12,12 @@ from .bridge import (
     close_light_factory,
     make_light_factory,
 )
-from .commands import scene_command_plan, transition_command_plans
+from .commands import (
+    execute_async_serialized_frame_plan,
+    execute_serialized_frame_plan,
+    scene_command_plan,
+    transition_command_plans,
+)
 from .cues import CueLibrary
 from .models import (
     CommandResult,
@@ -531,6 +536,24 @@ class LightController:
             first_word=first_word,
             start_seq=start_seq,
         )
+
+    def execute_plan(
+        self,
+        plan: Mapping[str, object],
+        *,
+        timeout: float | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        with self.light_factory() as light:
+            results = execute_serialized_frame_plan(
+                light,
+                plan,
+                timeout=timeout,
+            )
+        response = _plan_execution_response(plan, results)
+        self._record_response_scene(response, "execute_plan", results)
+        self._require_acknowledged(results, require_acknowledged, action="execute_plan")
+        return response
 
     def _run_sequence_on_light(
         self,
@@ -1225,6 +1248,24 @@ class AsyncLightController:
             start_seq=start_seq,
         )
 
+    async def execute_plan(
+        self,
+        plan: Mapping[str, object],
+        *,
+        timeout: float | None = None,
+        require_acknowledged: bool | None = None,
+    ) -> dict[str, object]:
+        async with self.light_factory() as light:
+            results = await execute_async_serialized_frame_plan(
+                light,
+                plan,
+                timeout=timeout,
+            )
+        response = _plan_execution_response(plan, results)
+        self._record_response_scene(response, "execute_plan", results)
+        self._require_acknowledged(results, require_acknowledged, action="execute_plan")
+        return response
+
     async def _run_sequence_on_light(
         self,
         light: object,
@@ -1802,6 +1843,28 @@ def _scene_response(
         "applied": results_confirmed(tuple(result_items)),
         "reason": _results_reason(result_items),
     }
+
+
+def _plan_execution_response(
+    plan: Mapping[str, object],
+    results: Iterable[CommandResult],
+) -> dict[str, object]:
+    result_items = list(results)
+    response: dict[str, object] = {
+        "action": "execute_plan",
+        "planned_action": str(plan.get("action", "unknown")),
+        "plan": dict(plan),
+        "results": [result.to_dict() for result in result_items],
+        "applied": results_confirmed(tuple(result_items)),
+        "reason": _results_reason(result_items),
+    }
+    raw_scene = plan.get("scene")
+    if isinstance(raw_scene, Mapping):
+        response["scene"] = dict(raw_scene)
+    for key in ("preset", "cue"):
+        if key in plan:
+            response[key] = plan[key]
+    return response
 
 
 def _primitive_response(
