@@ -6,6 +6,9 @@ Python SDK and bridge tooling for controlling Zhiyun MOLUS lights over USB CDC
 and BLE. The package is aimed at local media-production automation: scripts,
 show controllers, OSC/DMX bridges, and custom control surfaces.
 
+## Why
+This project exists as a showcase of the capabilities of GPT 5.5 using the Codex app through `/goal` over a long period in reverse engineering firmware/interaction SDKs for unsupported devices with end to end testing. This code base is entirely autonomous; it is maintained by an agent that does all of the feature work in here based on its own internal feedback loop. The only input given to the model for this scenario was the name of the device, and the device was connected over USB to my Mac.
+
 ## Status
 
 This project is alpha hardware-control software.
