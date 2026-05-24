@@ -34,6 +34,8 @@ The package is split into layers:
 
 - `protocol.py` builds and parses frames, command payloads, CRCs, runtime
   commands, and updater identity commands.
+- `mesh.py` builds and parses the small Bluetooth Mesh provisioning PDUs used
+  to prove whether a PL-series light is still unprovisioned.
 - `models.py` defines public command and scene result objects.
 - `transports/usb.py` implements USB CDC serial exchange with port discovery and
   locking.
@@ -104,6 +106,16 @@ supports multiple backends:
 
 The public SDK is not macOS-specific; the helper is an implementation detail for
 one backend.
+
+For the local G60, BLE control is a setup pipeline rather than a single
+runtime-frame write. Official Vega code first talks to mesh provisioning service
+`1827`, then reconnects through mesh proxy service `1828`, adds an application
+key, reads identity/status over the Zhiyun `FEE9` service, runs native
+local-control registration, and only then sends brightness/CCT/sleep packets.
+The SDK therefore treats `mesh-probe`, `mesh-handshake`, and `mesh.py` as
+setup/discovery primitives, not as solved output control. `mesh-handshake`
+extends the verified invite/capabilities probe with a no-OOB provisioning start
+and generated P-256 provisioner public key over a single BLE connection.
 
 ## Planning and Transitions
 

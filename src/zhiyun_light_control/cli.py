@@ -51,6 +51,15 @@ from .macos_ble_app import (
     macos_ble_app_status,
     open_macos_bluetooth_settings,
 )
+from .mesh import (
+    build_provisioning_invite,
+    build_provisioning_public_key,
+    build_provisioning_start_no_oob,
+    derive_shared_ecdh_secret,
+    generate_provisioner_keypair,
+    parse_provisioning_capabilities,
+    parse_provisioning_public_key,
+)
 from .models import CommandResult, Scene
 from .osc import serve_osc
 from .presets import ScenePresetLibrary, merge_scene
@@ -73,7 +82,13 @@ from .status import read_async_status, read_sync_status
 from .transports.ble import (
     BLE_PROFILE_NAMES,
     DEFAULT_BLE_PROFILE,
+    MESH_PROVISIONING_NOTIFY_UUID,
+    MESH_PROVISIONING_SERVICE_UUID,
+    MESH_PROVISIONING_WRITE_UUID,
     BleWorkerError,
+    exchange_zhiyun_ble_macos_app,
+    exchange_zhiyun_ble_safe,
+    exchange_zhiyun_ble_sequence_macos_app,
     filter_ble_devices_by_name,
     scan_zhiyun_devices,
     scan_zhiyun_devices_macos_app,
@@ -425,6 +440,46 @@ def build_parser() -> argparse.ArgumentParser:
     test_ble.add_argument("--json", action="store_true", help="Print compact JSON.")
     test_ble.set_defaults(func=cmd_test_ble_endpoints)
 
+    mesh_probe = sub.add_parser(
+        "mesh-probe",
+        help="Probe the BLE Mesh provisioning endpoint with an invite.",
+    )
+    mesh_probe.add_argument("--address", help="BLE address/identifier.")
+    mesh_probe.add_argument("--name-contains", help="Filter discovered BLE names.")
+    mesh_probe.add_argument("--timeout", type=float, default=8.0)
+    mesh_probe.add_argument("--attention", type=parse_int, default=5)
+    mesh_probe.add_argument(
+        "--python",
+        help="Python executable for the crash-isolated BLE worker.",
+    )
+    mesh_probe.add_argument(
+        "--backend",
+        choices=["worker", "macos-app"],
+        default="macos-app",
+        help="BLE exchange backend. macos-app uses a CoreBluetooth app bundle.",
+    )
+    mesh_probe.add_argument("--json", action="store_true", help="Print compact JSON.")
+    mesh_probe.set_defaults(func=cmd_mesh_probe)
+
+    mesh_handshake = sub.add_parser(
+        "mesh-handshake",
+        help="Run the first BLE Mesh provisioning handshake frames.",
+    )
+    mesh_handshake.add_argument("--address", help="BLE address/identifier.")
+    mesh_handshake.add_argument(
+        "--name-contains",
+        default="PL103",
+        help="Filter discovered BLE names.",
+    )
+    mesh_handshake.add_argument("--timeout", type=float, default=12.0)
+    mesh_handshake.add_argument("--attention", type=parse_int, default=5)
+    mesh_handshake.add_argument(
+        "--json",
+        action="store_true",
+        help="Print compact JSON.",
+    )
+    mesh_handshake.set_defaults(func=cmd_mesh_handshake)
+
     helper = sub.add_parser(
         "ble-helper",
         help="Inspect or prepare the macOS CoreBluetooth helper app.",
@@ -558,9 +613,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--saturation", type=float)
     plan.add_argument("--intensity", type=int)
     add_control_mode_arg(plan)
-    plan.add_argument(
-        "--preset-file", help="JSON file containing named scene presets."
-    )
+    plan.add_argument("--preset-file", help="JSON file containing named scene presets.")
     plan.add_argument("--preset", help="Named preset to apply before CLI overrides.")
     plan.add_argument("--first-word", type=parse_int, default=RUNTIME_TYPE)
     plan.add_argument("--start-seq", type=parse_int, default=1)
@@ -849,9 +902,7 @@ def usb_discovery_options_from_args(args: argparse.Namespace) -> dict[str, objec
         "object_ids": args.object_ids
         if args.object_ids is not None
         else (
-            profile.object_ids
-            if profile is not None
-            else DEFAULT_DISCOVERY_OBJECT_IDS
+            profile.object_ids if profile is not None else DEFAULT_DISCOVERY_OBJECT_IDS
         ),
         "first_words": args.first_words
         if args.first_words is not None
@@ -1160,6 +1211,93 @@ def cmd_test_ble_endpoints(args: argparse.Namespace) -> int:
     return 0 if result.ok else 2
 
 
+def cmd_mesh_probe(args: argparse.Namespace) -> int:
+    tx = build_provisioning_invite(args.attention)
+    exchange_args = {
+        "address": args.address,
+        "name_contains": args.name_contains,
+        "timeout": args.timeout,
+        "service_uuid": MESH_PROVISIONING_SERVICE_UUID,
+        "write_uuid": MESH_PROVISIONING_WRITE_UUID,
+        "notify_uuid": MESH_PROVISIONING_NOTIFY_UUID,
+    }
+    if args.backend == "macos-app":
+        result = exchange_zhiyun_ble_macos_app(tx, **exchange_args)
+    else:
+        result = exchange_zhiyun_ble_safe(tx, python=args.python, **exchange_args)
+    payload = {
+        "ok": result.ok,
+        "probe": "mesh_provisioning_invite",
+        "attention": args.attention,
+        "exchange": result.to_dict(),
+        "capabilities": None,
+        "parse_error": None,
+    }
+    if result.rx:
+        try:
+            payload["capabilities"] = parse_provisioning_capabilities(
+                result.rx
+            ).to_dict()
+        except ValueError as exc:
+            payload["parse_error"] = str(exc)
+    print_json(payload, compact=args.json)
+    return 0 if result.ok and result.rx and payload["capabilities"] else 2
+
+
+def cmd_mesh_handshake(args: argparse.Namespace) -> int:
+    keypair = generate_provisioner_keypair()
+    frames = (
+        build_provisioning_invite(args.attention),
+        build_provisioning_start_no_oob(),
+        build_provisioning_public_key(keypair.public_key.xy),
+    )
+    result = exchange_zhiyun_ble_sequence_macos_app(
+        frames,
+        address=args.address,
+        name_contains=args.name_contains,
+        timeout=args.timeout,
+        service_uuid=MESH_PROVISIONING_SERVICE_UUID,
+        write_uuid=MESH_PROVISIONING_WRITE_UUID,
+        notify_uuid=MESH_PROVISIONING_NOTIFY_UUID,
+    )
+    capabilities: dict[str, object] | None = None
+    provisionee_public_key: dict[str, object] | None = None
+    shared_secret_hex: str | None = None
+    parse_errors: list[str] = []
+    for index, rx in enumerate(result.rx):
+        if not rx:
+            continue
+        if capabilities is None:
+            try:
+                capabilities = parse_provisioning_capabilities(rx).to_dict()
+                continue
+            except ValueError as exc:
+                parse_errors.append(f"rx[{index}] capabilities: {exc}")
+        if provisionee_public_key is None:
+            try:
+                public_key = parse_provisioning_public_key(rx)
+                provisionee_public_key = public_key.to_dict()
+                shared_secret_hex = derive_shared_ecdh_secret(
+                    keypair.private_key,
+                    public_key.xy,
+                ).hex()
+            except ValueError as exc:
+                parse_errors.append(f"rx[{index}] public_key: {exc}")
+    payload = {
+        "ok": result.ok,
+        "probe": "mesh_provisioning_handshake",
+        "exchange": result.to_dict(),
+        "provisioner_public_key": keypair.public_key.to_dict(),
+        "capabilities": capabilities,
+        "provisionee_public_key": provisionee_public_key,
+        "shared_ecdh_secret_hex": shared_secret_hex,
+        "parse_errors": parse_errors,
+        "complete": bool(capabilities and provisionee_public_key and shared_secret_hex),
+    }
+    print_json(payload, compact=args.json)
+    return 0 if payload["complete"] else 2
+
+
 def cmd_devices(args: argparse.Namespace) -> int:
     payload = discover_transport_devices(
         configured_transport=args.transport,
@@ -1178,15 +1316,9 @@ def cmd_devices(args: argparse.Namespace) -> int:
     status = ble.get("macos_status")
     scan = ble.get("scan")
     status_failed = (
-        args.include_ble_status
-        and isinstance(status, dict)
-        and not status.get("ok")
+        args.include_ble_status and isinstance(status, dict) and not status.get("ok")
     )
-    scan_failed = (
-        args.include_ble
-        and isinstance(scan, dict)
-        and not scan.get("ok")
-    )
+    scan_failed = args.include_ble and isinstance(scan, dict) and not scan.get("ok")
     return 2 if status_failed or scan_failed else 0
 
 
@@ -1609,8 +1741,7 @@ def command_results_exit_code(
     accept_echo: bool = False,
 ) -> int:
     accepted = all(
-        result.acknowledged or (accept_echo and result.echoed)
-        for result in results
+        result.acknowledged or (accept_echo and result.echoed) for result in results
     )
     return 0 if accepted else 1
 

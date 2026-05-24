@@ -350,6 +350,7 @@ struct InspectOutput: Encodable {{
 struct ExchangeOutput: Encodable {{
     let address: String?
     let rx_hex: String?
+    let rx_hexes: [String]?
     let error: String?
 }}
 
@@ -406,6 +407,23 @@ func hexData(_ value: String) -> Data? {{
         index = next
     }}
     return data
+}}
+
+func hexDataList(_ value: String) -> [Data]? {{
+    let parts = value.split(separator: ",").map {{
+        String($0).trimmingCharacters(in: .whitespacesAndNewlines)
+    }}
+    if parts.isEmpty {{
+        return nil
+    }}
+    var values: [Data] = []
+    for part in parts {{
+        guard let data = hexData(part) else {{
+            return nil
+        }}
+        values.append(data)
+    }}
+    return values
 }}
 
 extension Data {{
@@ -469,10 +487,14 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     private let writeUuid: CBUUID?
     private let notifyUuid: CBUUID?
     private let tx: Data?
+    private let txSequence: [Data]
     private var devices: [String: JsonDevice] = [:]
     private var peripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
     private var rx = Data()
+    private var currentRx = Data()
+    private var rxChunks: [String] = []
+    private var txIndex = 0
     private var inspectedServices: [JsonService] = []
     private var pendingServiceUuids: Set<CBUUID> = []
     private var finished = false
@@ -487,6 +509,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         self.writeUuid = argument("--write-uuid").map {{ CBUUID(string: $0) }}
         self.notifyUuid = argument("--notify-uuid").map {{ CBUUID(string: $0) }}
         self.tx = argument("--tx-hex").flatMap {{ hexData($0) }}
+        self.txSequence = argument("--tx-hexes").flatMap {{ hexDataList($0) }} ?? []
         super.init()
         self.central = CBCentralManager(delegate: self, queue: DispatchQueue.main)
         DispatchQueue.main.asyncAfter(deadline: .now() + self.timeout) {{
@@ -534,7 +557,8 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         if isLikelyZhiyun(device) {{
             devices[device.address] = device
         }}
-        guard (mode == "exchange-raw" || mode == "inspect") &&
+        guard (mode == "exchange-raw" || mode == "exchange-sequence" ||
+              mode == "inspect") &&
               peripheralMatches(device) else {{
             return
         }}
@@ -653,14 +677,40 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             return
         }}
         guard characteristic.uuid == notifyUuid,
-              let tx = tx,
               let write = writeCharacteristic else {{
             return
         }}
+        if mode == "exchange-sequence" {{
+            sendSequenceWrite(peripheral, write)
+            return
+        }}
+        guard let tx = tx else {{
+            return
+        }}
+        sendWrite(tx, peripheral, write)
+    }}
+
+    private func sendSequenceWrite(
+        _ peripheral: CBPeripheral,
+        _ write: CBCharacteristic
+    ) {{
+        guard txIndex < txSequence.count else {{
+            finish(error: nil)
+            return
+        }}
+        sendWrite(txSequence[txIndex], peripheral, write)
+    }}
+
+    private func sendWrite(
+        _ tx: Data,
+        _ peripheral: CBPeripheral,
+        _ write: CBCharacteristic
+    ) {{
         let writeType: CBCharacteristicWriteType =
             write.properties.contains(.writeWithoutResponse)
             ? .withoutResponse
             : .withResponse
+        currentRx.removeAll()
         peripheral.writeValue(tx, for: write, type: writeType)
         settleUntil = Date().addingTimeInterval(0.35)
         scheduleSettleCheck()
@@ -677,6 +727,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         }}
         if characteristic.uuid == notifyUuid, let data = characteristic.value {{
             rx.append(data)
+            currentRx.append(data)
             settleUntil = Date().addingTimeInterval(0.35)
             scheduleSettleCheck()
         }}
@@ -688,6 +739,16 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
                 return
             }}
             if Date() >= settleUntil {{
+                if self.mode == "exchange-sequence" {{
+                    self.rxChunks.append(self.currentRx.hexString)
+                    self.txIndex += 1
+                    if self.txIndex < self.txSequence.count,
+                       let peripheral = self.peripheral,
+                       let write = self.writeCharacteristic {{
+                        self.sendSequenceWrite(peripheral, write)
+                        return
+                    }}
+                }}
                 self.finish(error: nil)
             }}
         }}
@@ -762,6 +823,12 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
                 return "BLE inspect timed out"
             }}
         }}
+        if mode == "exchange-raw" || mode == "exchange-sequence" {{
+            if peripheral == nil {{
+                return "no matching BLE device found"
+            }}
+            return "BLE exchange timed out"
+        }}
         return nil
     }}
 
@@ -800,6 +867,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             writeJson(ExchangeOutput(
                 address: peripheral?.identifier.uuidString,
                 rx_hex: rx.isEmpty ? nil : rx.hexString,
+                rx_hexes: mode == "exchange-sequence" ? rxChunks : nil,
                 error: error
             ))
         }}
@@ -809,7 +877,22 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
 
 let mode = CommandLine.arguments.dropFirst().first ?? "scan"
 if mode == "exchange-raw" && argument("--tx-hex").flatMap({{ hexData($0) }}) == nil {{
-    writeJson(ExchangeOutput(address: nil, rx_hex: nil, error: "invalid tx hex"))
+    writeJson(ExchangeOutput(
+        address: nil,
+        rx_hex: nil,
+        rx_hexes: nil,
+        error: "invalid tx hex"
+    ))
+    exit(1)
+}}
+if mode == "exchange-sequence" &&
+   argument("--tx-hexes").flatMap({{ hexDataList($0) }}) == nil {{
+    writeJson(ExchangeOutput(
+        address: nil,
+        rx_hex: nil,
+        rx_hexes: nil,
+        error: "invalid tx hex sequence"
+    ))
     exit(1)
 }}
 let tool = BleTool(mode: mode)

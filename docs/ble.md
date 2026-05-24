@@ -139,6 +139,45 @@ firmware, voltage, and device id. Updater commands, object reads, register, and
 brightness/CCT/sleep writes timed out. That means the current BLE route is a
 confirmed identity/status route, not a confirmed control route.
 
+## Mesh Provisioning Breakpoint
+
+Official ZY Vega `1.1.7` uses two BLE layers for PL-series lights:
+
+1. Unprovisioned lights expose Bluetooth Mesh Provisioning service `1827` with
+   Data In `2ADB` and Data Out `2ADC`.
+2. After provisioning, lights expose Mesh Proxy service `1828` with Data In
+   `2ADD` and Data Out `2ADE`.
+3. Vega then adds an app key, reconnects through the proxy path, reads device
+   info / firmware / voltage, calls the native local-control register, and only
+   then sends native `ZYLightClient` control packets for brightness, CCT, sleep,
+   RGB, HSI, and effects.
+
+The local G60 is currently at the first stage: it advertises `1827` and not
+`1828`. A raw runtime `DEVICE_INFO` frame is not valid on `1827`, which is why
+earlier endpoint tests timed out. The verified mesh handshake primitive is:
+
+```sh
+uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
+```
+
+On the attached G60, this sends PB-GATT provisioning invite `030005` and
+receives capabilities `03010100010001000000000000`: one element, FIPS P-256
+ECDH, no public-key OOB, static OOB supported, no input OOB, and no output OOB.
+This proves the mesh provisioning bearer is reachable. It does not provision
+the device or solve brightness/CCT control by itself.
+
+The next implemented probe is:
+
+```sh
+uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
+```
+
+It sends invite `030005`, no-OOB provisioning start `03020000000000`, and a
+generated P-256 provisioner public key in one CoreBluetooth connection. The
+expected next device response is a provisioning public key PDU. On macOS this
+depends on the rebuilt `ZhiyunBleScan` helper being allowed in Privacy &
+Security > Bluetooth.
+
 Current local BLE scan validation:
 
 | Runtime | BLE stack | Result |

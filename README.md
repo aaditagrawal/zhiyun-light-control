@@ -212,7 +212,20 @@ BLE discovery and endpoint checks:
 uv run zlight scan-ble --name-contains MOLUS
 uv run zlight inspect-ble --name-contains MOLUS --json
 uv run zlight test-ble-endpoints --name-contains MOLUS --json
+uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
+uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
 ```
+
+`mesh-probe` sends a Bluetooth Mesh provisioning invite on `1827/2ADB` and
+decodes capabilities from `2ADC`. On the local G60 this confirms the light is
+reachable as an unprovisioned mesh node; it is a setup-discovery primitive, not
+finished brightness/CCT control.
+
+`mesh-handshake` keeps one CoreBluetooth connection open and sends the invite,
+no-OOB provisioning start, and provisioner public key. It requires the `mesh`
+extra for P-256 key generation. A complete response should include the
+provisionee public key and derived ECDH secret; this is still pre-control setup,
+not a finished light-output command.
 
 ## Local Bridges
 

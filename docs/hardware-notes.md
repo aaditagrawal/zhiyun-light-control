@@ -115,6 +115,23 @@ for the same `DEVICE_INFO` probe. Object reads, register, and
 brightness/CCT/sleep writes still time out on the confirmed `FEE9` endpoint, so
 BLE control routing remains unidentified.
 
+Reverse engineering of the official Vega Android bundle then showed that
+`1827` is not a Zhiyun runtime-frame channel; it is the Bluetooth Mesh
+Provisioning bearer. Sending a PB-GATT wrapped provisioning invite (`030005`) to
+`1827/2ADB` produced a valid capabilities response from the attached G60:
+`03010100010001000000000000`. Decoded: one element, FIPS P-256 ECDH, no public
+key OOB, static OOB supported, and no input/output OOB. This confirms the light is in
+the unprovisioned mesh stage and that proper control requires completing the
+mesh provisioning / proxy / app-key pipeline before native light commands can be
+expected to work.
+
+The SDK now has a `mesh-handshake` probe that sends invite, no-OOB provisioning
+start (`03020000000000`), and a generated provisioner public key in one
+CoreBluetooth connection. After rebuilding the macOS helper, Bluetooth
+authorization returned to `not_determined`, so this probe could not be
+re-validated until `ZhiyunBleScan` is allowed again in macOS Privacy & Security
+> Bluetooth.
+
 Direct Swift/Python processes without an app bundle were killed by macOS TCC
 before scan results were returned, which matches the bleak worker `SIGABRT`
 diagnostics. Use `zlight ble-helper --ensure --open-settings` to build the

@@ -28,7 +28,11 @@ YC_SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb"
 YC_WRITE_UUID = "0000ffe1-0000-1000-8000-00805f9b34fb"
 YC_NOTIFY_UUID = "0000ffe2-0000-1000-8000-00805f9b34fb"
 MESH_PROVISIONING_SERVICE_UUID = "00001827-0000-1000-8000-00805f9b34fb"
+MESH_PROVISIONING_WRITE_UUID = "00002adb-0000-1000-8000-00805f9b34fb"
+MESH_PROVISIONING_NOTIFY_UUID = "00002adc-0000-1000-8000-00805f9b34fb"
 MESH_PROXY_SERVICE_UUID = "00001828-0000-1000-8000-00805f9b34fb"
+MESH_PROXY_WRITE_UUID = "00002add-0000-1000-8000-00805f9b34fb"
+MESH_PROXY_NOTIFY_UUID = "00002ade-0000-1000-8000-00805f9b34fb"
 KNOWN_ZHIYUN_SERVICE_UUIDS = {
     DIRECT_ZY_SERVICE_UUID,
     LEGACY_ZY_SERVICE_UUID,
@@ -73,9 +77,27 @@ YC_PROFILE = BleProfile(
     write_uuid=YC_WRITE_UUID,
     notify_uuid=YC_NOTIFY_UUID,
 )
+MESH_PROVISIONING_PROFILE = BleProfile(
+    name="mesh-provisioning",
+    service_uuid=MESH_PROVISIONING_SERVICE_UUID,
+    write_uuid=MESH_PROVISIONING_WRITE_UUID,
+    notify_uuid=MESH_PROVISIONING_NOTIFY_UUID,
+)
+MESH_PROXY_PROFILE = BleProfile(
+    name="mesh-proxy",
+    service_uuid=MESH_PROXY_SERVICE_UUID,
+    write_uuid=MESH_PROXY_WRITE_UUID,
+    notify_uuid=MESH_PROXY_NOTIFY_UUID,
+)
 BLE_PROFILES = {
     profile.name: profile
-    for profile in (DIRECT_ZY_PROFILE, LEGACY_ZY_PROFILE, YC_PROFILE)
+    for profile in (
+        DIRECT_ZY_PROFILE,
+        LEGACY_ZY_PROFILE,
+        YC_PROFILE,
+        MESH_PROVISIONING_PROFILE,
+        MESH_PROXY_PROFILE,
+    )
 }
 BLE_PROFILE_NAMES = tuple(BLE_PROFILES)
 DEFAULT_BLE_PROFILE = DIRECT_ZY_PROFILE
@@ -236,6 +258,31 @@ class BleExchangeResult:
             "error": self.error,
             "returncode": self.returncode,
             "signal": self.signal_name,
+            "worker_python": self.worker_python,
+        }
+
+
+@dataclass(frozen=True)
+class BleSequenceExchangeResult:
+    ok: bool
+    tx: tuple[bytes, ...]
+    rx: tuple[bytes, ...] = ()
+    rx_combined: bytes = b""
+    address: str | None = None
+    error: str | None = None
+    returncode: int | None = None
+    worker_python: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "address": self.address,
+            "tx_hexes": [item.hex() for item in self.tx],
+            "rx_hexes": [item.hex() if item else None for item in self.rx],
+            "rx_hex": self.rx_combined.hex() if self.rx_combined else None,
+            "sent": bool(self.tx),
+            "error": self.error,
+            "returncode": self.returncode,
             "worker_python": self.worker_python,
         }
 
@@ -918,6 +965,67 @@ def exchange_zhiyun_ble_macos_app(
     )
 
 
+def exchange_zhiyun_ble_sequence_macos_app(
+    tx: Iterable[bytes],
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+    service_uuid: str | None = None,
+    write_uuid: str | None = None,
+    notify_uuid: str | None = None,
+    timeout: float = 5.0,
+) -> BleSequenceExchangeResult:
+    from ..macos_ble_app import run_macos_ble_app
+
+    tx_items = tuple(tx)
+    resolved = resolve_ble_profile(
+        profile,
+        service_uuid=service_uuid,
+        write_uuid=write_uuid,
+        notify_uuid=notify_uuid,
+    )
+    args = [
+        "exchange-sequence",
+        "--tx-hexes",
+        ",".join(item.hex() for item in tx_items),
+        "--timeout",
+        str(timeout),
+        "--service-uuid",
+        resolved.service_uuid,
+        "--write-uuid",
+        resolved.write_uuid,
+        "--notify-uuid",
+        resolved.notify_uuid,
+    ]
+    if address:
+        args.extend(["--address", address])
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    run = run_macos_ble_app(args, timeout=timeout)
+    if not run.ok:
+        return BleSequenceExchangeResult(
+            ok=False,
+            tx=tx_items,
+            error=run.error,
+            returncode=run.returncode,
+            worker_python="macos-app",
+        )
+    error = _payload_string(run.payload, "error")
+    rx_combined = _payload_bytes(run.payload, "rx_hex")
+    rx_items = _payload_hex_bytes_list(run.payload, "rx_hexes")
+    return BleSequenceExchangeResult(
+        ok=error is None,
+        tx=tx_items,
+        rx=rx_items,
+        rx_combined=rx_combined,
+        address=_payload_string(run.payload, "address"),
+        error=error,
+        returncode=run.returncode,
+        worker_python="macos-app",
+    )
+
+
 def resolve_ble_profile(
     profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
     *,
@@ -1159,6 +1267,35 @@ def _worker_error(stdout: str) -> str | None:
 def _payload_string(payload: dict[object, object], key: str) -> str | None:
     value = payload.get(key)
     return str(value) if value is not None else None
+
+
+def _payload_bytes(payload: dict[object, object], key: str) -> bytes:
+    value = _payload_string(payload, key)
+    if value is None:
+        return b""
+    try:
+        return bytes.fromhex(value)
+    except ValueError:
+        return b""
+
+
+def _payload_hex_bytes_list(
+    payload: dict[object, object],
+    key: str,
+) -> tuple[bytes, ...]:
+    value = payload.get(key)
+    if not isinstance(value, list):
+        return ()
+    items: list[bytes] = []
+    for item in value:
+        if item is None:
+            items.append(b"")
+            continue
+        try:
+            items.append(bytes.fromhex(str(item)))
+        except ValueError:
+            items.append(b"")
+    return tuple(items)
 
 
 def _payload_items(

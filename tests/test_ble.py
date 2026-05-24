@@ -29,7 +29,9 @@ from zhiyun_light_control.transports.ble import (
     LEGACY_ZY_NOTIFY_UUID,
     LEGACY_ZY_SERVICE_UUID,
     LEGACY_ZY_WRITE_UUID,
+    MESH_PROVISIONING_NOTIFY_UUID,
     MESH_PROVISIONING_SERVICE_UUID,
+    MESH_PROVISIONING_WRITE_UUID,
     YC_SERVICE_UUID,
     BleCharacteristic,
     BleEndpointCandidate,
@@ -42,6 +44,7 @@ from zhiyun_light_control.transports.ble import (
     MacosBleAppTransport,
     exchange_zhiyun_ble_macos_app,
     exchange_zhiyun_ble_safe,
+    exchange_zhiyun_ble_sequence_macos_app,
     inspect_zhiyun_ble_macos_app,
     inspect_zhiyun_ble_safe,
     inspect_zhiyun_device,
@@ -376,7 +379,7 @@ class SafeBleScanTests(unittest.TestCase):
                         {
                             "uuid": DIRECT_ZY_NOTIFY_UUID.upper(),
                             "properties": ["Notify"],
-                        }
+                        },
                     ],
                 }
             ],
@@ -457,7 +460,10 @@ class SafeBleScanTests(unittest.TestCase):
 
 class SafeBleExchangeTests(unittest.TestCase):
     def test_profile_names_include_known_zhiyun_surfaces(self) -> None:
-        self.assertEqual(BLE_PROFILE_NAMES, ("direct", "legacy", "yc"))
+        self.assertEqual(
+            BLE_PROFILE_NAMES,
+            ("direct", "legacy", "yc", "mesh-provisioning", "mesh-proxy"),
+        )
 
     def test_resolve_ble_profile_supports_legacy_and_custom_overrides(self) -> None:
         legacy = resolve_ble_profile("legacy")
@@ -491,7 +497,7 @@ class SafeBleExchangeTests(unittest.TestCase):
         )
         self.assertEqual(
             suggest_ble_profile(["00001827-0000-1000-8000-00805f9b34fb"]),
-            None,
+            "mesh-provisioning",
         )
 
     def test_suggest_ble_endpoint_candidates_maps_known_and_custom_pairs(self) -> None:
@@ -513,11 +519,11 @@ class SafeBleExchangeTests(unittest.TestCase):
                 uuid=MESH_PROVISIONING_SERVICE_UUID,
                 characteristics=(
                     BleCharacteristic(
-                        uuid="00002adb-0000-1000-8000-00805f9b34fb",
+                        uuid=MESH_PROVISIONING_WRITE_UUID,
                         properties=("write",),
                     ),
                     BleCharacteristic(
-                        uuid="00002adc-0000-1000-8000-00805f9b34fb",
+                        uuid=MESH_PROVISIONING_NOTIFY_UUID,
                         properties=("notify",),
                     ),
                 ),
@@ -526,11 +532,12 @@ class SafeBleExchangeTests(unittest.TestCase):
 
         candidates = suggest_ble_endpoint_candidates(services)
 
-        self.assertEqual(candidates[0].profile, "legacy")
+        self.assertEqual(
+            {candidate.profile for candidate in candidates[:2]},
+            {"legacy", "mesh-provisioning"},
+        )
         self.assertEqual(candidates[0].confidence, "known-profile")
-        self.assertEqual(candidates[1].profile, "direct")
-        self.assertEqual(candidates[1].confidence, "property-pair")
-        self.assertEqual(candidates[1].confidence_score, 75)
+        self.assertEqual(candidates[1].confidence, "known-profile")
 
     def test_safe_exchange_parses_worker_response(self) -> None:
         tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
@@ -658,6 +665,36 @@ class SafeBleExchangeTests(unittest.TestCase):
 
         self.assertFalse(result.ok)
         self.assertIn("could not parse macOS BLE app rx_hex", result.error)
+
+    def test_macos_app_sequence_exchange_reports_per_write_rx(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=True,
+            payload={
+                "address": "UUID-1",
+                "rx_hex": "aabbcc",
+                "rx_hexes": ["aa", "", "bbcc"],
+            },
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ) as run:
+            result = exchange_zhiyun_ble_sequence_macos_app(
+                (b"\x01", b"\x02", b"\x03"),
+                address="UUID-1",
+                profile="mesh-provisioning",
+                timeout=4.0,
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.rx, (b"\xaa", b"", b"\xbb\xcc"))
+        self.assertEqual(result.rx_combined, b"\xaa\xbb\xcc")
+        helper_args = run.call_args.args[0]
+        self.assertEqual(helper_args[0], "exchange-sequence")
+        self.assertIn("--tx-hexes", helper_args)
+        self.assertIn("01,02,03", helper_args)
 
 
 class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
