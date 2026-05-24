@@ -124,6 +124,9 @@ based salts/keys, provisioner confirmation/random, session nonce/key, device
 key, and encrypted provisioning data. `mesh-provision-plan` exposes the
 encrypted provisioning-data step as an offline artifact builder so the SDK can
 verify the exact PDU before any persistent mesh setup command is added.
+`mesh-session --provision --yes` now performs that persistent provisioning data
+step in the same BLE session and verifies the Provisioning Complete PDU before
+closing the provisioning bearer.
 `mesh-setup-plan` covers the following official config phase without touching
 hardware: generated mesh UUID/network key/app key, Vega's provisioner UUID and
 device key defaults, a CDB skeleton, and the access-message payloads for

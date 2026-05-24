@@ -28,6 +28,7 @@ from zhiyun_light_control.mesh import (
     pack_mesh_key_indexes,
     parse_mesh_proxy_pdu,
     parse_provisioning_capabilities,
+    parse_provisioning_complete,
     parse_provisioning_confirmation,
     parse_provisioning_failure,
     parse_provisioning_public_key,
@@ -146,6 +147,11 @@ class MeshProvisioningTests(unittest.TestCase):
         self.assertEqual(failure.code, 4)
         self.assertEqual(failure.reason, "confirmation_failed")
         self.assertEqual(failure.to_dict()["code_hex"], "0x04")
+
+    def test_parse_provisioning_complete(self) -> None:
+        self.assertTrue(parse_provisioning_complete(bytes.fromhex("0308")))
+        with self.assertRaises(ValueError):
+            parse_provisioning_complete(bytes.fromhex("030800"))
 
     def test_provisioning_data_encryption_derives_session_secrets(self) -> None:
         shared_secret = bytes(range(32))

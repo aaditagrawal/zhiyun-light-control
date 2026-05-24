@@ -68,6 +68,7 @@ from .mesh import (
     generate_provisioner_keypair,
     generate_provisioning_random,
     parse_provisioning_capabilities,
+    parse_provisioning_complete,
     parse_provisioning_confirmation,
     parse_provisioning_failure,
     parse_provisioning_public_key,
@@ -517,6 +518,25 @@ def build_parser() -> argparse.ArgumentParser:
     )
     mesh_session.add_argument("--timeout", type=float, default=12.0)
     mesh_session.add_argument("--attention", type=parse_int, default=5)
+    mesh_session.add_argument(
+        "--provision",
+        action="store_true",
+        help="Send provisioning data in the same BLE session after confirmation.",
+    )
+    mesh_session.add_argument(
+        "--network-key-hex",
+        type=parse_hex_bytes,
+        help="16-byte Bluetooth Mesh network key. Generated if omitted.",
+    )
+    mesh_session.add_argument("--key-index", type=parse_int, default=0)
+    mesh_session.add_argument("--flags", type=parse_int, default=0)
+    mesh_session.add_argument("--iv-index", type=parse_int, default=0)
+    mesh_session.add_argument(
+        "--unicast-address",
+        type=parse_int,
+        default=0x0005,
+    )
+    mesh_session.add_argument("--yes", action="store_true")
     mesh_session.add_argument(
         "--json",
         action="store_true",
@@ -1526,6 +1546,11 @@ def cmd_mesh_handshake(args: argparse.Namespace) -> int:
 
 
 def cmd_mesh_session(args: argparse.Namespace) -> int:
+    if args.provision:
+        require_yes(
+            args,
+            "mesh-session --provision writes persistent provisioning data",
+        )
     keypair = generate_provisioner_keypair()
     invite = build_provisioning_invite(args.attention)
     start = build_provisioning_start_no_oob()
@@ -1545,6 +1570,9 @@ def cmd_mesh_session(args: argparse.Namespace) -> int:
     confirmation_verified = False
     failure: dict[str, object] | None = None
     secrets: dict[str, object] | None = None
+    provisioning_plan: dict[str, object] | None = None
+    provisioning_complete = False
+    provisioning_complete_hex: str | None = None
 
     session = open_zhiyun_ble_ipc_macos_app(
         address=args.address,
@@ -1613,6 +1641,25 @@ def cmd_mesh_session(args: argparse.Namespace) -> int:
                 provisioner_random=provisioner_random,
                 provisionee_random=provisionee_random,
             ).to_dict()
+            if args.provision:
+                network_key = args.network_key_hex or generate_network_key()
+                provision_plan = build_provisioning_data_plan(
+                    shared_secret=shared_secret,
+                    confirmation_inputs=inputs,
+                    provisioner_random=provisioner_random,
+                    provisionee_random=provisionee_random,
+                    network_key=network_key,
+                    key_index=args.key_index,
+                    flags=args.flags,
+                    iv_index=args.iv_index,
+                    unicast_address=args.unicast_address,
+                )
+                provisioning_plan = provision_plan.to_dict()
+                frames.append(provision_plan.pdu)
+                complete_rx = session.exchange(provision_plan.pdu, timeout=args.timeout)
+                rx_values.append(complete_rx)
+                provisioning_complete = parse_provisioning_complete(complete_rx)
+                provisioning_complete_hex = complete_rx.hex()
             session_result = session.close()
     except Exception as exc:
         error = str(exc)
@@ -1624,7 +1671,11 @@ def cmd_mesh_session(args: argparse.Namespace) -> int:
             parse_errors.append(f"close: {close_exc}")
 
     payload = {
-        "ok": bool(confirmation_verified and error is None),
+        "ok": bool(
+            confirmation_verified
+            and error is None
+            and (not args.provision or provisioning_complete)
+        ),
         "probe": "mesh_provisioning_dynamic_session",
         "attention": args.attention,
         "exchange": session_result.to_dict() if session_result else None,
@@ -1644,10 +1695,16 @@ def cmd_mesh_session(args: argparse.Namespace) -> int:
         ),
         "confirmation_verified": confirmation_verified,
         "session_secrets": secrets,
+        "provisioning_requested": args.provision,
+        "provisioning_plan": provisioning_plan,
+        "provisioning_complete": provisioning_complete,
+        "provisioning_complete_hex": provisioning_complete_hex,
         "failure": failure,
         "error": error,
         "parse_errors": parse_errors,
-        "complete": bool(confirmation_verified),
+        "complete": bool(
+            confirmation_verified and (not args.provision or provisioning_complete)
+        ),
     }
     print_json(payload, compact=args.json)
     return 0 if payload["ok"] else 2

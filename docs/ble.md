@@ -216,6 +216,18 @@ between provisioning sessions. The command stops before provisioning data by
 default; sending provisioning data is persistent mesh setup and should be a
 separate, explicit operation.
 
+The persistent version keeps the same connection open and sends the encrypted
+Provisioning Data PDU after the provisionee random is verified:
+
+```sh
+uv run --extra mesh zlight mesh-session --name-contains PL103 \
+  --provision --network-key-hex "$NETWORK_KEY_HEX" --yes --json
+```
+
+Successful provisioning reports `provisioning_complete=true` and
+`provisioning_complete_hex=0308`. The output `provisioning_plan.network_key_hex`
+and `session_secrets.device_key_hex` are the inputs for `mesh-config-send`.
+
 Once a session completes, save the JSON output and build the next send artifact
 offline:
 

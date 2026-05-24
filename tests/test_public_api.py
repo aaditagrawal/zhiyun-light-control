@@ -154,6 +154,7 @@ STABLE_PUBLIC_API = (
     "parse_mesh_proxy_pdu",
     "parse_provisioning_confirmation",
     "parse_provisioning_capabilities",
+    "parse_provisioning_complete",
     "parse_provisioning_failure",
     "parse_provisioning_public_key",
     "parse_provisioning_random",

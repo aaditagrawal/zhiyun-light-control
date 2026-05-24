@@ -16,6 +16,7 @@ PROVISIONING_PUBLIC_KEY = 0x03
 PROVISIONING_CONFIRMATION = 0x05
 PROVISIONING_RANDOM = 0x06
 PROVISIONING_DATA = 0x07
+PROVISIONING_COMPLETE = 0x08
 PROVISIONING_FAILED = 0x09
 
 FIPS_P256_ECDH_ALGORITHM = 0
@@ -1190,6 +1191,13 @@ def parse_provisioning_random(data: bytes) -> bytes:
     if len(payload) != 16:
         raise ValueError("provisioning random must be 16 bytes")
     return payload
+
+
+def parse_provisioning_complete(data: bytes) -> bool:
+    payload = _typed_provisioning_payload(data, PROVISIONING_COMPLETE)
+    if payload:
+        raise ValueError("provisioning complete must not contain payload bytes")
+    return True
 
 
 def parse_provisioning_failure(data: bytes) -> ProvisioningFailure:

@@ -245,6 +245,17 @@ frames, computed after the G60 returns its public key and sent on the same BLE
 connection. It intentionally stops before provisioning data, so it does not
 persistently add the light to a generated mesh network.
 
+To persistently provision in the same live BLE session, opt in explicitly:
+
+```sh
+uv run --extra mesh zlight mesh-session --name-contains PL103 \
+  --provision --network-key-hex "$NETWORK_KEY_HEX" --yes --json
+```
+
+This sends the encrypted Provisioning Data PDU and expects Provisioning Complete
+`0308`. Save the returned `network_key_hex` and `device_key_hex` for the Mesh
+Proxy config step.
+
 `mesh-provision-plan` is the next offline builder: it consumes a complete
 `mesh-session` JSON transcript and derives the encrypted provisioning-data PDU,
 network key metadata, session nonce/key, and device key. It does not send
