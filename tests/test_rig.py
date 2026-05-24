@@ -403,6 +403,79 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(plan["steps"][0]["command_plan"]["start_seq"], 5)
         self.assertEqual(key.scenes, [])
 
+    def test_rig_plans_fixture_groups_without_opening_transports(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {"transport": "usb", "obj": 1, "tags": ["set"]},
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "obj": 2,
+                        "tags": ["set"],
+                    },
+                },
+                "presets": {"scenes": {"look": {"brightness": 30}}},
+                "cues": {"cues": {"intro": {"steps": [{"preset": "look"}]}}},
+                "control_mode": "0x01",
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+
+        scene = rig.plan_scene(
+            "key",
+            {"brightness": 10},
+            first_word=0x0301,
+            start_seq=7,
+        )
+        preset = rig.plan_preset(
+            "fill",
+            "look",
+            overrides={"brightness": 35},
+            start_seq=11,
+        )
+        all_plan = rig.plan_all({"brightness": 12}, tag="set", start_seq=4)
+        scene_map = rig.plan_scene_map(
+            {
+                "key": {"brightness": 20},
+                "fill": {"kelvin": 5600},
+            },
+            start_seq=9,
+        )
+        cue_plan = rig.plan_named_cue_all("intro", tag="set", start_seq=20)
+
+        self.assertTrue(scene["dry_run"])
+        self.assertEqual(scene["fixture"], "key")
+        self.assertEqual(scene["transport"], "usb")
+        self.assertEqual(scene["config"]["transport"], "usb")
+        self.assertEqual(scene["scene"]["obj"], 1)
+        self.assertEqual(scene["first_word_hex"], "0x0301")
+        self.assertEqual(scene["control_mode"], 0x01)
+        self.assertEqual(scene["command_plan"]["start_seq"], 7)
+        self.assertEqual(preset["fixture"], "fill")
+        self.assertEqual(preset["transport"], "ble")
+        self.assertEqual(preset["scene"]["obj"], 2)
+        self.assertEqual(preset["scene"]["brightness"], 35.0)
+        self.assertEqual(all_plan["action"], "rig_plan_all")
+        self.assertTrue(all_plan["dry_run"])
+        self.assertTrue(all_plan["planned"])
+        self.assertEqual(all_plan["fixture_order"], ["key", "fill"])
+        self.assertEqual(all_plan["start_seq"], 4)
+        self.assertEqual(all_plan["next_seq"], 5)
+        self.assertEqual(all_plan["fixtures"]["fill"]["scene"]["obj"], 2)
+        self.assertEqual(scene_map["action"], "rig_plan_scene_map")
+        self.assertEqual(scene_map["fixtures"]["fill"]["scene"]["kelvin"], 5600)
+        self.assertEqual(cue_plan["action"], "rig_plan_named_cue_all")
+        self.assertEqual(cue_plan["fixtures"]["key"]["cue"], "intro")
+        self.assertEqual(cue_plan["fixtures"]["fill"]["steps"][0]["scene"]["obj"], 2)
+        self.assertEqual(key.scenes, [])
+        self.assertEqual(fill.scenes, [])
+
     def test_rig_can_guard_fixture_controls_with_setup_profiles(self) -> None:
         key = FakeLight("key")
         rig = LightRig(
@@ -905,6 +978,40 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["unready"], {"fill": ["set_brightness"]})
         self.assertTrue(summary["complete"])
         self.assertFalse(summary["ready"])
+
+    async def test_async_rig_plans_fixture_groups_without_io(self) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {"transport": "ble", "name_contains": "KEY", "obj": 3},
+                    "fill": {"transport": "usb", "obj": 4},
+                },
+                "presets": {"scenes": {"look": {"brightness": 45}}},
+                "cues": {"cues": {"intro": {"steps": [{"preset": "look"}]}}},
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+
+        scene = rig.plan_scene("key", {"brightness": 10}, start_seq=3)
+        all_plan = rig.plan_all({"brightness": 20}, start_seq=8)
+        cue_plan = rig.plan_named_cue_all("intro", start_seq=12)
+
+        self.assertTrue(scene["dry_run"])
+        self.assertEqual(scene["fixture"], "key")
+        self.assertEqual(scene["transport"], "ble")
+        self.assertEqual(scene["scene"]["obj"], 3)
+        self.assertEqual(scene["command_plan"]["start_seq"], 3)
+        self.assertEqual(all_plan["fixture_order"], ["key", "fill"])
+        self.assertEqual(all_plan["fixtures"]["fill"]["scene"]["obj"], 4)
+        self.assertEqual(cue_plan["fixtures"]["fill"]["cue"], "intro")
+        self.assertEqual(cue_plan["fixtures"]["fill"]["steps"][0]["scene"]["obj"], 4)
+        self.assertEqual(key.scenes, [])
+        self.assertEqual(fill.scenes, [])
 
     async def test_async_apply_all_uses_fixture_object_defaults(self) -> None:
         key = AsyncFakeLight("key")

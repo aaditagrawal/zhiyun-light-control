@@ -341,6 +341,9 @@ helpers for hosts that only want this guard on selected cues.
 `setup_profile_summary_all(primitives=...)` gives hosts a no-I/O rig capability
 matrix from saved setup evidence, including missing profiles and unready
 primitive names per fixture.
+Rig planning helpers (`plan_scene`, `plan_preset`, `plan_sequence`,
+`plan_named_cue`, and their group variants) also run without opening USB/BLE and
+return the exact per-fixture command plans used by apply helpers.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

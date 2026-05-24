@@ -1204,6 +1204,11 @@ matrix across a fixture group. It reports each fixture's saved profile,
 transport/config, selected primitive readiness, missing profiles, and unready
 fixture names without opening USB or BLE.
 
+Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
+`plan_sequence()`, `plan_named_cue()`, `plan_all()`, `plan_scene_map()`, or
+`plan_named_cue_all()` to preview exact per-fixture command plans before a
+timeline, show controller, or bridge decides to send USB/BLE writes.
+
 Use `rig.require_setup_profile("key", "read_status")` to fail fast from saved
 profile evidence before opening the transport, or
 `rig.require_setup_profile_primitive("key", "set_brightness")` to gate by SDK

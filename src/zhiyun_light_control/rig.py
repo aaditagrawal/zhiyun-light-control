@@ -27,7 +27,7 @@ from .profiles import (
 from .profiles import (
     setup_profile_summary as _setup_profile_summary,
 )
-from .protocol import DEFAULT_CONTROL_MODE
+from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .state import SceneStateTracker
 
 
@@ -325,6 +325,154 @@ class LightRig:
             for name in self._selected_fixture_names(fixture_names, tag=tag)
         }
         return _rig_response("rig_capabilities", responses, stopped=False)
+
+    def plan_scene(
+        self,
+        name: str,
+        scene: SceneInput,
+        *,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_scene(
+            scene,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_preset(
+        self,
+        name: str,
+        preset: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_preset(
+            preset,
+            overrides=overrides,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_sequence(
+        self,
+        name: str,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_sequence(
+            steps,
+            obj=fixture.obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_named_cue(
+        self,
+        name: str,
+        cue: str,
+        *,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_named_cue(
+            cue,
+            obj=fixture.obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_all(
+        self,
+        scene: SceneInput,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.plan_scene(
+                name,
+                scene,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_plan_response("rig_plan_all", responses)
+
+    def plan_scene_map(
+        self,
+        scenes: Mapping[str, SceneInput],
+        *,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        responses = {
+            str(name): self.plan_scene(
+                str(name),
+                scene,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
+            for name, scene in scenes.items()
+        }
+        return _rig_plan_response("rig_plan_scene_map", responses)
+
+    def plan_named_cue_all(
+        self,
+        cue: str,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.plan_named_cue(
+                name,
+                cue,
+                stop_on_unconfirmed=stop_on_unconfirmed,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_plan_response("rig_plan_named_cue_all", responses)
 
     def snapshot(
         self,
@@ -976,6 +1124,154 @@ class AsyncLightRig:
             for name in self._selected_fixture_names(fixture_names, tag=tag)
         }
         return _rig_response("rig_capabilities", responses, stopped=False)
+
+    def plan_scene(
+        self,
+        name: str,
+        scene: SceneInput,
+        *,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_scene(
+            scene,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_preset(
+        self,
+        name: str,
+        preset: str,
+        *,
+        overrides: Mapping[str, object] | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_preset(
+            preset,
+            overrides=overrides,
+            obj=fixture.obj,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_sequence(
+        self,
+        name: str,
+        steps: Iterable[Mapping[str, object]],
+        *,
+        stop_on_unconfirmed: bool = False,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_sequence(
+            steps,
+            obj=fixture.obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_named_cue(
+        self,
+        name: str,
+        cue: str,
+        *,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        fixture = self.fixture(name)
+        payload = self.controller(name).plan_named_cue(
+            cue,
+            obj=fixture.obj,
+            stop_on_unconfirmed=stop_on_unconfirmed,
+            control_mode=control_mode,
+            first_word=first_word,
+            start_seq=start_seq,
+        )
+        return _fixture_plan_response(fixture, payload)
+
+    def plan_all(
+        self,
+        scene: SceneInput,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.plan_scene(
+                name,
+                scene,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_plan_response("rig_plan_all", responses)
+
+    def plan_scene_map(
+        self,
+        scenes: Mapping[str, SceneInput],
+        *,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        responses = {
+            str(name): self.plan_scene(
+                str(name),
+                scene,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
+            for name, scene in scenes.items()
+        }
+        return _rig_plan_response("rig_plan_scene_map", responses)
+
+    def plan_named_cue_all(
+        self,
+        cue: str,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        stop_on_unconfirmed: bool | None = None,
+        control_mode: int | None = None,
+        first_word: int = RUNTIME_TYPE,
+        start_seq: int = 1,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.plan_named_cue(
+                name,
+                cue,
+                stop_on_unconfirmed=stop_on_unconfirmed,
+                control_mode=control_mode,
+                first_word=first_word,
+                start_seq=start_seq,
+            )
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_plan_response("rig_plan_named_cue_all", responses)
 
     async def snapshot(
         self,
@@ -1920,6 +2216,62 @@ def _rig_response(
         "reason": _rig_reason(fixture_responses),
         "stopped": stopped,
     }
+
+
+def _fixture_plan_response(
+    fixture: LightFixture,
+    payload: Mapping[str, object],
+) -> dict[str, object]:
+    config = (
+        fixture.setup_profile.config
+        if fixture.setup_profile is not None
+        else fixture.config
+    )
+    return {
+        "fixture": fixture.name,
+        "transport": config.transport,
+        "config": config.to_dict(),
+        "obj": fixture.obj,
+        "tags": list(fixture.tags),
+        **dict(payload),
+    }
+
+
+def _rig_plan_response(
+    action: str,
+    fixture_responses: Mapping[str, object],
+) -> dict[str, object]:
+    responses = dict(fixture_responses)
+    return {
+        "action": action,
+        "dry_run": True,
+        "fixtures": responses,
+        "planned": bool(responses),
+        "reason": "planned" if responses else "no_fixtures",
+        "fixture_order": list(responses),
+        "start_seq": _rig_plan_start_seq(responses),
+        "next_seq": _rig_plan_next_seq(responses),
+    }
+
+
+def _rig_plan_start_seq(fixture_responses: Mapping[str, object]) -> int | None:
+    starts = [
+        value
+        for response in fixture_responses.values()
+        if isinstance(response, Mapping)
+        and isinstance((value := response.get("start_seq")), int)
+    ]
+    return min(starts) if starts else None
+
+
+def _rig_plan_next_seq(fixture_responses: Mapping[str, object]) -> int | None:
+    next_values = [
+        value
+        for response in fixture_responses.values()
+        if isinstance(response, Mapping)
+        and isinstance((value := response.get("next_seq")), int)
+    ]
+    return max(next_values) if next_values else None
 
 
 def _status_response(name: str, status: StatusSnapshot) -> dict[str, object]:
