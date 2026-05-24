@@ -399,6 +399,26 @@ class LightIntegration:
             persistent=persistent,
         )
 
+    def connection_report(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        probe_status: bool = True,
+        prefer_confirmed: bool = True,
+    ) -> dict[str, object]:
+        return local_connection_report(
+            self.config,
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            probe_status=probe_status,
+            prefer_confirmed=prefer_confirmed,
+        )
+
     def best_connection(
         self,
         *,
@@ -1737,6 +1757,26 @@ class AsyncLightIntegration:
             persistent=persistent,
         )
 
+    async def connection_report(
+        self,
+        *,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        probe_status: bool = True,
+        prefer_confirmed: bool = True,
+    ) -> dict[str, object]:
+        return await local_async_connection_report(
+            self.config,
+            include_usb=include_usb,
+            include_ble=include_ble,
+            include_ble_status=include_ble_status,
+            persistent=persistent,
+            probe_status=probe_status,
+            prefer_confirmed=prefer_confirmed,
+        )
+
     async def best_connection(
         self,
         *,
@@ -2959,6 +2999,55 @@ def local_probe_connection_candidates(
     return _rank_connection_candidates(probed)
 
 
+def local_connection_report(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+    probe_status: bool = True,
+    prefer_confirmed: bool = True,
+) -> dict[str, object]:
+    resolved = config or LightConnectionConfig()
+    devices = local_devices(
+        resolved,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+    )
+    candidates = connection_candidates_from_devices(
+        devices,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        persistent=persistent,
+    )
+    routes = (
+        _probe_connection_candidate_items(candidates)
+        if probe_status
+        else candidates
+    )
+    confirmed_routes = tuple(
+        route for route in routes if _candidate_status_confirmed(route)
+    )
+    selected_route = _connection_report_selected_route(
+        routes,
+        confirmed_routes,
+        prefer_confirmed=prefer_confirmed,
+    )
+    return _connection_report_payload(
+        config=resolved,
+        devices=devices,
+        routes=routes,
+        confirmed_routes=confirmed_routes,
+        selected_route=selected_route,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        persistent=persistent,
+        probe_status=probe_status,
+        prefer_confirmed=prefer_confirmed,
+    )
+
+
 async def local_async_connection_candidates(
     config: LightConnectionConfig | None = None,
     *,
@@ -2974,6 +3063,28 @@ async def local_async_connection_candidates(
         include_ble=include_ble,
         include_ble_status=include_ble_status,
         persistent=persistent,
+    )
+
+
+async def local_async_connection_report(
+    config: LightConnectionConfig | None = None,
+    *,
+    include_usb: bool = True,
+    include_ble: bool = False,
+    include_ble_status: bool | None = None,
+    persistent: bool = False,
+    probe_status: bool = True,
+    prefer_confirmed: bool = True,
+) -> dict[str, object]:
+    return await asyncio.to_thread(
+        local_connection_report,
+        config,
+        include_usb=include_usb,
+        include_ble=include_ble,
+        include_ble_status=include_ble_status,
+        persistent=persistent,
+        probe_status=probe_status,
+        prefer_confirmed=prefer_confirmed,
     )
 
 
@@ -3803,6 +3914,14 @@ def _probe_connection_candidate(
     )
 
 
+def _probe_connection_candidate_items(
+    candidates: Iterable[LightConnectionCandidate],
+) -> tuple[LightConnectionCandidate, ...]:
+    return _rank_connection_candidates(
+        _probe_connection_candidate(candidate) for candidate in candidates
+    )
+
+
 def _status_probe_evidence(
     status: Mapping[str, object],
     confirmed: bool,
@@ -3865,6 +3984,125 @@ def _setup_selected_route(
     if routes:
         return _best_connection_candidate(routes)
     return None
+
+
+def _connection_report_selected_route(
+    routes: tuple[LightConnectionCandidate, ...],
+    confirmed_routes: tuple[LightConnectionCandidate, ...],
+    *,
+    prefer_confirmed: bool,
+) -> LightConnectionCandidate | None:
+    if prefer_confirmed and confirmed_routes:
+        return _best_connection_candidate(confirmed_routes)
+    if routes:
+        return _best_connection_candidate(routes)
+    return None
+
+
+def _connection_report_payload(
+    *,
+    config: LightConnectionConfig,
+    devices: Mapping[str, object],
+    routes: tuple[LightConnectionCandidate, ...],
+    confirmed_routes: tuple[LightConnectionCandidate, ...],
+    selected_route: LightConnectionCandidate | None,
+    include_usb: bool,
+    include_ble: bool,
+    persistent: bool,
+    probe_status: bool,
+    prefer_confirmed: bool,
+) -> dict[str, object]:
+    best_route = routes[0] if routes else None
+    best_confirmed = confirmed_routes[0] if confirmed_routes else None
+    ble_summary = _connection_report_ble_summary(devices)
+    selected_config = (
+        None if selected_route is None else selected_route.config.to_dict()
+    )
+    selected_transport = None if selected_route is None else selected_route.transport
+    return {
+        "api": "zhiyun-light-control",
+        "ok": selected_route is not None,
+        "configured_transport": config.transport,
+        "include_usb": include_usb,
+        "include_ble": include_ble,
+        "persistent": persistent,
+        "probe_status": probe_status,
+        "prefer_confirmed": prefer_confirmed,
+        "devices": dict(devices),
+        "candidates": [route.to_dict() for route in routes],
+        "confirmed_candidates": [
+            route.to_dict() for route in confirmed_routes
+        ],
+        "best": None if best_route is None else best_route.to_dict(),
+        "best_confirmed": (
+            None if best_confirmed is None else best_confirmed.to_dict()
+        ),
+        "selected": None if selected_route is None else selected_route.to_dict(),
+        "selected_config": selected_config,
+        "summary": {
+            "candidate_count": len(routes),
+            "confirmed_count": len(confirmed_routes),
+            "selected_transport": selected_transport,
+            "usb_available": _connection_report_usb_available(devices),
+            "ble_included": include_ble,
+            **ble_summary,
+        },
+    }
+
+
+def _connection_report_usb_available(devices: Mapping[str, object]) -> bool:
+    usb = _mapping_value(devices, "usb")
+    return bool(usb and usb.get("available") is True)
+
+
+def _connection_report_ble_summary(
+    devices: Mapping[str, object],
+) -> dict[str, object]:
+    ble = _mapping_value(devices, "ble")
+    if ble is None:
+        return {
+            "ble_authorization": None,
+            "ble_state": None,
+            "ble_blocked": False,
+            "ble_blocker": None,
+        }
+    macos_status = _mapping_value(ble, "macos_status")
+    scan = _mapping_value(ble, "scan")
+    blocker = _connection_report_ble_blocker(macos_status, scan)
+    return {
+        "ble_authorization": None
+        if macos_status is None
+        else macos_status.get("authorization"),
+        "ble_state": None if macos_status is None else macos_status.get("state"),
+        "ble_blocked": blocker is not None,
+        "ble_blocker": blocker,
+    }
+
+
+def _connection_report_ble_blocker(
+    macos_status: Mapping[str, object] | None,
+    scan: Mapping[str, object] | None,
+) -> str | None:
+    if macos_status is not None and macos_status.get("ok") is False:
+        return _string_or_none(macos_status.get("error")) or "Bluetooth unavailable"
+    if scan is not None and scan.get("ok") is False:
+        return _string_or_none(scan.get("error")) or "BLE scan failed"
+    return None
+
+
+def _mapping_value(
+    payload: Mapping[str, object],
+    key: str,
+) -> Mapping[str, object] | None:
+    value = payload.get(key)
+    return value if isinstance(value, Mapping) else None
+
+
+def _string_or_none(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value)
+    return text if text else None
 
 
 def _setup_report_payload(

@@ -1204,6 +1204,13 @@ matrix across a fixture group. It reports each fixture's saved profile,
 transport/config, selected primitive readiness, missing profiles, and unready
 fixture names without opening USB or BLE.
 
+For host applications that need one portable transport preflight, use
+`LightIntegration.connection_report(include_ble=True)` or the async equivalent.
+The report returns discovered USB/BLE devices, ranked route candidates,
+status-probed confirmation evidence, a selected SDK config, and explicit BLE
+blockers such as macOS Bluetooth authorization failures. This is the preferred
+setup-time handoff before saving a setup profile or calling `with_config()`.
+
 Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_transition()`, `plan_sequence()`, `plan_named_cue()`, `plan_all()`,
 `plan_scene_map()`, or `plan_named_cue_all()` to preview exact per-fixture

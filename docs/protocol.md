@@ -293,6 +293,10 @@ the same setup evidence between processes or operating systems. Profiles expose
 facades expose `from_setup_profile`, `from_setup_profile_file`, and
 `with_setup_profile` so host applications can rebuild SDK clients from saved
 evidence while failing fast on missing capabilities.
+`LightIntegration.connection_report(include_ble=true)` and the async equivalent
+provide the setup-time route handoff for host applications: discovered USB/BLE
+devices, ranked candidates, status-probe evidence, the selected SDK config, and
+explicit BLE blockers such as macOS Bluetooth authorization failures.
 Profiles also expose primitive-level checks. `primitive_ready("set_brightness")`
 and `require_primitive("read_brightness")` map public SDK operations to the
 evidence capabilities they require (`control_writes`, `object_reads`,
