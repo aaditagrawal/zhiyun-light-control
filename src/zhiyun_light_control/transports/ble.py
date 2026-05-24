@@ -600,12 +600,15 @@ def scan_zhiyun_devices_macos_app(
     timeout: float = 5.0,
     *,
     name_contains: str | None = None,
+    include_all: bool = False,
 ) -> BleScanResult:
     """Run BLE scanning through a macOS .app helper with Bluetooth usage plist."""
 
     from ..macos_ble_app import run_macos_ble_app
 
     args = ["scan", "--timeout", str(timeout)]
+    if include_all:
+        args.append("--include-all")
     if name_contains:
         args.extend(["--name-contains", name_contains])
     run = run_macos_ble_app(args, timeout=timeout)
@@ -617,10 +620,9 @@ def scan_zhiyun_devices_macos_app(
             returncode=run.returncode,
             worker_python="macos-app",
         )
-    devices = filter_ble_devices_by_name(
-        _ble_devices_from_payload(run.payload),
-        name_contains,
-    )
+    devices = _ble_devices_from_payload(run.payload)
+    if name_contains:
+        devices = filter_ble_devices_by_name(devices, name_contains)
     return BleScanResult(
         ok=True,
         devices=devices,

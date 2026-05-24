@@ -1970,13 +1970,18 @@ class CliTests(unittest.TestCase):
                     "1",
                     "--name-contains",
                     "PL103",
+                    "--include-all",
                 ]
             )
 
         payload = json.loads(stdout.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual(payload["devices"][0]["address"], "UUID-1")
-        scan.assert_called_once_with(timeout=1.0, name_contains="PL103")
+        scan.assert_called_once_with(
+            timeout=1.0,
+            name_contains="PL103",
+            include_all=True,
+        )
 
     def test_devices_cli_reports_transport_discovery_state(self) -> None:
         response = {

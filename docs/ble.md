@@ -191,6 +191,17 @@ between provisioning sessions. The command stops before provisioning data by
 default; sending provisioning data is persistent mesh setup and should be a
 separate, explicit operation.
 
+If `mesh-session` cannot find the light, run:
+
+```sh
+uv run zlight scan-ble --backend macos-app --include-all --timeout 10
+```
+
+This bypasses the Zhiyun advertisement filter and returns every BLE
+advertisement the helper receives. Zero devices from this broad scan means the
+macOS helper is not receiving advertisements at all or the nearby devices are
+not advertising during the scan window.
+
 The SDK also implements the provisioning cryptographic primitives needed after
 public-key exchange: confirmation inputs, confirmation key, provisioner
 confirmation, provisioner random, provisioning salt, session key, session nonce,

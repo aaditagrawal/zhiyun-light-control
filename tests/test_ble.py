@@ -274,6 +274,34 @@ class SafeBleScanTests(unittest.TestCase):
             ["scan", "--timeout", "1.0", "--name-contains", "PL103"],
         )
 
+    def test_macos_app_scan_can_include_all_advertisements(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=True,
+            payload={
+                "devices": [
+                    {"address": "UUID-1", "name": "Keyboard", "rssi": -52},
+                    {"address": "UUID-2", "name": None, "rssi": -61},
+                ]
+            },
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ) as run:
+            result = scan_zhiyun_devices_macos_app(
+                timeout=1.0,
+                include_all=True,
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            [device.address for device in result.devices],
+            ["UUID-1", "UUID-2"],
+        )
+        self.assertIn("--include-all", run.call_args.args[0])
+
     def test_macos_app_scan_reports_helper_error(self) -> None:
         run_result = MacosBleAppRun(
             ok=False,

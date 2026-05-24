@@ -153,6 +153,18 @@ hardware run failed before receiving capabilities with helper error
 `no matching BLE device found`. Re-authorize the helper before treating
 `mesh-session` hardware results as protocol evidence.
 
+A later broad helper scan with `scan-ble --backend macos-app --include-all`
+returned zero advertisements, not just zero Zhiyun-filtered devices. macOS
+Bluetooth itself was on according to `system_profiler SPBluetoothDataType`, and
+the Python/Bleak worker still aborted with `SIGABRT`. This leaves the current
+BLE blocker at the host-helper/fixture-advertising layer, before protocol
+frames can be evaluated.
+
+Read-only probes of PL103 required command IDs `0x0001`, `0x0003`, `0x0004`,
+`0x0005`, and `0x2004` with empty payloads over the acknowledged USB runtime
+frame path timed out. The only required low-numbered command currently ACKing
+over USB is still `0x0006` register-default-group.
+
 Direct Swift/Python processes without an app bundle were killed by macOS TCC
 before scan results were returned, which matches the bleak worker `SIGABRT`
 diagnostics. Use `zlight ble-helper --ensure --open-settings` to build the

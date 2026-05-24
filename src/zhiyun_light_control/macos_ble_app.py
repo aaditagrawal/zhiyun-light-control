@@ -548,6 +548,10 @@ func argument(_ name: String, default defaultValue: String? = nil) -> String? {{
     return defaultValue
 }}
 
+func hasFlag(_ name: String) -> Bool {{
+    return CommandLine.arguments.contains(name)
+}}
+
 func writeJson<T: Encodable>(_ value: T) {{
     guard let output = argument("--output") else {{
         exit(2)
@@ -662,6 +666,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     private let tx: Data?
     private let txSequence: [Data]
     private let sessionDir: String?
+    private let includeAllScan: Bool
     private var devices: [String: JsonDevice] = [:]
     private var peripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
@@ -685,6 +690,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         self.tx = argument("--tx-hex").flatMap {{ hexData($0) }}
         self.txSequence = argument("--tx-hexes").flatMap {{ hexDataList($0) }} ?? []
         self.sessionDir = argument("--session-dir")
+        self.includeAllScan = hasFlag("--include-all")
         super.init()
         self.central = CBCentralManager(delegate: self, queue: DispatchQueue.main)
         DispatchQueue.main.asyncAfter(deadline: .now() + self.timeout) {{
@@ -729,7 +735,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             rssi: RSSI.intValue,
             services: services
         )
-        if isLikelyZhiyun(device) {{
+        if includeAllScan || isLikelyZhiyun(device) {{
             devices[device.address] = device
         }}
         guard (mode == "exchange-raw" || mode == "exchange-sequence" ||

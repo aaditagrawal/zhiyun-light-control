@@ -378,6 +378,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--timeout", type=float, default=5.0)
     scan.add_argument("--name-contains", help="Filter discovered BLE names.")
     scan.add_argument(
+        "--include-all",
+        action="store_true",
+        help="With --backend macos-app, include non-Zhiyun BLE advertisements.",
+    )
+    scan.add_argument(
         "--python",
         help="Python executable for the crash-isolated BLE worker.",
     )
@@ -1201,6 +1206,7 @@ def cmd_scan_ble(args: argparse.Namespace) -> int:
         result = scan_zhiyun_devices_macos_app(
             timeout=args.timeout,
             name_contains=args.name_contains,
+            include_all=args.include_all,
         )
         print_json(result.to_dict())
         return 0 if result.ok else 2

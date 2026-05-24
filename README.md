@@ -233,6 +233,13 @@ frames, computed after the G60 returns its public key and sent on the same BLE
 connection. It intentionally stops before provisioning data, so it does not
 persistently add the light to a generated mesh network.
 
+When BLE discovery unexpectedly returns no Zhiyun devices on macOS, widen the
+scan before changing protocol code:
+
+```sh
+uv run zlight scan-ble --backend macos-app --include-all --timeout 10
+```
+
 For lower-level provisioning work, import from `zhiyun_light_control.mesh`.
 The module includes confirmation/random helpers and encrypted provisioning-data
 builders that match the Nordic Mesh flow used by Zhiyun Vega.

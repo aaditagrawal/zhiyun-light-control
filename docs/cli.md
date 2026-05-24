@@ -154,4 +154,9 @@ uv run zlight test-ble-endpoints --name-contains MOLUS --json
 uv run --extra mesh zlight mesh-session --name-contains PL103 --json
 ```
 
+On macOS, `scan-ble --backend macos-app --include-all` widens the helper scan
+to every advertisement the app can see. Use it when the Zhiyun filter returns
+zero devices and you need to distinguish a filter miss from a host Bluetooth or
+fixture-advertising problem.
+
 See [ble.md](ble.md) for profiles, macOS helper setup, and worker isolation.

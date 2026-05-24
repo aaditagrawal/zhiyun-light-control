@@ -98,6 +98,7 @@ Use the macOS helper backend after Bluetooth permission is allowed:
 uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
 uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
 uv run --extra mesh zlight mesh-session --name-contains PL103 --json
+uv run zlight scan-ble --backend macos-app --include-all --timeout 10
 ```
 
 `mesh-probe` proves the `1827/2ADB/2ADC` provisioning bearer by decoding
@@ -107,6 +108,11 @@ open and dynamically sends confirmation/random frames derived from the live
 provisionee public key. Treat this as setup progress only; actual brightness/CCT
 control still requires completing provisioning, proxy reconnect, app-key setup,
 and the Zhiyun native register/control stage.
+
+If the mesh commands report `no matching BLE device found`, use the broad
+`--include-all` scan before assuming a protocol regression. Zero devices there
+means the helper is not receiving advertisements or the fixture is not
+advertising.
 
 After the provisionee public key is available, use `zhiyun_light_control.mesh`
 helpers for confirmation inputs, provisioner confirmation/random, session
