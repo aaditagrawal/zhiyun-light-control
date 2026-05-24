@@ -1191,12 +1191,19 @@ rig JSON file:
 ```
 
 Use `rig.require_setup_profile("key", "read_status")` to fail fast from saved
-profile evidence before opening the transport.
+profile evidence before opening the transport, or
+`rig.require_setup_profile_primitive("key", "set_brightness")` to gate by SDK
+operation name. Pass `require_setup_profile_controls=True` to `LightRig`,
+`AsyncLightRig`, or the rig JSON root when all apply helpers should refuse
+unverified fixture control writes before opening USB or BLE. Individual
+`apply_scene()`, `apply_preset()`, `apply_all()`, `apply_scene_map()`, and
+`blackout()` calls also accept `require_setup_profile=True`.
 
 For host applications that need one structured preflight payload for a full
 fixture group, use the rig snapshot API. It returns the same manifest,
 capabilities, readiness, device-discovery, and pending-action shape used by the
-bridge, keyed by fixture:
+bridge, keyed by fixture. When a fixture has a profile, its snapshot includes
+the direct integration `client.setup_profile` summary.
 
 ```python
 snapshot = rig.snapshot_all(allow_control=True, include_ble_status=True)

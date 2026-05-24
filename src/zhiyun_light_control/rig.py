@@ -84,12 +84,14 @@ class LightRig:
         cue_library: CueLibrary | None = None,
         control_mode: int = DEFAULT_CONTROL_MODE,
         require_acknowledged: bool = False,
+        require_setup_profile_controls: bool = False,
     ) -> None:
         self.fixtures = _fixture_map(fixtures)
         self.preset_library = preset_library
         self.cue_library = cue_library
         self.control_mode = control_mode
         self.require_acknowledged = require_acknowledged
+        self.require_setup_profile_controls = require_setup_profile_controls
         factories = dict(light_factories or {})
         self.controllers = {
             name: LightController(
@@ -114,6 +116,7 @@ class LightRig:
         cue_library: CueLibrary | None = None,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile_controls: bool | None = None,
     ) -> LightRig:
         definition = _rig_definition_from_mapping(payload)
         return cls(
@@ -129,6 +132,11 @@ class LightRig:
                 if require_acknowledged is None
                 else require_acknowledged
             ),
+            require_setup_profile_controls=(
+                definition.require_setup_profile_controls
+                if require_setup_profile_controls is None
+                else require_setup_profile_controls
+            ),
         )
 
     @classmethod
@@ -141,6 +149,7 @@ class LightRig:
         cue_library: CueLibrary | None = None,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile_controls: bool | None = None,
     ) -> LightRig:
         return cls.from_mapping(
             load_rig_mapping(path),
@@ -149,6 +158,7 @@ class LightRig:
             cue_library=cue_library,
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
+            require_setup_profile_controls=require_setup_profile_controls,
         )
 
     def __enter__(self) -> LightRig:
@@ -166,6 +176,7 @@ class LightRig:
             "fixtures": [fixture.to_dict() for fixture in self.fixtures.values()],
             "control_mode": self.control_mode,
             "require_acknowledged": self.require_acknowledged,
+            "require_setup_profile_controls": self.require_setup_profile_controls,
         }
         if self.preset_library is not None:
             data["presets"] = self.preset_library.to_dict()
@@ -199,6 +210,16 @@ class LightRig:
             raise RigConfigError(f"fixture {name!r} has no setup profile")
         return profile.require_ready(*capabilities)
 
+    def require_setup_profile_primitive(
+        self,
+        name: str,
+        primitive: str,
+    ) -> LightSetupProfile:
+        profile = self.setup_profile(name)
+        if profile is None:
+            raise RigConfigError(f"fixture {name!r} has no setup profile")
+        return profile.require_primitive(primitive)
+
     def controller(self, name: str) -> LightController:
         self.fixture(name)
         return self.controllers[name]
@@ -208,9 +229,11 @@ class LightRig:
         name: str,
         *,
         allow_control: bool = False,
+        require_setup_profile_controls: bool | None = None,
     ) -> LightIntegration:
         fixture = self.fixture(name)
-        return LightIntegration(
+        guard = self._setup_profile_controls_guard(require_setup_profile_controls)
+        integration = LightIntegration(
             config=fixture.config,
             allow_control=allow_control,
             preset_names=_preset_names(self.preset_library),
@@ -219,6 +242,13 @@ class LightRig:
             preset_library=self.preset_library,
             cue_library=self.cue_library,
             obj=fixture.obj,
+            require_setup_profile_controls=guard,
+        )
+        if fixture.setup_profile is None:
+            return integration
+        return integration.with_setup_profile(
+            fixture.setup_profile,
+            require_controls=guard,
         )
 
     def capabilities(self, name: str) -> dict[str, object]:
@@ -497,8 +527,14 @@ class LightRig:
         *,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "scene",
+            require_setup_profile,
+        )
         response = self.controller(name).apply_scene(
             _fixture_scene(fixture, scene),
             control_mode=control_mode,
@@ -514,8 +550,14 @@ class LightRig:
         overrides: Mapping[str, object] | None = None,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "preset",
+            require_setup_profile,
+        )
         response = self.controller(name).apply_preset(
             preset,
             overrides=overrides,
@@ -534,6 +576,7 @@ class LightRig:
         stop_on_unconfirmed: bool = False,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         responses: dict[str, object] = {}
         stopped = False
@@ -543,6 +586,7 @@ class LightRig:
                 scene,
                 control_mode=control_mode,
                 require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
             )
             responses[name] = response
             if stop_on_unconfirmed and response.get("applied") is not True:
@@ -557,6 +601,7 @@ class LightRig:
         stop_on_unconfirmed: bool = False,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         responses: dict[str, object] = {}
         stopped = False
@@ -566,6 +611,7 @@ class LightRig:
                 scene,
                 control_mode=control_mode,
                 require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
             )
             responses[name] = response
             if stop_on_unconfirmed and response.get("applied") is not True:
@@ -581,6 +627,7 @@ class LightRig:
         stop_on_unconfirmed: bool = False,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         return self.apply_all(
             {"sleep": 1},
@@ -589,6 +636,7 @@ class LightRig:
             stop_on_unconfirmed=stop_on_unconfirmed,
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
+            require_setup_profile=require_setup_profile,
         )
 
     def state_snapshot(self) -> dict[str, object]:
@@ -628,6 +676,18 @@ class LightRig:
             self.fixture(name)
         return selected
 
+    def _setup_profile_controls_guard(self, explicit: bool | None) -> bool:
+        return self.require_setup_profile_controls if explicit is None else explicit
+
+    def _require_setup_profile_primitive_if_requested(
+        self,
+        name: str,
+        primitive: str,
+        require_setup_profile: bool | None,
+    ) -> None:
+        if self._setup_profile_controls_guard(require_setup_profile):
+            self.require_setup_profile_primitive(name, primitive)
+
 
 class AsyncLightRig:
     """Async named-fixture controller for BLE-native host applications."""
@@ -641,12 +701,14 @@ class AsyncLightRig:
         cue_library: CueLibrary | None = None,
         control_mode: int = DEFAULT_CONTROL_MODE,
         require_acknowledged: bool = False,
+        require_setup_profile_controls: bool = False,
     ) -> None:
         self.fixtures = _fixture_map(fixtures)
         self.preset_library = preset_library
         self.cue_library = cue_library
         self.control_mode = control_mode
         self.require_acknowledged = require_acknowledged
+        self.require_setup_profile_controls = require_setup_profile_controls
         factories = dict(light_factories or {})
         self.controllers = {
             name: AsyncLightController(
@@ -671,6 +733,7 @@ class AsyncLightRig:
         cue_library: CueLibrary | None = None,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile_controls: bool | None = None,
     ) -> AsyncLightRig:
         definition = _rig_definition_from_mapping(payload)
         return cls(
@@ -686,6 +749,11 @@ class AsyncLightRig:
                 if require_acknowledged is None
                 else require_acknowledged
             ),
+            require_setup_profile_controls=(
+                definition.require_setup_profile_controls
+                if require_setup_profile_controls is None
+                else require_setup_profile_controls
+            ),
         )
 
     @classmethod
@@ -698,6 +766,7 @@ class AsyncLightRig:
         cue_library: CueLibrary | None = None,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile_controls: bool | None = None,
     ) -> AsyncLightRig:
         return cls.from_mapping(
             load_rig_mapping(path),
@@ -706,6 +775,7 @@ class AsyncLightRig:
             cue_library=cue_library,
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
+            require_setup_profile_controls=require_setup_profile_controls,
         )
 
     async def __aenter__(self) -> AsyncLightRig:
@@ -723,6 +793,7 @@ class AsyncLightRig:
             "fixtures": [fixture.to_dict() for fixture in self.fixtures.values()],
             "control_mode": self.control_mode,
             "require_acknowledged": self.require_acknowledged,
+            "require_setup_profile_controls": self.require_setup_profile_controls,
         }
         if self.preset_library is not None:
             data["presets"] = self.preset_library.to_dict()
@@ -756,6 +827,16 @@ class AsyncLightRig:
             raise RigConfigError(f"fixture {name!r} has no setup profile")
         return profile.require_ready(*capabilities)
 
+    def require_setup_profile_primitive(
+        self,
+        name: str,
+        primitive: str,
+    ) -> LightSetupProfile:
+        profile = self.setup_profile(name)
+        if profile is None:
+            raise RigConfigError(f"fixture {name!r} has no setup profile")
+        return profile.require_primitive(primitive)
+
     def controller(self, name: str) -> AsyncLightController:
         self.fixture(name)
         return self.controllers[name]
@@ -765,9 +846,11 @@ class AsyncLightRig:
         name: str,
         *,
         allow_control: bool = False,
+        require_setup_profile_controls: bool | None = None,
     ) -> AsyncLightIntegration:
         fixture = self.fixture(name)
-        return AsyncLightIntegration(
+        guard = self._setup_profile_controls_guard(require_setup_profile_controls)
+        integration = AsyncLightIntegration(
             config=fixture.config,
             allow_control=allow_control,
             preset_names=_preset_names(self.preset_library),
@@ -776,6 +859,13 @@ class AsyncLightRig:
             preset_library=self.preset_library,
             cue_library=self.cue_library,
             obj=fixture.obj,
+            require_setup_profile_controls=guard,
+        )
+        if fixture.setup_profile is None:
+            return integration
+        return integration.with_setup_profile(
+            fixture.setup_profile,
+            require_controls=guard,
         )
 
     def capabilities(self, name: str) -> dict[str, object]:
@@ -1054,8 +1144,14 @@ class AsyncLightRig:
         *,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "scene",
+            require_setup_profile,
+        )
         response = await self.controller(name).apply_scene(
             _fixture_scene(fixture, scene),
             control_mode=control_mode,
@@ -1071,8 +1167,14 @@ class AsyncLightRig:
         overrides: Mapping[str, object] | None = None,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         fixture = self.fixture(name)
+        self._require_setup_profile_primitive_if_requested(
+            name,
+            "preset",
+            require_setup_profile,
+        )
         response = await self.controller(name).apply_preset(
             preset,
             overrides=overrides,
@@ -1091,6 +1193,7 @@ class AsyncLightRig:
         stop_on_unconfirmed: bool = False,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         responses: dict[str, object] = {}
         stopped = False
@@ -1100,6 +1203,7 @@ class AsyncLightRig:
                 scene,
                 control_mode=control_mode,
                 require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
             )
             responses[name] = response
             if stop_on_unconfirmed and response.get("applied") is not True:
@@ -1114,6 +1218,7 @@ class AsyncLightRig:
         stop_on_unconfirmed: bool = False,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         responses: dict[str, object] = {}
         stopped = False
@@ -1123,6 +1228,7 @@ class AsyncLightRig:
                 scene,
                 control_mode=control_mode,
                 require_acknowledged=require_acknowledged,
+                require_setup_profile=require_setup_profile,
             )
             responses[name] = response
             if stop_on_unconfirmed and response.get("applied") is not True:
@@ -1138,6 +1244,7 @@ class AsyncLightRig:
         stop_on_unconfirmed: bool = False,
         control_mode: int | None = None,
         require_acknowledged: bool | None = None,
+        require_setup_profile: bool | None = None,
     ) -> dict[str, object]:
         return await self.apply_all(
             {"sleep": 1},
@@ -1146,6 +1253,7 @@ class AsyncLightRig:
             stop_on_unconfirmed=stop_on_unconfirmed,
             control_mode=control_mode,
             require_acknowledged=require_acknowledged,
+            require_setup_profile=require_setup_profile,
         )
 
     def state_snapshot(self) -> dict[str, object]:
@@ -1185,6 +1293,18 @@ class AsyncLightRig:
             self.fixture(name)
         return selected
 
+    def _setup_profile_controls_guard(self, explicit: bool | None) -> bool:
+        return self.require_setup_profile_controls if explicit is None else explicit
+
+    def _require_setup_profile_primitive_if_requested(
+        self,
+        name: str,
+        primitive: str,
+        require_setup_profile: bool | None,
+    ) -> None:
+        if self._setup_profile_controls_guard(require_setup_profile):
+            self.require_setup_profile_primitive(name, primitive)
+
 
 def fixture_from_mapping(payload: Mapping[str, object]) -> LightFixture:
     name = payload.get("name")
@@ -1215,6 +1335,7 @@ def rig_from_mapping(
     cue_library: CueLibrary | None = None,
     control_mode: int | None = None,
     require_acknowledged: bool | None = None,
+    require_setup_profile_controls: bool | None = None,
 ) -> LightRig:
     return LightRig.from_mapping(
         payload,
@@ -1223,6 +1344,7 @@ def rig_from_mapping(
         cue_library=cue_library,
         control_mode=control_mode,
         require_acknowledged=require_acknowledged,
+        require_setup_profile_controls=require_setup_profile_controls,
     )
 
 
@@ -1234,6 +1356,7 @@ def async_rig_from_mapping(
     cue_library: CueLibrary | None = None,
     control_mode: int | None = None,
     require_acknowledged: bool | None = None,
+    require_setup_profile_controls: bool | None = None,
 ) -> AsyncLightRig:
     return AsyncLightRig.from_mapping(
         payload,
@@ -1242,6 +1365,7 @@ def async_rig_from_mapping(
         cue_library=cue_library,
         control_mode=control_mode,
         require_acknowledged=require_acknowledged,
+        require_setup_profile_controls=require_setup_profile_controls,
     )
 
 
@@ -1253,6 +1377,7 @@ def load_rig(
     cue_library: CueLibrary | None = None,
     control_mode: int | None = None,
     require_acknowledged: bool | None = None,
+    require_setup_profile_controls: bool | None = None,
 ) -> LightRig:
     return LightRig.load(
         path,
@@ -1261,6 +1386,7 @@ def load_rig(
         cue_library=cue_library,
         control_mode=control_mode,
         require_acknowledged=require_acknowledged,
+        require_setup_profile_controls=require_setup_profile_controls,
     )
 
 
@@ -1272,6 +1398,7 @@ def load_async_rig(
     cue_library: CueLibrary | None = None,
     control_mode: int | None = None,
     require_acknowledged: bool | None = None,
+    require_setup_profile_controls: bool | None = None,
 ) -> AsyncLightRig:
     return AsyncLightRig.load(
         path,
@@ -1280,6 +1407,7 @@ def load_async_rig(
         cue_library=cue_library,
         control_mode=control_mode,
         require_acknowledged=require_acknowledged,
+        require_setup_profile_controls=require_setup_profile_controls,
     )
 
 
@@ -1302,6 +1430,7 @@ class _RigDefinition:
     cue_library: CueLibrary | None
     control_mode: int
     require_acknowledged: bool
+    require_setup_profile_controls: bool
 
 
 def _rig_definition_from_mapping(payload: Mapping[str, object]) -> _RigDefinition:
@@ -1311,6 +1440,9 @@ def _rig_definition_from_mapping(payload: Mapping[str, object]) -> _RigDefinitio
         cue_library=_cue_library_from_mapping(payload),
         control_mode=_mapping_int(payload, "control_mode", DEFAULT_CONTROL_MODE),
         require_acknowledged=bool(payload.get("require_acknowledged", False)),
+        require_setup_profile_controls=bool(
+            payload.get("require_setup_profile_controls", False)
+        ),
     )
 
 

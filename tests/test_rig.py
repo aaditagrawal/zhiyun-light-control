@@ -284,22 +284,101 @@ class LightRigTests(unittest.TestCase):
         key = FakeLight("key")
         rig = rig_from_mapping(
             {
-                "fixtures": [{"name": "key", "obj": 2}],
+                "fixtures": [
+                    {
+                        "name": "key",
+                        "obj": 2,
+                        "profile": setup_profile().to_dict(),
+                    }
+                ],
                 "presets": {"scenes": {"look": {"brightness": 30}}},
                 "cues": {"intro": {"steps": [{"preset": "look"}]}},
             },
             light_factories={"key": FakeFactory(key)},
         )
 
-        integration = rig.integration("key")
+        integration = rig.integration("key", require_setup_profile_controls=True)
         plan = integration.plan_named_cue("intro", start_seq=5)
+        with patch(
+            "zhiyun_light_control.integration.discover_transport_devices",
+            return_value={
+                "usb": {"available": True, "selected_port": "/dev/cu.usbmodem21301"},
+                "ble": {"macos_status": None, "scan": None},
+            },
+        ):
+            snapshot = rig.snapshot("key")
 
         self.assertEqual(integration.manifest()["presets"], ["look"])
         self.assertEqual(integration.capabilities()["cues"], ["intro"])
+        self.assertTrue(integration.require_setup_profile_controls)
+        self.assertTrue(integration.setup_profile_primitive_ready("status"))
+        self.assertFalse(integration.setup_profile_primitive_ready("brightness"))
+        self.assertTrue(snapshot["snapshot"]["client"]["setup_profile"]["present"])
         self.assertEqual(plan["cue"], "intro")
         self.assertEqual(plan["steps"][0]["scene"]["obj"], 2)
         self.assertEqual(plan["steps"][0]["command_plan"]["start_seq"], 5)
         self.assertEqual(key.scenes, [])
+
+    def test_rig_can_guard_fixture_controls_with_setup_profiles(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [
+                LightFixture(
+                    "key",
+                    obj=2,
+                    setup_profile=setup_profile(),
+                )
+            ],
+            light_factories={"key": FakeFactory(key)},
+            require_setup_profile_controls=True,
+        )
+        mapped = rig_from_mapping(
+            {
+                "require_setup_profile_controls": True,
+                "fixtures": {"key": {"profile": setup_profile().to_dict()}},
+            },
+            light_factories={"key": FakeFactory(FakeLight("mapped"))},
+        )
+
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            rig.apply_scene("key", {"brightness": 35})
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            rig.apply_preset("key", "look")
+        with self.assertRaisesRegex(RigConfigError, "no setup profile"):
+            LightRig(
+                [LightFixture("missing")],
+                light_factories={"missing": FakeFactory(FakeLight("missing"))},
+                require_setup_profile_controls=True,
+            ).apply_scene("missing", {"brightness": 10})
+
+        self.assertTrue(rig.require_setup_profile_primitive("key", "status").ok)
+        self.assertTrue(mapped.require_setup_profile_controls)
+        self.assertTrue(mapped.to_dict()["require_setup_profile_controls"])
+        self.assertEqual(key.scenes, [])
+
+    def test_rig_apply_all_can_require_setup_profile_per_call(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = LightRig(
+            [
+                LightFixture("key", obj=1, setup_profile=setup_profile()),
+                LightFixture(
+                    "fill",
+                    obj=2,
+                    setup_profile=setup_profile(control_writes=True),
+                ),
+            ],
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            rig.apply_all({"brightness": 35}, require_setup_profile=True)
+
+        self.assertEqual(key.scenes, [])
+        self.assertEqual(fill.scenes, [])
 
     def test_rig_from_mapping_requires_fixtures(self) -> None:
         with self.assertRaisesRegex(RigConfigError, "fixtures"):
@@ -511,6 +590,7 @@ class LightRigTests(unittest.TestCase):
         self.assertIn("sleep", [item["name"] for item in capabilities["primitives"]])
         self.assertEqual(ready["state"]["version"], 1)
         self.assertEqual(rig.capabilities("key")["reason"], "available")
+        self.assertEqual(snapshot["client"]["setup_profile"], {"present": False})
 
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):
@@ -549,6 +629,7 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         key = AsyncFakeLight("key")
         rig = async_rig_from_mapping(
             {
+                "require_setup_profile_controls": True,
                 "fixtures": {
                     "key": {
                         "profile": setup_profile(
@@ -569,6 +650,45 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(fixture.config.address, "UUID-1")
         self.assertEqual(fixture.obj, 6)
         self.assertTrue(rig.require_setup_profile("key", "read_status").ok)
+        self.assertTrue(rig.require_setup_profile_controls)
+        integration = rig.integration("key")
+        self.assertTrue(integration.require_setup_profile_controls)
+        self.assertFalse(integration.setup_profile_primitive_ready("brightness"))
+
+    async def test_async_rig_can_guard_fixture_controls_with_setup_profiles(
+        self,
+    ) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = AsyncLightRig(
+            [
+                LightFixture("key", obj=1, setup_profile=setup_profile()),
+                LightFixture(
+                    "fill",
+                    obj=2,
+                    setup_profile=setup_profile(control_writes=True),
+                ),
+            ],
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+            require_setup_profile_controls=True,
+        )
+
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            await rig.apply_scene("key", {"brightness": 35})
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            await rig.apply_all({"brightness": 35})
+        with self.assertRaisesRegex(RigConfigError, "no setup profile"):
+            await AsyncLightRig(
+                [LightFixture("missing")],
+                light_factories={"missing": FakeFactory(AsyncFakeLight("missing"))},
+                require_setup_profile_controls=True,
+            ).apply_scene("missing", {"brightness": 10})
+
+        self.assertEqual(key.scenes, [])
+        self.assertEqual(fill.scenes, [])
 
     async def test_async_apply_all_uses_fixture_object_defaults(self) -> None:
         key = AsyncFakeLight("key")
@@ -740,6 +860,7 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(rig.capabilities("key")["reason"], "available")
         self.assertEqual(plan["scene"]["obj"], 3)
         self.assertEqual(plan["command_plan"]["start_seq"], 4)
+        self.assertEqual(snapshot["client"]["setup_profile"], {"present": False})
 
 
 def _result(
@@ -756,7 +877,11 @@ def _result(
     return CommandResult(cmd, tx, rx, (ack,), ack)
 
 
-def setup_profile(config: LightConnectionConfig | None = None) -> LightSetupProfile:
+def setup_profile(
+    config: LightConnectionConfig | None = None,
+    *,
+    control_writes: bool = False,
+) -> LightSetupProfile:
     resolved = config or LightConnectionConfig.usb(
         port="/dev/cu.usbmodem21301",
         persistent=True,
@@ -769,8 +894,10 @@ def setup_profile(config: LightConnectionConfig | None = None) -> LightSetupProf
             "route_confirmed": True,
             "status_ok": True,
             "ready_for": {"read_status": True},
-            "validation_ready_for": {"control_writes": False},
-            "validation_unconfirmed": ["set_brightness"],
+            "validation_ready_for": {"control_writes": control_writes},
+            "validation_unconfirmed": []
+            if control_writes
+            else ["set_brightness"],
         }
     )
 

@@ -333,7 +333,11 @@ Rig fixtures can reference the same setup evidence with `profile_path` or an
 inline `profile` object. The rig loader resolves relative `profile_path` values
 beside the rig JSON file, uses the profile's selected config for the fixture,
 and keeps the profile available through `rig.setup_profile(name)` and
-`rig.require_setup_profile(name, ...)`.
+`rig.require_setup_profile(name, ...)`. `LightRig` and `AsyncLightRig` also
+accept `require_setup_profile_controls=true`, which makes fixture apply helpers
+call `require_setup_profile_primitive` before opening the underlying USB/BLE
+transport. Per-call `require_setup_profile=true` is available on rig apply
+helpers for hosts that only want this guard on selected cues.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or
