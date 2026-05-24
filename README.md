@@ -1199,6 +1199,11 @@ Programmatic setup code can build the same saved rig shape with
 plain JSON while letting host applications generate them through the SDK instead
 of shelling out to the CLI.
 
+Use `rig.setup_profile_summary_all(primitives=(...))` for a no-I/O capability
+matrix across a fixture group. It reports each fixture's saved profile,
+transport/config, selected primitive readiness, missing profiles, and unready
+fixture names without opening USB or BLE.
+
 Use `rig.require_setup_profile("key", "read_status")` to fail fast from saved
 profile evidence before opening the transport, or
 `rig.require_setup_profile_primitive("key", "set_brightness")` to gate by SDK

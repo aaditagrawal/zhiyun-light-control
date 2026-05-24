@@ -338,6 +338,9 @@ accept `require_setup_profile_controls=true`, which makes fixture apply helpers
 call `require_setup_profile_primitive` before opening the underlying USB/BLE
 transport. Per-call `require_setup_profile=true` is available on rig apply
 helpers for hosts that only want this guard on selected cues.
+`setup_profile_summary_all(primitives=...)` gives hosts a no-I/O rig capability
+matrix from saved setup evidence, including missing profiles and unready
+primitive names per fixture.
 
 HTTP `/inspect-ble` is the BLE endpoint-discovery surface for setup tools. It
 connects through `worker`, `macos-app`, or `direct`, resolves by `address` or

@@ -464,6 +464,65 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(key.scenes, [])
         self.assertEqual(fill.scenes, [])
 
+    def test_rig_setup_profile_summary_is_no_io_fixture_preflight(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [
+                LightFixture(
+                    "key",
+                    obj=1,
+                    tags=("set",),
+                    setup_profile=setup_profile(control_writes=True),
+                ),
+                LightFixture(
+                    "fill",
+                    obj=2,
+                    tags=("set",),
+                    setup_profile=setup_profile(),
+                ),
+                LightFixture("practical", obj=3, tags=("ambient",)),
+            ],
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(FakeLight("fill")),
+                "practical": FakeFactory(FakeLight("practical")),
+            },
+            require_setup_profile_controls=True,
+        )
+
+        key_summary = rig.setup_profile_summary(
+            "key",
+            primitives=("status", "set_brightness", "read_brightness"),
+        )
+        set_summary = rig.setup_profile_summary_all(
+            tag="set",
+            primitives=("status", "set_brightness"),
+        )
+        all_summary = rig.setup_profile_summary_all(
+            primitives=("status", "set_brightness"),
+        )
+
+        self.assertEqual(key_summary["transport"], "usb")
+        self.assertEqual(key_summary["config"]["port"], "/dev/cu.usbmodem21301")
+        self.assertTrue(key_summary["setup_profile"]["present"])
+        self.assertTrue(key_summary["primitive_ready_for"]["status"])
+        self.assertTrue(key_summary["primitive_ready_for"]["set_brightness"])
+        self.assertFalse(key_summary["primitive_ready_for"]["read_brightness"])
+        self.assertFalse(key_summary["ready"])
+        self.assertEqual(key.scenes, [])
+
+        self.assertEqual(set_summary["missing_profiles"], [])
+        self.assertFalse(set_summary["ready"])
+        self.assertEqual(set_summary["unready"], {"fill": ["set_brightness"]})
+        self.assertEqual(set_summary["primitives"], ["status", "set_brightness"])
+        self.assertTrue(set_summary["require_setup_profile_controls"])
+        self.assertFalse(all_summary["complete"])
+        self.assertEqual(all_summary["missing_profiles"], ["practical"])
+        self.assertEqual(
+            all_summary["unready"]["practical"],
+            ["status", "set_brightness"],
+        )
+
     def test_rig_from_mapping_requires_fixtures(self) -> None:
         with self.assertRaisesRegex(RigConfigError, "fixtures"):
             rig_from_mapping({"presets": {}})
@@ -814,6 +873,38 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(key.scenes, [])
         self.assertEqual(fill.scenes, [])
+
+    async def test_async_rig_setup_profile_summary_is_no_io_preflight(self) -> None:
+        rig = AsyncLightRig(
+            [
+                LightFixture.from_setup_profile(
+                    "key",
+                    setup_profile(control_writes=True),
+                    tags=("set",),
+                ),
+                LightFixture("fill", setup_profile=setup_profile()),
+            ],
+            light_factories={
+                "key": FakeFactory(AsyncFakeLight("key")),
+                "fill": FakeFactory(AsyncFakeLight("fill")),
+            },
+            require_setup_profile_controls=True,
+        )
+
+        summary = rig.setup_profile_summary_all(
+            primitives=("status", "set_brightness"),
+        )
+
+        self.assertTrue(summary["fixtures"]["key"]["primitive_ready_for"]["status"])
+        self.assertTrue(
+            summary["fixtures"]["key"]["primitive_ready_for"]["set_brightness"]
+        )
+        self.assertFalse(
+            summary["fixtures"]["fill"]["primitive_ready_for"]["set_brightness"]
+        )
+        self.assertEqual(summary["unready"], {"fill": ["set_brightness"]})
+        self.assertTrue(summary["complete"])
+        self.assertFalse(summary["ready"])
 
     async def test_async_apply_all_uses_fixture_object_defaults(self) -> None:
         key = AsyncFakeLight("key")

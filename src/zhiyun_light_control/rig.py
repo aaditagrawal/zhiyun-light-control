@@ -19,7 +19,14 @@ from .integration import (
 )
 from .models import Scene
 from .presets import ScenePresetLibrary, scene_from_mapping
-from .profiles import LightSetupProfile, load_light_setup_profile
+from .profiles import (
+    LightSetupProfile,
+    load_light_setup_profile,
+    setup_profile_primitive_readiness,
+)
+from .profiles import (
+    setup_profile_summary as _setup_profile_summary,
+)
 from .protocol import DEFAULT_CONTROL_MODE
 from .state import SceneStateTracker
 
@@ -243,6 +250,34 @@ class LightRig:
         if profile is None:
             raise RigConfigError(f"fixture {name!r} has no setup profile")
         return profile.require_primitive(primitive)
+
+    def setup_profile_summary(
+        self,
+        name: str,
+        *,
+        primitives: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        return _fixture_setup_profile_summary(
+            self.fixture(name),
+            primitives=primitives,
+        )
+
+    def setup_profile_summary_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        primitives: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.setup_profile_summary(name, primitives=primitives)
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_setup_profile_summary_response(
+            responses,
+            require_setup_profile_controls=self.require_setup_profile_controls,
+            primitives=primitives,
+        )
 
     def controller(self, name: str) -> LightController:
         self.fixture(name)
@@ -866,6 +901,34 @@ class AsyncLightRig:
         if profile is None:
             raise RigConfigError(f"fixture {name!r} has no setup profile")
         return profile.require_primitive(primitive)
+
+    def setup_profile_summary(
+        self,
+        name: str,
+        *,
+        primitives: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        return _fixture_setup_profile_summary(
+            self.fixture(name),
+            primitives=primitives,
+        )
+
+    def setup_profile_summary_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        primitives: Iterable[str] | None = None,
+    ) -> dict[str, object]:
+        responses = {
+            name: self.setup_profile_summary(name, primitives=primitives)
+            for name in self._selected_fixture_names(fixture_names, tag=tag)
+        }
+        return _rig_setup_profile_summary_response(
+            responses,
+            require_setup_profile_controls=self.require_setup_profile_controls,
+            primitives=primitives,
+        )
 
     def controller(self, name: str) -> AsyncLightController:
         self.fixture(name)
@@ -1625,6 +1688,126 @@ def _fixture_scene(fixture: LightFixture, scene: SceneInput) -> Scene:
     data = dict(scene)
     data.setdefault("obj", fixture.obj)
     return scene_from_mapping(data)
+
+
+def _fixture_setup_profile_summary(
+    fixture: LightFixture,
+    *,
+    primitives: Iterable[str] | None,
+) -> dict[str, object]:
+    config = (
+        fixture.setup_profile.config
+        if fixture.setup_profile is not None
+        else fixture.config
+    )
+    data: dict[str, object] = {
+        "fixture": fixture.name,
+        "obj": fixture.obj,
+        "tags": list(fixture.tags),
+        "transport": config.transport,
+        "config": config.to_dict(),
+        "setup_profile": _setup_profile_summary(fixture.setup_profile),
+    }
+    if primitives is not None:
+        readiness = _setup_profile_primitive_readiness_for(
+            fixture.setup_profile,
+            primitives,
+        )
+        data["primitive_ready_for"] = {
+            name: item["ready"] is True for name, item in readiness.items()
+        }
+        data["primitive_readiness"] = readiness
+        data["ready"] = all(item["ready"] is True for item in readiness.values())
+    return data
+
+
+def _rig_setup_profile_summary_response(
+    responses: Mapping[str, object],
+    *,
+    require_setup_profile_controls: bool,
+    primitives: Iterable[str] | None,
+) -> dict[str, object]:
+    fixture_responses = _mapping_values(responses)
+    missing_profiles = [
+        name
+        for name, response in fixture_responses.items()
+        if _fixture_profile_present(response) is not True
+    ]
+    unready = _fixture_unready_primitives(fixture_responses)
+    data: dict[str, object] = {
+        "action": "rig_setup_profiles",
+        "fixtures": fixture_responses,
+        "require_setup_profile_controls": require_setup_profile_controls,
+        "complete": not missing_profiles,
+        "missing_profiles": missing_profiles,
+    }
+    if primitives is not None:
+        data["primitives"] = _primitive_names_from_fixture_responses(
+            fixture_responses,
+        )
+        data["ready"] = not missing_profiles and not unready
+        data["unready"] = unready
+    return data
+
+
+def _setup_profile_primitive_readiness_for(
+    profile: LightSetupProfile | None,
+    primitives: Iterable[str],
+) -> dict[str, dict[str, object]]:
+    payload: LightSetupProfile | Mapping[str, object]
+    payload = profile if profile is not None else {}
+    readiness: dict[str, dict[str, object]] = {}
+    for primitive in primitives:
+        item = setup_profile_primitive_readiness(payload, str(primitive))
+        name = str(item["primitive"])
+        readiness[name] = item
+    return readiness
+
+
+def _mapping_values(payload: Mapping[str, object]) -> dict[str, dict[str, object]]:
+    values: dict[str, dict[str, object]] = {}
+    for name, value in payload.items():
+        if isinstance(value, Mapping):
+            values[name] = {str(key): item for key, item in value.items()}
+    return values
+
+
+def _fixture_profile_present(payload: Mapping[str, object]) -> bool:
+    setup_profile = payload.get("setup_profile")
+    return isinstance(setup_profile, Mapping) and setup_profile.get("present") is True
+
+
+def _fixture_unready_primitives(
+    responses: Mapping[str, Mapping[str, object]],
+) -> dict[str, list[str]]:
+    unready: dict[str, list[str]] = {}
+    for name, response in responses.items():
+        primitive_ready = response.get("primitive_ready_for")
+        if not isinstance(primitive_ready, Mapping):
+            continue
+        names = [
+            str(primitive)
+            for primitive, ready in primitive_ready.items()
+            if ready is not True
+        ]
+        if names:
+            unready[name] = names
+    return unready
+
+
+def _primitive_names_from_fixture_responses(
+    responses: Mapping[str, Mapping[str, object]],
+) -> list[str]:
+    names: list[str] = []
+    for response in responses.values():
+        primitive_ready = response.get("primitive_ready_for")
+        if not isinstance(primitive_ready, Mapping):
+            continue
+        for primitive in primitive_ready:
+            name = str(primitive)
+            if name not in names:
+                names.append(name)
+    return names
 
 
 def _config_from_fixture_mapping(
