@@ -11,6 +11,9 @@ from zhiyun_light_control import (
     LightBridgeError,
     LightBridgeNotReady,
     LightBridgeUnconfirmed,
+    LightSetupProfile,
+    SetupProfileMissing,
+    SetupProfileNotReady,
     bridge_connection_config,
     bridge_primitive_requirements,
     bridge_primitive_requirements_map,
@@ -657,6 +660,70 @@ class HttpClientTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_client_can_guard_controls_with_setup_profile(self) -> None:
+        light = FakeLight()
+        profile = setup_profile(control_setup=True, control_writes=False)
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(
+            f"http://127.0.0.1:{server.server_port}",
+        ).with_setup_profile(profile, require_controls=True)
+        try:
+            self.assertTrue(client.setup_profile_ready("read_status"))
+            self.assertTrue(client.setup_profile_primitive_ready("register"))
+            self.assertFalse(
+                client.setup_profile_primitive_ready("set_brightness")
+            )
+            with self.assertRaisesRegex(
+                SetupProfileNotReady,
+                "control_writes",
+            ) as error:
+                client.set_brightness(10)
+            with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+                client.apply_scene({"brightness": 10})
+
+            summary = client.integration()["client"]["setup_profile"]
+            register = client.register(device_id=0)
+
+            self.assertTrue(summary["present"])
+            self.assertTrue(summary["primitive_ready_for"]["register"])
+            self.assertFalse(summary["primitive_ready_for"]["brightness"])
+            self.assertEqual(error.exception.capabilities, ("control_writes",))
+            self.assertTrue(register["acknowledged"])
+            self.assertNotIn(
+                RuntimeCommand.BRIGHTNESS,
+                [command for command, _payload in light.commands],
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_client_setup_profile_guard_requires_evidence(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(f"http://127.0.0.1:{server.server_port}")
+        try:
+            with self.assertRaises(SetupProfileMissing):
+                client.set_brightness(10, require_setup_profile=True)
+            self.assertNotIn(
+                RuntimeCommand.BRIGHTNESS,
+                [command for command, _payload in light.commands],
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_integration_snapshot_summarizes_controller_setup(self) -> None:
         light = FakeLight()
         devices = {
@@ -745,6 +812,8 @@ class HttpClientTests(unittest.TestCase):
                     "require_ready_for_controls": True,
                     "control_readiness": ["confirmed_control"],
                     "require_acknowledged_controls": False,
+                    "require_setup_profile_controls": False,
+                    "setup_profile": {"present": False},
                 },
             )
             self.assertEqual(
@@ -1218,6 +1287,44 @@ class HttpClientTests(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+
+def setup_profile(
+    *,
+    read_status: bool = True,
+    device_discovery: bool = True,
+    state_events: bool = True,
+    control_setup: bool = False,
+    object_reads: bool = False,
+    control_writes: bool = False,
+) -> LightSetupProfile:
+    return LightSetupProfile.from_setup_report(
+        {
+            "ok": True,
+            "config": {
+                "transport": "usb",
+                "port": "/dev/cu.usbmodem21301",
+            },
+            "route_confirmed": True,
+            "status_ok": read_status,
+            "ready_for": {
+                "read_status": read_status,
+                "device_discovery": device_discovery,
+                "state_events": state_events,
+                "control_requests": True,
+                "confirmed_control": control_writes,
+            },
+            "validation_ready_for": {
+                "read_status": read_status,
+                "device_discovery": device_discovery,
+                "state_events": state_events,
+                "object_reads": object_reads,
+                "control_setup": control_setup,
+                "control_writes": control_writes,
+            },
+            "validation_unconfirmed": [],
+        }
+    )
 
 
 if __name__ == "__main__":

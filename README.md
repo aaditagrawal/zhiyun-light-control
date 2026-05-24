@@ -621,6 +621,8 @@ print(setup["primitive_readiness"]["brightness"])
 print(profile.ready("read_status"), restored_profile.config.to_dict())
 print(profile.primitive_ready_for["brightness"])
 print(setup_profile_primitive_ready_for(restored_profile)["status"])
+guarded_bridge = bridge.with_setup_profile(restored_profile, require_controls=True)
+print(guarded_bridge.setup_profile_primitive_ready("brightness"))
 devices = bridge.devices(include_ble_status=True)
 print(devices_selected_usb_port(devices))
 print(devices_ble_authorization(devices), devices_ble_blocker(devices))
@@ -700,6 +702,12 @@ JSON. The helpers `setup_capabilities()`, `setup_primitive_ready()`,
 same checks on `LightBridgeClient`; standalone
 `bridge_setup_primitive_readiness(payload, name)` works on a cached setup
 report.
+Use `with_setup_profile(profile, require_controls=True)` when an HTTP bridge
+client should apply the same saved-profile primitive gates as embedded
+`LightIntegration` sessions. Individual state-changing helpers also accept
+`require_setup_profile=True`. Both paths check the profile before posting to the
+bridge, so a controller can refuse unverified primitives without depending on
+server-local state.
 Use `control_guard()`, `request_templates()`, `request_template(category, name)`,
 `request_template_body(category, name)`, `request_template_query(category, name)`,
 and `request_template_required_readiness(category, name)` to consume the

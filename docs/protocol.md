@@ -316,6 +316,10 @@ evidence. `LightBridgeClient.setup_primitive_readiness` and
 `bridge_setup_report`, `bridge_setup_primitive_readiness`, and
 `bridge_connection_config` expose that normalization for clients that fetch the
 JSON themselves.
+`LightBridgeClient.with_setup_profile(profile, require_controls=true)` attaches
+saved setup evidence to a bridge client and applies the same primitive guard
+before POSTing control requests. Per-call `require_setup_profile=true` is
+available for hosts that only want this check around specific bridge commands.
 `save_light_connection_config` and `load_light_connection_config` serialize the
 same config shape to JSON so setup tools can persist a confirmed USB port or BLE
 endpoint profile for later SDK sessions.

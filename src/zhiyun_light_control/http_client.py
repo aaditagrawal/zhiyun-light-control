@@ -14,6 +14,7 @@ from .bridge import LightConnectionConfig
 from .models import Scene
 from .profiles import (
     LightSetupProfile,
+    SetupProfileMissing,
     save_light_setup_profile,
     setup_profile_capabilities,
     setup_profile_primitive_readiness,
@@ -81,12 +82,63 @@ class LightBridgeClient:
         require_ready_for_controls: bool = False,
         control_readiness: Iterable[str] | None = None,
         require_acknowledged_controls: bool = False,
+        setup_profile: LightSetupProfile | None = None,
+        require_setup_profile_controls: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.require_ready_for_controls = require_ready_for_controls
         self.control_readiness = _control_readiness_capabilities(control_readiness)
         self.require_acknowledged_controls = require_acknowledged_controls
+        self.setup_profile_evidence = setup_profile
+        self.require_setup_profile_controls = require_setup_profile_controls
+
+    def with_setup_profile(
+        self,
+        profile: LightSetupProfile,
+        *,
+        require: str | Iterable[str] = (),
+        require_controls: bool | None = None,
+    ) -> LightBridgeClient:
+        profile.require_ready(*_setup_profile_requirements(require))
+        return LightBridgeClient(
+            self.base_url,
+            timeout=self.timeout,
+            require_ready_for_controls=self.require_ready_for_controls,
+            control_readiness=self.control_readiness,
+            require_acknowledged_controls=self.require_acknowledged_controls,
+            setup_profile=profile,
+            require_setup_profile_controls=(
+                self.require_setup_profile_controls
+                if require_controls is None
+                else require_controls
+            ),
+        )
+
+    def require_setup_profile(self, *capabilities: str) -> LightSetupProfile:
+        if self.setup_profile_evidence is None:
+            raise SetupProfileMissing()
+        return self.setup_profile_evidence.require_ready(*capabilities)
+
+    def setup_profile_ready(self, capability: str) -> bool:
+        return (
+            self.setup_profile_evidence is not None
+            and self.setup_profile_evidence.ready(capability)
+        )
+
+    def setup_profile_primitive_ready(self, primitive: str) -> bool:
+        return (
+            self.setup_profile_evidence is not None
+            and self.setup_profile_evidence.primitive_ready(primitive)
+        )
+
+    def require_setup_profile_primitive(
+        self,
+        primitive: str,
+    ) -> LightSetupProfile:
+        if self.setup_profile_evidence is None:
+            raise SetupProfileMissing()
+        return self.setup_profile_evidence.require_primitive(primitive)
 
     def health(self) -> dict[str, object]:
         return self._get("/health")
@@ -161,6 +213,12 @@ class LightBridgeClient:
             "require_ready_for_controls": self.require_ready_for_controls,
             "control_readiness": list(self.control_readiness),
             "require_acknowledged_controls": self.require_acknowledged_controls,
+            "require_setup_profile_controls": (
+                self.require_setup_profile_controls
+            ),
+            "setup_profile": _client_setup_profile_summary(
+                self.setup_profile_evidence
+            ),
         }
         return snapshot
 
@@ -614,7 +672,12 @@ class LightBridgeClient:
         device_id: int = 0,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "register",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         return self._post_control("/register", {"device_id": device_id})
 
@@ -626,7 +689,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_brightness",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         return self._post_control(
             "/brightness",
@@ -641,7 +709,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_cct",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         return self._post_control(
             "/cct",
@@ -656,7 +729,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_sleep",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         return self._post_control(
             "/sleep",
@@ -673,7 +751,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_rgb",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         return self._post_control(
             "/rgb",
@@ -692,7 +775,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "set_hsi",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         return self._post_control(
             "/hsi",
@@ -716,7 +804,12 @@ class LightBridgeClient:
         timeout: float | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "frame",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {
             "first_word": first_word,
@@ -734,7 +827,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "scene",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         payload = _scene_payload(scene)
         return self._post_control("/scene", _with_control_mode(payload, control_mode))
@@ -750,7 +848,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "transition",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {
             "to": _scene_payload(to_scene),
@@ -773,7 +876,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "preset",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         payload = {"name": name}
         if overrides is not None:
@@ -788,7 +896,12 @@ class LightBridgeClient:
         stop_on_unconfirmed: bool = False,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "sequence",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {
             "steps": [dict(step) for step in steps],
@@ -806,7 +919,12 @@ class LightBridgeClient:
         control_mode: int | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "cue",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         return self._post_control(
             "/sequence",
@@ -822,7 +940,12 @@ class LightBridgeClient:
         stop_on_unconfirmed: bool | None = None,
         require_ready: bool = False,
         required_readiness: Iterable[str] | None = None,
+        require_setup_profile: bool = False,
     ) -> dict[str, object]:
+        self._require_setup_profile_primitive_if_requested(
+            "run_named_cue",
+            require_setup_profile,
+        )
         self._require_control_readiness(require_ready, required_readiness)
         payload: dict[str, object] = {"name": name}
         if obj is not None:
@@ -866,6 +989,14 @@ class LightBridgeClient:
             capabilities = _control_readiness_capabilities(None)
         self.require_readiness(*capabilities)
 
+    def _require_setup_profile_primitive_if_requested(
+        self,
+        primitive: str,
+        require_setup_profile: bool,
+    ) -> None:
+        if require_setup_profile or self.require_setup_profile_controls:
+            self.require_setup_profile_primitive(primitive)
+
     def _request(
         self,
         method: str,
@@ -894,6 +1025,26 @@ def _scene_payload(scene: Scene | Mapping[str, object]) -> dict[str, object]:
     if isinstance(scene, Scene):
         return scene.to_dict()
     return dict(scene)
+
+
+def _setup_profile_requirements(require: str | Iterable[str]) -> tuple[str, ...]:
+    if isinstance(require, str):
+        return (require,) if require else ()
+    return tuple(str(item) for item in require)
+
+
+def _client_setup_profile_summary(
+    profile: LightSetupProfile | None,
+) -> dict[str, object]:
+    if profile is None:
+        return {"present": False}
+    return {
+        "present": True,
+        "ok": profile.ok,
+        "config": profile.config.to_dict(),
+        "capabilities": profile.capabilities,
+        "primitive_ready_for": profile.primitive_ready_for,
+    }
 
 
 def command_result_status(result: Mapping[str, object]) -> str:
