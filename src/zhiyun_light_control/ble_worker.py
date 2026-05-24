@@ -68,7 +68,12 @@ def _legacy_scan_main(argv: list[str]) -> int:
 def _scan_main(timeout: float, name_contains: str | None = None) -> int:
     try:
         devices = filter_ble_devices_by_name(
-            asyncio.run(scan_zhiyun_devices(timeout=timeout)),
+            asyncio.run(
+                scan_zhiyun_devices(
+                    timeout=timeout,
+                    name_contains=name_contains,
+                )
+            ),
             name_contains,
         )
     except Exception as exc:

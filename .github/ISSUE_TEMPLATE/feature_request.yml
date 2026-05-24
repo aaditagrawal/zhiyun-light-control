@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a new capability or workflow.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or workflow
+      description: What are you trying to accomplish?
+      placeholder: I want to control...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior, API, CLI command, or bridge endpoint you would like.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - SDK
+        - CLI
+        - HTTP bridge
+        - OSC/Art-Net/sACN bridge
+        - BLE
+        - USB
+        - Documentation
+        - Packaging/release
+        - Other
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any current workaround or different design you considered.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

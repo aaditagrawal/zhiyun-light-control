@@ -660,6 +660,10 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
                             rssi=-65,
                         ),
                     ),
+                    "five": (
+                        FakeDevice("EE", "PL103_EDFE"),
+                        FakeAdvertisement(rssi=-70),
+                    ),
                 }
 
         with patch(
@@ -668,7 +672,7 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         ):
             devices = await scan_zhiyun_devices(timeout=1.0)
 
-        self.assertEqual(len(devices), 3)
+        self.assertEqual(len(devices), 4)
         self.assertEqual(devices[0].address, "AA")
         self.assertEqual(devices[0].name, "MOLUS G60")
         self.assertEqual(devices[0].services, ())
@@ -679,6 +683,36 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(devices[2].address, "DD")
         self.assertEqual(devices[2].services, (YC_SERVICE_UUID,))
         self.assertEqual(devices[2].suggested_profile, "yc")
+        self.assertEqual(devices[3].address, "EE")
+        self.assertEqual(devices[3].name, "PL103_EDFE")
+
+    async def test_scan_name_filter_keeps_python_matches_before_profile_filter(
+        self,
+    ) -> None:
+        class FakeScanner:
+            @staticmethod
+            async def discover(timeout: float, return_adv: bool):
+                return {
+                    "one": (
+                        FakeDevice("AA", "Desk Light PL103"),
+                        FakeAdvertisement(rssi=-42),
+                    ),
+                    "two": (
+                        FakeDevice("BB", "Keyboard"),
+                        FakeAdvertisement(rssi=-50),
+                    ),
+                }
+
+        with patch(
+            "zhiyun_light_control.transports.ble._load_bleak",
+            return_value=(object, FakeScanner),
+        ):
+            devices = await scan_zhiyun_devices(
+                timeout=1.0,
+                name_contains="PL103",
+            )
+
+        self.assertEqual([device.address for device in devices], ["AA"])
 
     async def test_inspect_device_reads_gatt_services(self) -> None:
         class FakeCharacteristic:
@@ -765,6 +799,62 @@ class AsyncBleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(FakeClient.writes[0][0], DIRECT_ZY_WRITE_UUID)
         self.assertFalse(FakeClient.writes[0][2])
         self.assertEqual(first_frame(rx).cmd, RuntimeCommand.DEVICE_INFO)
+
+    async def test_transport_exchange_uses_response_for_write_only_characteristic(
+        self,
+    ) -> None:
+        class FakeWriteCharacteristic:
+            uuid = DIRECT_ZY_WRITE_UUID
+            properties = ["write"]
+
+        class FakeNotifyCharacteristic:
+            uuid = DIRECT_ZY_NOTIFY_UUID
+            properties = ["notify"]
+
+        class FakeService:
+            uuid = DIRECT_ZY_SERVICE_UUID
+            characteristics = [FakeWriteCharacteristic(), FakeNotifyCharacteristic()]
+
+        class FakeClient:
+            callback = None
+            writes: list[tuple[str, bytes, bool]] = []
+
+            def __init__(self, address: str):
+                self.address = address
+                self.services = [FakeService()]
+
+            async def connect(self) -> None:
+                return
+
+            async def disconnect(self) -> None:
+                return
+
+            async def start_notify(self, uuid: str, callback) -> None:
+                self.__class__.callback = callback
+
+            async def stop_notify(self, uuid: str) -> None:
+                return
+
+            async def write_gatt_char(
+                self, uuid: str, tx: bytes, response: bool
+            ) -> None:
+                self.__class__.writes.append((uuid, tx, response))
+                frame = first_frame(tx)
+                assert frame is not None
+                ack = build_runtime_frame(frame.seq, frame.cmd, b"\x00")
+                self.__class__.callback(uuid, bytearray(ack))
+
+        with patch(
+            "zhiyun_light_control.transports.ble._load_bleak",
+            return_value=(FakeClient, object),
+        ):
+            async with BleTransport(address="AA", timeout=1.0) as transport:
+                tx = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)
+                rx = await transport.exchange(tx, timeout=1.0)
+
+        self.assertTrue(rx)
+        self.assertEqual(FakeClient.writes[0][0], DIRECT_ZY_WRITE_UUID)
+        self.assertTrue(FakeClient.writes[0][2])
 
     async def test_transport_profile_selects_legacy_characteristics(self) -> None:
         class FakeClient:

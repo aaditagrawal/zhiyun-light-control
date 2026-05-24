@@ -6,10 +6,6 @@ Python SDK and bridge tooling for controlling Zhiyun MOLUS lights over USB CDC
 and BLE. The package is aimed at local media-production automation: scripts,
 show controllers, OSC/DMX bridges, and custom control surfaces.
 
-## Why
-
-I had a Zhiyun Molus G60 but the incomplete implementation on their tooling left me controlling settings manually, which affects long runs or programmatic scene flows. This repository is a showcase of GPT 5.5 xHigh over Codex with a long /goal to build out all tooling for this hardware with just the actual hardware plugged via USB for reference.
-
 ## Status
 
 This project is alpha hardware-control software.
@@ -49,6 +45,29 @@ On macOS, the light should usually stay on its PD power supply while the Mac is
 connected with USB-C for data. The G60 presents as a USB CDC serial device.
 
 ## Install
+
+From a published package, after the first PyPI release:
+
+```sh
+uv tool install zhiyun-light-control
+```
+
+For runtime use in an existing project:
+
+```sh
+pip install zhiyun-light-control
+uv add zhiyun-light-control
+```
+
+BLE support is optional:
+
+```sh
+pip install "zhiyun-light-control[ble]"
+uv add "zhiyun-light-control[ble]"
+```
+
+This package is not published to PyPI yet. Until a release is published, install
+from a checkout.
 
 For development from a checkout:
 
@@ -245,9 +264,9 @@ print(rig.setup_report_all())
 
 ## Documentation
 
+- [docs/index.md](docs/index.md): task-oriented docs for setup, CLI, SDK,
+  bridges, BLE, rigs, hardware notes, and protocol reference.
 - [design.md](design.md): SDK architecture and design choices.
-- [docs/protocol.md](docs/protocol.md): protocol notes, frame details,
-  bridge endpoints, readiness semantics, and hardware observations.
 - [CHANGELOG.md](CHANGELOG.md): release history.
 - [examples/](examples): sample scene, cue, rig, project, and SDK files.
 
@@ -265,6 +284,27 @@ uv build
 ```
 
 The `rg` command should exit with no matches.
+
+## Release Readiness
+
+Before publishing a release:
+
+```sh
+uv sync --extra ble --extra dev
+uv run ruff check .
+uv run pytest -q
+uv run python -m compileall -q src tests examples/sdk_quickstart.py
+uv build
+```
+
+Manual release steps still required:
+
+- Confirm `CHANGELOG.md` has the release notes.
+- Confirm the version in `pyproject.toml`.
+- Check the built files in `dist/`.
+- Publish to PyPI.
+- Create and push the matching git tag.
+- Create the GitHub release.
 
 ## License
 

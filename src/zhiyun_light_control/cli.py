@@ -34,6 +34,7 @@ from .discovery import (
     DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
     DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
     DISCOVERY_CONTROL_KIND_NAMES,
+    G60_USB_DISCOVERY_PROFILE,
     discover_usb_primitives,
 )
 from .http_client import LightBridgeClient, LightBridgeError
@@ -214,6 +215,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run a bounded USB protocol discovery matrix.",
     )
     discover.add_argument(
+        "--g60-matrix",
+        action="store_true",
+        help=(
+            "Use the G60 truth-pass matrix preset. Read probes are always safe; "
+            "control writes are still skipped unless --allow-control is also set."
+        ),
+    )
+    discover.add_argument(
         "--port",
         help="USB serial port. Defaults to the first detected USB CDC candidate.",
     )
@@ -227,13 +236,13 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument(
         "--object-ids",
         type=parse_int_list,
-        default=DEFAULT_DISCOVERY_OBJECT_IDS,
+        default=None,
         help="Comma-separated object ids to probe. Default: 0,1.",
     )
     discover.add_argument(
         "--first-words",
         type=parse_int_list,
-        default=DEFAULT_DISCOVERY_FIRST_WORDS,
+        default=None,
         help="Comma-separated frame first-word values to probe.",
     )
     discover.add_argument(
@@ -247,25 +256,25 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument(
         "--control-first-words",
         type=parse_int_list,
-        default=DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+        default=None,
         help="Comma-separated first-word values for gated control probes.",
     )
     discover.add_argument(
         "--register-device-ids",
         type=parse_int_list,
-        default=DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+        default=None,
         help="Comma-separated device ids to register before control probes.",
     )
     discover.add_argument(
         "--register-group-ids",
         type=parse_int_list,
-        default=DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+        default=None,
         help="Comma-separated group ids to register before control probes.",
     )
     discover.add_argument(
         "--control-kinds",
         type=parse_control_kind_list,
-        default=DEFAULT_DISCOVERY_CONTROL_KINDS,
+        default=None,
         help=(
             "Comma-separated control candidates to send under --allow-control. "
             "Use 'none' to skip write probes."
@@ -814,6 +823,61 @@ def parse_hex_bytes(text: str) -> bytes:
         raise argparse.ArgumentTypeError("expected hex bytes") from exc
 
 
+def usb_discovery_options_from_args(args: argparse.Namespace) -> dict[str, object]:
+    profile = G60_USB_DISCOVERY_PROFILE if args.g60_matrix else None
+    return {
+        "profile": profile.name if profile is not None else "default",
+        "object_ids": args.object_ids
+        if args.object_ids is not None
+        else (
+            profile.object_ids
+            if profile is not None
+            else DEFAULT_DISCOVERY_OBJECT_IDS
+        ),
+        "first_words": args.first_words
+        if args.first_words is not None
+        else (
+            profile.first_words
+            if profile is not None
+            else DEFAULT_DISCOVERY_FIRST_WORDS
+        ),
+        "control_object_ids": args.control_object_ids
+        if args.control_object_ids is not None
+        else (profile.control_object_ids if profile is not None else None),
+        "control_first_words": args.control_first_words
+        if args.control_first_words is not None
+        else (
+            profile.control_first_words
+            if profile is not None
+            else DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS
+        ),
+        "register_device_ids": args.register_device_ids
+        if args.register_device_ids is not None
+        else (
+            profile.register_device_ids
+            if profile is not None
+            else DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS
+        ),
+        "register_group_ids": args.register_group_ids
+        if args.register_group_ids is not None
+        else (
+            profile.register_group_ids
+            if profile is not None
+            else DEFAULT_DISCOVERY_REGISTER_GROUP_IDS
+        ),
+        "control_kinds": args.control_kinds
+        if args.control_kinds is not None
+        else (
+            profile.control_kinds
+            if profile is not None
+            else DEFAULT_DISCOVERY_CONTROL_KINDS
+        ),
+        "control_modes": args.control_modes
+        if args.control_modes is not None
+        else (profile.control_modes if profile is not None else None),
+    }
+
+
 def cmd_probe(args: argparse.Namespace) -> int:
     if args.transport == "ble":
         try:
@@ -973,17 +1037,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_discover_usb(args: argparse.Namespace) -> int:
+    options = usb_discovery_options_from_args(args)
     with sync_usb_light_from_args(args) as light:
         report = discover_usb_primitives(
             light,
-            object_ids=args.object_ids,
-            first_words=args.first_words,
-            control_object_ids=args.control_object_ids,
-            control_first_words=args.control_first_words,
-            register_device_ids=args.register_device_ids,
-            register_group_ids=args.register_group_ids,
-            control_kinds=args.control_kinds,
-            control_modes=args.control_modes,
+            profile=options["profile"],
+            object_ids=options["object_ids"],
+            first_words=options["first_words"],
+            control_object_ids=options["control_object_ids"],
+            control_first_words=options["control_first_words"],
+            register_device_ids=options["register_device_ids"],
+            register_group_ids=options["register_group_ids"],
+            control_kinds=options["control_kinds"],
+            control_modes=options["control_modes"],
             post_register_reads=args.post_register_reads,
             timeout=args.timeout,
             allow_control=args.allow_control,

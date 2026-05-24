@@ -126,6 +126,26 @@ class BleEndpointCandidateReport:
     def confirmed_candidates(self) -> tuple[BleEndpointCandidate, ...]:
         return tuple(test.candidate for test in self.tests if test.acknowledged)
 
+    @property
+    def reason(self) -> str:
+        if not self.inspect.ok:
+            return self.inspect.error or "BLE endpoint inspection failed"
+        available = len(suggest_ble_endpoint_candidates(self.inspect.services))
+        if available == 0:
+            return (
+                "BLE endpoint inspection found no writable notify/indicate "
+                "candidates"
+            )
+        if self.max_candidates == 0:
+            return "BLE endpoint testing skipped because max_candidates is 0"
+        if not self.tests:
+            return "BLE endpoint testing did not run any candidates"
+        if self.ok:
+            return "at least one BLE endpoint candidate acknowledged DEVICE_INFO"
+        return (
+            "BLE endpoint candidates were tested but none acknowledged DEVICE_INFO"
+        )
+
     def to_dict(self) -> dict[str, object]:
         return {
             "ok": self.ok,
@@ -134,6 +154,7 @@ class BleEndpointCandidateReport:
             "address": self.address,
             "name_contains": self.name_contains,
             "max_candidates": self.max_candidates,
+            "reason": self.reason,
             "inspect": self.inspect.to_dict(),
             "tests": [test.to_dict() for test in self.tests],
             "confirmed_candidates": [
@@ -447,7 +468,12 @@ def scan_ble_devices(
         )
     if backend == "direct":
         devices = filter_ble_devices_by_name(
-            asyncio.run(scan_zhiyun_devices(timeout=timeout)),
+            asyncio.run(
+                scan_zhiyun_devices(
+                    timeout=timeout,
+                    name_contains=name_contains,
+                )
+            ),
             name_contains,
         )
         return BleScanResult(

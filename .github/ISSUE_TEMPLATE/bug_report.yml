@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible software bug.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for SDK, CLI, bridge, packaging, or documentation bugs.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+      placeholder: The command failed when...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include the exact commands or minimal Python code needed to reproduce the issue.
+      placeholder: |
+        1. Run `uv run zlight ...`
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste relevant terminal output, tracebacks, or JSON responses.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Package version or commit
+      placeholder: 0.1.0 or git SHA
+  - type: dropdown
+    id: python
+    attributes:
+      label: Python version
+      options:
+        - "3.10"
+        - "3.11"
+        - "3.12"
+        - Other
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.5, Ubuntu 24.04, Windows 11
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add anything else that may help diagnose the issue.

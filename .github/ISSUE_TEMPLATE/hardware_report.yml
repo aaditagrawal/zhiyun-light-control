@@ -1,0 +1,57 @@
+name: Hardware report
+description: Share validation results for a light, firmware, transport, or host setup.
+title: "[Hardware]: "
+labels: ["hardware"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this to report verified or failed behavior on a specific Zhiyun light.
+  - type: input
+    id: model
+    attributes:
+      label: Light model
+      placeholder: MOLUS G60, MOLUS X100, etc.
+    validations:
+      required: true
+  - type: input
+    id: firmware
+    attributes:
+      label: Firmware version
+      placeholder: 1.6.4
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - USB
+        - BLE
+        - USB and BLE
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host system
+      placeholder: macOS 15.5 on Apple Silicon, Raspberry Pi OS, etc.
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation commands and output
+      description: Include commands such as `zlight devices`, `zlight probe`, `zlight status`, or `zlight validate`.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: What worked, failed, or differed from another device?
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Include cabling, power supply, OS permissions, Bluetooth pairing state, or other setup details.

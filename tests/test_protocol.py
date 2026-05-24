@@ -31,15 +31,15 @@ from zhiyun_light_control.protocol import (
 
 
 class ProtocolTests(unittest.TestCase):
-    def test_protocol_primitives_are_public_sdk_exports(self) -> None:
+    def test_protocol_primitives_are_legacy_root_imports(self) -> None:
         self.assertIs(zlight.RuntimeCommand, RuntimeCommand)
         self.assertIs(zlight.UpdaterCommand, UpdaterCommand)
         self.assertEqual(
             zlight.brightness_payload(1, 35).hex(),
             brightness_payload(1, 35).hex(),
         )
-        self.assertIn("RuntimeCommand", zlight.__all__)
-        self.assertIn("first_frame", zlight.__all__)
+        self.assertNotIn("RuntimeCommand", zlight.__all__)
+        self.assertNotIn("first_frame", zlight.__all__)
 
     def test_runtime_frame_matches_live_probe(self) -> None:
         frame = build_runtime_frame(1, RuntimeCommand.DEVICE_INFO)

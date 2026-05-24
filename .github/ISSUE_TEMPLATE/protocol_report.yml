@@ -1,0 +1,49 @@
+name: Protocol report
+description: Share command evidence, captures, or protocol observations.
+title: "[Protocol]: "
+labels: ["protocol"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for protocol evidence from commands, captures, or device behavior. Avoid firmware blobs or proprietary files.
+  - type: textarea
+    id: observation
+    attributes:
+      label: Observation
+      description: What command, frame, ACK behavior, object ID, or endpoint behavior did you observe?
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Light model and firmware
+      placeholder: MOLUS G60 firmware 1.6.4
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport
+      options:
+        - USB
+        - BLE
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Paste command output, decoded frames, or sanitized capture notes.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: interpretation
+    attributes:
+      label: Interpretation
+      description: What do you think the evidence means?
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety notes
+      description: Mention whether commands were read-only, control writes, or any risky operation.

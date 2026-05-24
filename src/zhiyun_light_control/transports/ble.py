@@ -36,6 +36,7 @@ KNOWN_ZHIYUN_SERVICE_UUIDS = {
     MESH_PROVISIONING_SERVICE_UUID,
     MESH_PROXY_SERVICE_UUID,
 }
+KNOWN_ZHIYUN_NAME_PARTS = ("zhiyun", "molus", "pl103", "g60", "zy")
 
 
 @dataclass(frozen=True)
@@ -284,6 +285,7 @@ class BleTransport:
         self.timeout = timeout
         self._client: object | None = None
         self._queue: asyncio.Queue[bytes] = asyncio.Queue()
+        self._write_response = False
 
     async def __aenter__(self) -> BleTransport:
         await self.open()
@@ -309,6 +311,7 @@ class BleTransport:
             address = matches[0].address
         client = BleakClient(address)
         await client.connect()
+        self._write_response = await _write_requires_response(client, self.write_uuid)
         await client.start_notify(self.notify_uuid, self._on_notify)
         self.address = address
         self._client = client
@@ -328,7 +331,11 @@ class BleTransport:
         if self._client is None:
             raise RuntimeError("BLE transport is not open")
         self._drain_queue()
-        await self._client.write_gatt_char(self.write_uuid, tx, response=False)
+        await self._client.write_gatt_char(
+            self.write_uuid,
+            tx,
+            response=self._write_response,
+        )
         deadline = asyncio.get_running_loop().time() + (
             self.timeout if timeout is None else timeout
         )
@@ -477,16 +484,24 @@ class MacosBleAppTransport:
         return result.rx
 
 
-async def scan_zhiyun_devices(timeout: float = 5.0) -> list[BleDevice]:
+async def scan_zhiyun_devices(
+    timeout: float = 5.0,
+    *,
+    name_contains: str | None = None,
+) -> list[BleDevice]:
     _, BleakScanner = _load_bleak()
     devices = await BleakScanner.discover(timeout=timeout, return_adv=True)
     found: list[BleDevice] = []
+    name_filter = name_contains.lower() if name_contains else None
     for device, adv in devices.values():
         service_uuids = {uuid.lower() for uuid in (adv.service_uuids or [])}
         name = device.name or adv.local_name
         name_hit = bool(
             name
-            and any(part in name.lower() for part in ("zhiyun", "molus", "g60", "zy"))
+            and (
+                any(part in name.lower() for part in KNOWN_ZHIYUN_NAME_PARTS)
+                or (name_filter is not None and name_filter in name.lower())
+            )
         )
         service_hit = bool(KNOWN_ZHIYUN_SERVICE_UUIDS & service_uuids)
         if name_hit or service_hit:
@@ -1168,6 +1183,33 @@ async def _client_services(client: object) -> object:
     if callable(get_services):
         return await get_services()
     return getattr(client, "services", ())
+
+
+async def _write_requires_response(client: object, write_uuid: str) -> bool:
+    try:
+        services = await _client_services(client)
+    except Exception:
+        return False
+    characteristic = _bleak_characteristic_by_uuid(services, write_uuid)
+    if characteristic is None:
+        return False
+    properties = {
+        str(prop).lower()
+        for prop in getattr(characteristic, "properties", ())
+    }
+    return "write" in properties and "write-without-response" not in properties
+
+
+def _bleak_characteristic_by_uuid(
+    services: object,
+    uuid: str,
+) -> object | None:
+    normalized = _uuid_string(uuid)
+    for service in services:
+        for characteristic in getattr(service, "characteristics", ()):
+            if _uuid_string(getattr(characteristic, "uuid", "")) == normalized:
+                return characteristic
+    return None
 
 
 def _services_from_bleak(services: object) -> tuple[BleService, ...]:

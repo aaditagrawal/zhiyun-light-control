@@ -73,6 +73,7 @@ class DiscoveryTests(unittest.TestCase):
         payload = report.to_dict()
         attempts = {attempt["name"]: attempt for attempt in payload["attempts"]}
 
+        self.assertEqual(payload["profile"], "default")
         self.assertTrue(attempts["global_device_info"]["confirmed"])
         self.assertEqual(attempts["read_brightness_obj1"]["status"], "sent_no_response")
         self.assertEqual(
@@ -101,6 +102,10 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(payload["control_object_ids"], [1])
         self.assertEqual(payload["control_first_words"], [0x0100])
         self.assertEqual(payload["control_modes"], [0x33, 0x01])
+        self.assertEqual(
+            payload["workflow"]["control_command"],
+            "zlight discover-usb --allow-control --json",
+        )
 
     def test_usb_discovery_can_probe_control_object_ids_and_first_words(self) -> None:
         light = FakeDiscoveryLight()

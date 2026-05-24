@@ -1,0 +1,80 @@
+{
+  "kind": "zhiyun-light-control.hardware-observation.v1",
+  "name": "molus-x100-after-upgrade-status",
+  "transport": "usb",
+  "observed_device": "MOLUS X100",
+  "exchanges": [
+    {
+      "name": "device_info",
+      "space": "runtime",
+      "command": "DEVICE_INFO",
+      "rx_hex": "243c22000100010003203038613430396530633131303031313300706c3130330000000000004f58"
+    },
+    {
+      "name": "firmware",
+      "space": "runtime",
+      "command": "FIRMWARE",
+      "rx_hex": "243c0c00010002000180312e362e340003c3"
+    },
+    {
+      "name": "voltage",
+      "space": "runtime",
+      "command": "VOLTAGE",
+      "rx_hex": ""
+    },
+    {
+      "name": "device_id",
+      "space": "runtime",
+      "command": "DEVICE_ID",
+      "rx_hex": "243c08000100060005200000b1f0"
+    },
+    {
+      "name": "updater_chip_sync",
+      "space": "updater",
+      "command": "CHIP_SYNC",
+      "rx_hex": "243c1b000103070000130048444c0000010010030041054008a40065a36075fc30"
+    },
+    {
+      "name": "updater_read_sn",
+      "space": "updater",
+      "command": "READ_SN",
+      "rx_hex": "243c1100010301000213004105130110c1e009a408cd00"
+    }
+  ],
+  "expected_status": {
+    "transport": "usb",
+    "connection_confirmed": true,
+    "device_identifier": "08a409e0c1100113",
+    "generation": "pl103",
+    "firmware": "1.6.4",
+    "voltage_status": null,
+    "device_id": 0,
+    "chip_sync": {
+      "core_id": "HDL",
+      "page_size": 256,
+      "page_count": 4096,
+      "flash_size": 1048576,
+      "bootloader": 3,
+      "product": "0x0541",
+      "hardware": "0x0840",
+      "firmware_raw": 164,
+      "updater_firmware": "1.64",
+      "serial32": 1969267557
+    },
+    "read_sn": {
+      "prefix": 0,
+      "product": "0x0541",
+      "identifier_little_endian_hex": "130110c1e009a408",
+      "device_identifier": "08a409e0c1100113",
+      "raw_hex": "004105130110c1e009a408"
+    },
+    "command_transport_statuses": {
+      "device_info": "acknowledged",
+      "firmware": "acknowledged",
+      "voltage": "sent_no_response",
+      "device_id": "acknowledged",
+      "updater_chip_sync": "acknowledged",
+      "updater_read_sn": "acknowledged"
+    }
+  }
+}

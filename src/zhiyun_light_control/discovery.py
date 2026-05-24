@@ -28,6 +28,9 @@ DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS = (RUNTIME_TYPE,)
 DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS = (0,)
 DEFAULT_DISCOVERY_REGISTER_GROUP_IDS = (0,)
 DEFAULT_DISCOVERY_CONTROL_MODES = (DEFAULT_CONTROL_MODE, LEGACY_CONTROL_MODE)
+G60_DISCOVERY_CONTROL_OBJECT_IDS = (0, 1)
+G60_DISCOVERY_CONTROL_FIRST_WORDS = DEFAULT_DISCOVERY_FIRST_WORDS
+G60_DISCOVERY_REGISTER_DEVICE_IDS = (0, 1)
 DISCOVERY_CONTROL_KIND_NAMES = (
     "sleep",
     "brightness",
@@ -35,6 +38,45 @@ DISCOVERY_CONTROL_KIND_NAMES = (
     "brightness-with-mode",
 )
 DEFAULT_DISCOVERY_CONTROL_KINDS = DISCOVERY_CONTROL_KIND_NAMES
+
+
+@dataclass(frozen=True)
+class UsbDiscoveryMatrixProfile:
+    """Named USB primitive matrix defaults for repeatable hardware passes."""
+
+    name: str
+    object_ids: tuple[int, ...]
+    first_words: tuple[int, ...]
+    control_object_ids: tuple[int, ...] | None
+    control_first_words: tuple[int, ...]
+    register_device_ids: tuple[int, ...]
+    register_group_ids: tuple[int, ...]
+    control_kinds: tuple[str, ...]
+    control_modes: tuple[int, ...]
+
+
+DEFAULT_USB_DISCOVERY_PROFILE = UsbDiscoveryMatrixProfile(
+    name="default",
+    object_ids=DEFAULT_DISCOVERY_OBJECT_IDS,
+    first_words=DEFAULT_DISCOVERY_FIRST_WORDS,
+    control_object_ids=None,
+    control_first_words=DEFAULT_DISCOVERY_CONTROL_FIRST_WORDS,
+    register_device_ids=DEFAULT_DISCOVERY_REGISTER_DEVICE_IDS,
+    register_group_ids=DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    control_kinds=DEFAULT_DISCOVERY_CONTROL_KINDS,
+    control_modes=DEFAULT_DISCOVERY_CONTROL_MODES,
+)
+G60_USB_DISCOVERY_PROFILE = UsbDiscoveryMatrixProfile(
+    name="g60",
+    object_ids=DEFAULT_DISCOVERY_OBJECT_IDS,
+    first_words=DEFAULT_DISCOVERY_FIRST_WORDS,
+    control_object_ids=G60_DISCOVERY_CONTROL_OBJECT_IDS,
+    control_first_words=G60_DISCOVERY_CONTROL_FIRST_WORDS,
+    register_device_ids=G60_DISCOVERY_REGISTER_DEVICE_IDS,
+    register_group_ids=DEFAULT_DISCOVERY_REGISTER_GROUP_IDS,
+    control_kinds=DEFAULT_DISCOVERY_CONTROL_KINDS,
+    control_modes=DEFAULT_DISCOVERY_CONTROL_MODES,
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +126,7 @@ class DiscoveryAttempt:
 class UsbDiscoveryReport:
     """Evidence report for candidate USB primitive frames."""
 
+    profile: str
     object_ids: tuple[int, ...]
     first_words: tuple[int, ...]
     control_object_ids: tuple[int, ...]
@@ -147,6 +190,7 @@ class UsbDiscoveryReport:
         status_counts = Counter(attempt.status for attempt in self.attempts)
         return {
             "transport": "usb",
+            "profile": self.profile,
             "object_ids": list(self.object_ids),
             "first_words": list(self.first_words),
             "control_object_ids": list(self.control_object_ids),
@@ -197,6 +241,7 @@ class UsbDiscoveryReport:
                     ],
                 },
             },
+            "workflow": _workflow(self.profile),
             "attempts": [attempt.to_dict() for attempt in self.attempts],
             "notes": list(self.notes),
         }
@@ -205,6 +250,7 @@ class UsbDiscoveryReport:
 def discover_usb_primitives(
     light: object,
     *,
+    profile: str = DEFAULT_USB_DISCOVERY_PROFILE.name,
     object_ids: Iterable[int] = DEFAULT_DISCOVERY_OBJECT_IDS,
     first_words: Iterable[int] = DEFAULT_DISCOVERY_FIRST_WORDS,
     control_object_ids: Iterable[int] | None = None,
@@ -334,6 +380,7 @@ def discover_usb_primitives(
                         )
 
     return UsbDiscoveryReport(
+        profile=profile,
         object_ids=object_ids_tuple,
         first_words=first_words_tuple,
         control_object_ids=control_object_ids_tuple if allow_control else (),
@@ -588,3 +635,14 @@ def _notes(
                 "register-default-group attempt"
             )
     return tuple(notes)
+
+
+def _workflow(profile: str) -> dict[str, object]:
+    profile_args = " --g60-matrix" if profile == G60_USB_DISCOVERY_PROFILE.name else ""
+    return {
+        "read_only_command": f"zlight discover-usb{profile_args} --json",
+        "control_command": (
+            f"zlight discover-usb{profile_args} --allow-control --json"
+        ),
+        "write_guard": "--allow-control is required before any control candidates run",
+    }

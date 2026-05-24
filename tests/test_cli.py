@@ -1245,6 +1245,151 @@ class CliTests(unittest.TestCase):
         self.assertIn("set_sleep_obj1_mode0x01", attempts)
         self.assertNotIn("set_brightness_obj1_mode0x01", attempts)
 
+    def test_discover_usb_cli_g60_matrix_is_read_only_without_allow_control(
+        self,
+    ) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.seq = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.5):
+                del timeout
+                self.seq += 1
+                tx = build_runtime_frame(self.seq, cmd, payload)
+                rx = (
+                    build_runtime_frame(self.seq, cmd, b"\x00")
+                    if cmd
+                    in {
+                        RuntimeCommand.DEVICE_INFO,
+                        RuntimeCommand.FIRMWARE,
+                    }
+                    else b""
+                )
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+            def exchange_frame(self, first_word, cmd, payload=b"", *, timeout=0.5):
+                del timeout
+                self.seq += 1
+                tx = build_frame(first_word, self.seq, cmd, payload)
+                return CommandResult(cmd, tx, b"", (), None)
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["discover-usb", "--g60-matrix", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        categories = {attempt["category"] for attempt in payload["attempts"]}
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["profile"], "g60")
+        self.assertEqual(payload["object_ids"], [0, 1])
+        self.assertEqual(payload["first_words"], [0x0100, 0x0101, 0x0103, 0x0301])
+        self.assertFalse(payload["control_enabled"])
+        self.assertEqual(payload["control_object_ids"], [])
+        self.assertNotIn("control", categories)
+        self.assertEqual(
+            payload["workflow"]["read_only_command"],
+            "zlight discover-usb --g60-matrix --json",
+        )
+        self.assertEqual(
+            payload["workflow"]["control_command"],
+            "zlight discover-usb --g60-matrix --allow-control --json",
+        )
+
+    def test_discover_usb_cli_g60_matrix_expands_control_candidates(self) -> None:
+        class FakeLight:
+            def __init__(self) -> None:
+                self.seq = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange_runtime(self, cmd, payload=b"", *, timeout=0.5):
+                del timeout
+                self.seq += 1
+                tx = build_runtime_frame(self.seq, cmd, payload)
+                rx = (
+                    build_runtime_frame(self.seq, cmd, b"\x00")
+                    if cmd
+                    in {
+                        RuntimeCommand.DEVICE_INFO,
+                        RuntimeCommand.FIRMWARE,
+                        RuntimeCommand.REGISTER_DEFAULT_GROUP,
+                    }
+                    else b""
+                )
+                frames = tuple(iter_frames(rx))
+                return CommandResult(
+                    cmd,
+                    tx,
+                    rx,
+                    frames,
+                    first_response_frame(rx, tx=tx, cmd=cmd),
+                )
+
+            def exchange_frame(self, first_word, cmd, payload=b"", *, timeout=0.5):
+                del timeout
+                self.seq += 1
+                tx = build_frame(first_word, self.seq, cmd, payload)
+                return CommandResult(cmd, tx, b"", (), None)
+
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.ZhiyunLight.usb",
+                return_value=FakeLight(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "discover-usb",
+                    "--g60-matrix",
+                    "--allow-control",
+                    "--control-kinds",
+                    "sleep",
+                    "--control-modes",
+                    "0x01",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        attempts = {attempt["name"] for attempt in payload["attempts"]}
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["profile"], "g60")
+        self.assertEqual(payload["control_object_ids"], [0, 1])
+        self.assertEqual(
+            payload["control_first_words"],
+            [0x0100, 0x0101, 0x0103, 0x0301],
+        )
+        self.assertEqual(payload["register_device_ids"], [0, 1])
+        self.assertEqual(payload["register_group_ids"], [0])
+        self.assertIn("register_default_group_dev1_group0", attempts)
+        self.assertIn("set_sleep_obj0_mode0x01", attempts)
+        self.assertIn("set_sleep_obj0_mode0x01_fw0x0101", attempts)
+
     def test_frame_cli_exchanges_raw_usb_frame(self) -> None:
         class FakeLight:
             def __init__(self) -> None:

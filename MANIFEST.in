@@ -1,0 +1,5 @@
+include CHANGELOG.md
+include design.md
+recursive-include docs *.md
+recursive-include examples *.json *.py
+recursive-include tests/fixtures *.json

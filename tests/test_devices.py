@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from zhiyun_light_control.devices import (
     BLE_BACKENDS,
@@ -389,6 +389,26 @@ class DeviceDiscoveryTests(unittest.TestCase):
             python="python-test",
         )
 
+    def test_direct_scan_passes_name_filter_into_python_discovery(self) -> None:
+        with patch(
+            "zhiyun_light_control.devices.scan_zhiyun_devices",
+            new=AsyncMock(
+                return_value=[
+                    BleDevice(address="AA", name="PL103_EDFE"),
+                    BleDevice(address="BB", name="Keyboard"),
+                ]
+            ),
+        ) as scan_direct:
+            result = scan_ble_devices(
+                backend="direct",
+                timeout=2.0,
+                name_contains="PL103",
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual([device.address for device in result.devices], ["AA"])
+        scan_direct.assert_called_once_with(timeout=2.0, name_contains="PL103")
+
     def test_rejects_unknown_ble_backend(self) -> None:
         self.assertEqual(BLE_BACKENDS, ("worker", "macos-app", "direct"))
         with self.assertRaisesRegex(ValueError, "unsupported BLE backend"):
@@ -488,6 +508,7 @@ class DeviceDiscoveryTests(unittest.TestCase):
         payload = report.to_dict()
         self.assertFalse(report.ok)
         self.assertEqual(payload["inspect"]["error"], "Bluetooth state unauthorized: 3")
+        self.assertEqual(payload["reason"], "Bluetooth state unauthorized: 3")
         self.assertEqual(payload["tests"], [])
         inspect_ble.assert_called_once_with(
             backend="macos-app",
@@ -495,6 +516,95 @@ class DeviceDiscoveryTests(unittest.TestCase):
             address=None,
             name_contains="PL103",
             python=None,
+        )
+
+    def test_test_ble_endpoint_candidates_reports_no_candidates_reason(self) -> None:
+        inspect = BleInspectResult(
+            ok=True,
+            address="UUID-1",
+            services=(
+                BleService(
+                    uuid=DIRECT_ZY_SERVICE_UUID,
+                    characteristics=(
+                        BleCharacteristic(
+                            uuid=DIRECT_ZY_WRITE_UUID,
+                            properties=("read",),
+                        ),
+                    ),
+                ),
+            ),
+            worker_python="direct",
+        )
+
+        with patch(
+            "zhiyun_light_control.devices.inspect_ble_device",
+            return_value=inspect,
+        ):
+            report = run_ble_endpoint_candidate_test(
+                backend="direct",
+                timeout=1.0,
+                max_candidates=4,
+            )
+
+        payload = report.to_dict()
+        self.assertFalse(report.ok)
+        self.assertEqual(payload["tests"], [])
+        self.assertEqual(payload["confirmed_candidates"], [])
+        self.assertEqual(
+            payload["reason"],
+            "BLE endpoint inspection found no writable notify/indicate candidates",
+        )
+
+    def test_test_ble_endpoint_candidates_reports_no_confirmed_reason(self) -> None:
+        inspect = BleInspectResult(
+            ok=True,
+            address="UUID-1",
+            services=(
+                BleService(
+                    uuid=DIRECT_ZY_SERVICE_UUID,
+                    characteristics=(
+                        BleCharacteristic(
+                            uuid=DIRECT_ZY_WRITE_UUID,
+                            properties=("write-without-response",),
+                        ),
+                        BleCharacteristic(
+                            uuid=DIRECT_ZY_NOTIFY_UUID,
+                            properties=("notify",),
+                        ),
+                    ),
+                ),
+            ),
+            worker_python="direct",
+        )
+
+        with (
+            patch(
+                "zhiyun_light_control.devices.inspect_ble_device",
+                return_value=inspect,
+            ),
+            patch(
+                "zhiyun_light_control.devices.exchange_zhiyun_ble_safe",
+                return_value=BleExchangeResult(
+                    ok=True,
+                    tx=build_runtime_frame(1, RuntimeCommand.DEVICE_INFO),
+                    rx=b"",
+                    address="UUID-1",
+                ),
+            ),
+        ):
+            report = run_ble_endpoint_candidate_test(
+                backend="worker",
+                timeout=1.0,
+                max_candidates=1,
+            )
+
+        payload = report.to_dict()
+        self.assertFalse(report.ok)
+        self.assertEqual(len(payload["tests"]), 1)
+        self.assertEqual(payload["confirmed_candidates"], [])
+        self.assertEqual(
+            payload["reason"],
+            "BLE endpoint candidates were tested but none acknowledged DEVICE_INFO",
         )
 
 
