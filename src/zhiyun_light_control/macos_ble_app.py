@@ -245,7 +245,7 @@ def macos_ble_app_info(
             "then rerun the BLE scan."
         ),
         "status_command": "zlight ble-helper --status --json",
-        "authorize_command": "zlight ble-helper --ensure --open-settings",
+        "authorize_command": "zlight ble-helper --ensure --authorize",
         "error": error,
     }
 
@@ -255,7 +255,39 @@ def macos_ble_app_status(
     timeout: float = 3.0,
     bundle_name: str = APP_BUNDLE_NAME,
 ) -> dict[str, object]:
-    run = run_macos_ble_app(["status"], timeout=timeout, bundle_name=bundle_name)
+    run = run_macos_ble_app(
+        ["status", "--timeout", str(timeout)],
+        timeout=timeout,
+        bundle_name=bundle_name,
+    )
+    return _macos_ble_status_payload(run, timeout=timeout, bundle_name=bundle_name)
+
+
+def macos_ble_app_authorize(
+    *,
+    timeout: float = 60.0,
+    bundle_name: str = APP_BUNDLE_NAME,
+) -> dict[str, object]:
+    run = run_macos_ble_app(
+        ["authorize", "--timeout", str(timeout)],
+        timeout=timeout,
+        bundle_name=bundle_name,
+    )
+    status = _macos_ble_status_payload(
+        run,
+        timeout=timeout,
+        bundle_name=bundle_name,
+    )
+    status["authorize_timeout"] = timeout
+    return status
+
+
+def _macos_ble_status_payload(
+    run: MacosBleAppRun,
+    *,
+    timeout: float,
+    bundle_name: str,
+) -> dict[str, object]:
     status = dict(run.payload)
     if "ok" not in status:
         status["ok"] = bool(run.ok)
@@ -263,7 +295,11 @@ def macos_ble_app_status(
         status["error"] = run.error
     if (
         status.get("authorization") == "not_determined"
-        and status.get("error") == "Bluetooth status timed out"
+        and status.get("error")
+        in {
+            "Bluetooth status timed out",
+            "Bluetooth authorization prompt timed out",
+        }
     ):
         status["error"] = (
             "Bluetooth authorization is not determined; respond to the "
@@ -533,7 +569,8 @@ def _terminate_helper(bundle_name: str) -> None:
 
 def _swift_source() -> str:
     advertisement_data_type = "[String : " + "A" + "ny]"
-    return f"""import CoreBluetooth
+    return f"""import AppKit
+import CoreBluetooth
 import Darwin
 import Foundation
 
@@ -699,6 +736,11 @@ func bluetoothAuthorizationStatus() -> (String, Int)? {{
     return nil
 }}
 
+func activateAppForPrompt() {{
+    NSApplication.shared.setActivationPolicy(.regular)
+    NSApplication.shared.activate(ignoringOtherApps: true)
+}}
+
 final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     private var central: CBCentralManager!
     private let mode: String
@@ -744,7 +786,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     }}
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {{
-        if mode == "status" {{
+        if mode == "status" || mode == "authorize" {{
             if central.state == .unknown || central.state == .resetting {{
                 return
             }}
@@ -1106,6 +1148,9 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         if mode == "status" {{
             return "Bluetooth status timed out"
         }}
+        if mode == "authorize" {{
+            return "Bluetooth authorization prompt timed out"
+        }}
         if mode == "inspect" {{
             if peripheral == nil {{
                 return "no matching BLE device found"
@@ -1133,7 +1178,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         if let peripheral = peripheral {{
             central?.cancelPeripheralConnection(peripheral)
         }}
-        if mode == "status" {{
+        if mode == "status" || mode == "authorize" {{
             let authorization = bluetoothAuthorizationStatus()
             let state = centralStateDescription(central.state)
             writeJson(StatusOutput(
@@ -1170,6 +1215,9 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
 }}
 
 let mode = CommandLine.arguments.dropFirst().first ?? "scan"
+if mode == "authorize" {{
+    activateAppForPrompt()
+}}
 if mode == "exchange-raw" && argument("--tx-hex").flatMap({{ hexData($0) }}) == nil {{
     writeJson(ExchangeOutput(
         address: nil,

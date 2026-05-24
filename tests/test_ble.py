@@ -13,6 +13,7 @@ from zhiyun_light_control.macos_ble_app import (
     BLUETOOTH_USAGE,
     MacosBleAppRun,
     ensure_macos_ble_app,
+    macos_ble_app_authorize,
     macos_ble_app_info,
     macos_ble_app_status,
 )
@@ -127,7 +128,7 @@ class SafeBleScanTests(unittest.TestCase):
         self.assertIn("Privacy & Security", status["settings_hint"])
         self.assertEqual(status["command"], ["open", "-W", "ZhiyunBleScan.app"])
         run.assert_called_once_with(
-            ["status"],
+            ["status", "--timeout", "1.25"],
             timeout=1.25,
             bundle_name="ZhiyunBleScan",
         )
@@ -154,6 +155,35 @@ class SafeBleScanTests(unittest.TestCase):
 
         self.assertEqual(status["pending_action"], "allow_bluetooth_prompt")
         self.assertIn("permission prompt", status["error"])
+
+    def test_macos_ble_app_authorize_waits_for_prompt_decision(self) -> None:
+        run_result = MacosBleAppRun(
+            ok=True,
+            payload={
+                "ok": True,
+                "state": "powered on",
+                "state_raw": 5,
+                "authorization": "allowed",
+                "authorization_raw": 3,
+                "error": None,
+            },
+            returncode=0,
+        )
+
+        with patch(
+            "zhiyun_light_control.macos_ble_app.run_macos_ble_app",
+            return_value=run_result,
+        ) as run:
+            status = macos_ble_app_authorize(timeout=30.0)
+
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["authorization"], "allowed")
+        self.assertEqual(status["authorize_timeout"], 30.0)
+        run.assert_called_once_with(
+            ["authorize", "--timeout", "30.0"],
+            timeout=30.0,
+            bundle_name="ZhiyunBleScan",
+        )
 
     def test_macos_ble_app_ensure_compiles_visible_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

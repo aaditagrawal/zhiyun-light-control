@@ -181,6 +181,16 @@ session for `local.zhiyun-light-control.ble-scan` and `tccd` prompting for
 action is to accept that Bluetooth prompt or allow `ZhiyunBleScan` in Privacy &
 Security > Bluetooth.
 
+A dedicated `zlight ble-helper --ensure --authorize --timeout 60 --json` mode
+now brings the helper app forward and keeps it alive during the Bluetooth
+permission request. In the current local run, System Settings showed
+`ZhiyunBleScan` listed and toggled on, but CoreBluetooth still returned
+`authorization=not_determined` and system logs continued to show stale code
+requirement mismatches for `kTCCServiceBluetoothAlways`. `tccutil reset
+Bluetooth local.zhiyun-light-control.ble-scan` also failed, so the remaining
+permission repair is a macOS TCC state issue rather than a missing BLE endpoint
+implementation.
+
 Current local BLE scan validation:
 
 | Runtime | BLE stack | Result |

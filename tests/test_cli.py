@@ -2380,6 +2380,34 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload["status"]["authorization"], "denied")
         status.assert_called_once_with(timeout=1.25)
 
+    def test_ble_helper_authorize_runs_long_lived_permission_request(self) -> None:
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.macos_ble_app_info",
+                return_value={
+                    "ok": True,
+                    "bundle_id": "local.zhiyun-light-control.ble-scan",
+                    "app_path": "/tmp/ZhiyunBleScan.app",
+                },
+            ),
+            patch(
+                "zhiyun_light_control.cli.macos_ble_app_authorize",
+                return_value={
+                    "ok": True,
+                    "state": "powered on",
+                    "authorization": "allowed",
+                },
+            ) as authorize,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(["ble-helper", "--authorize", "--timeout", "30", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["authorization"]["authorization"], "allowed")
+        authorize.assert_called_once_with(timeout=30.0)
+
     def test_ble_probe_worker_failure_returns_json_error(self) -> None:
         class FakeAsyncLight:
             async def __aenter__(self):

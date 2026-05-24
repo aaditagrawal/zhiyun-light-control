@@ -47,6 +47,7 @@ from .integration import (
     local_readiness,
 )
 from .macos_ble_app import (
+    macos_ble_app_authorize,
     macos_ble_app_info,
     macos_ble_app_status,
     open_macos_bluetooth_settings,
@@ -565,10 +566,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run the helper and report macOS Bluetooth authorization/state.",
     )
     helper.add_argument(
+        "--authorize",
+        action="store_true",
+        help="Bring the helper forward and wait for the Bluetooth permission prompt.",
+    )
+    helper.add_argument(
         "--timeout",
         type=float,
         default=3.0,
-        help="Seconds to wait for --status.",
+        help="Seconds to wait for --status or --authorize.",
     )
     helper.add_argument("--json", action="store_true", help="Print compact JSON.")
     helper.set_defaults(func=cmd_ble_helper)
@@ -1620,6 +1626,11 @@ def cmd_ble_helper(args: argparse.Namespace) -> int:
         status = macos_ble_app_status(timeout=args.timeout)
         payload["status"] = status
         if not status["ok"]:
+            code = 2
+    if args.authorize:
+        authorization = macos_ble_app_authorize(timeout=args.timeout)
+        payload["authorization"] = authorization
+        if not authorization["ok"]:
             code = 2
     if args.open_settings:
         settings = open_macos_bluetooth_settings()

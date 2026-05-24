@@ -80,11 +80,14 @@ cached app or rerun `--ensure` with current code to rebuild and sign the helper.
 Use:
 
 ```sh
+uv run zlight ble-helper --ensure --authorize --timeout 60 --json
 uv run zlight ble-helper --status --json
 ```
 
-or `GET /devices?include_ble_status=true` to report the current helper
-Bluetooth state and authorization status without starting GATT inspection.
+The `--authorize` mode brings the helper app forward and keeps it alive while
+macOS asks for Bluetooth access. `--status` or
+`GET /devices?include_ble_status=true` reports the current helper Bluetooth
+state and authorization status without starting GATT inspection.
 If status reports `pending_action: "allow_bluetooth_prompt"`, macOS has not
 completed the Bluetooth authorization decision yet; click Allow on the
 `ZhiyunBleScan` Bluetooth prompt or allow it in the Bluetooth privacy pane,
