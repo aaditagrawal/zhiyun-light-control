@@ -1220,6 +1220,11 @@ When the setup tool is ready to collect full evidence for a rig, call
 same route selection, readiness, and validation pipeline per fixture and returns
 the selected config plus capability/primitive readiness payloads keyed by
 fixture name.
+Use `rig.setup_profiles_all(...)` or
+`rig_setup_profiles_from_report(rig.setup_report_all(...))` to turn that
+evidence into `LightSetupProfile` objects, then `rig.with_setup_profiles(...)`
+and `save_rig()` when the host wants a reusable profiled rig JSON file for later
+show runs.
 
 Rig planning is also no-I/O. Use `plan_scene()`, `plan_preset()`,
 `plan_transition()`, `plan_sequence()`, `plan_named_cue()`, `plan_all()`,

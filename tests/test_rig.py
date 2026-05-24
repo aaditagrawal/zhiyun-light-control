@@ -24,6 +24,7 @@ from zhiyun_light_control import (
     load_rig,
     rig_from_json,
     rig_from_mapping,
+    rig_setup_profiles_from_report,
     rig_to_json,
     save_light_setup_profile,
     save_rig,
@@ -1108,6 +1109,101 @@ class LightRigTests(unittest.TestCase):
             [0x33, 0x33],
         )
 
+    def test_setup_profiles_all_materializes_reusable_profiled_rig(self) -> None:
+        key = FakeLight("key")
+        fill = FakeLight("fill")
+        rig = rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "usb",
+                        "port": "/dev/cu.key",
+                        "obj": 2,
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "obj": 3,
+                        "tags": ["set"],
+                    },
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+
+        def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            del kwargs
+            ready = config.transport == "usb"
+            return {
+                "ok": ready,
+                "config": config.to_dict(),
+                "route_confirmed": ready,
+                "require_confirmed_route": True,
+                "status_ok": ready,
+                "status_error": None if ready else "no status ACK",
+                "ready_for": {
+                    "read_status": ready,
+                    "control_writes": False,
+                },
+                "validation_ready_for": {
+                    "read_status": ready,
+                    "control_writes": False,
+                },
+                "validation_unconfirmed": ["set_brightness"],
+                "summary": {
+                    "ok": ready,
+                    "errors": [] if ready else ["no status ACK"],
+                },
+            }
+
+        with patch(
+            "zhiyun_light_control.integration.local_setup_report",
+            side_effect=fake_report,
+        ):
+            report = rig.setup_report_all(tag="set")
+
+        profiles = rig_setup_profiles_from_report(report)
+        self.assertEqual(set(profiles), {"key", "fill"})
+        self.assertTrue(profiles["key"].ready("read_status"))
+        self.assertFalse(profiles["fill"].ready("read_status"))
+
+        profiled = rig.with_setup_profiles(
+            report,
+            require_setup_profile_controls=True,
+        )
+        self.assertTrue(profiled.require_setup_profile_controls)
+        self.assertEqual(profiled.fixture("key").config.port, "/dev/cu.key")
+        self.assertIsNotNone(profiled.fixture("fill").setup_profile)
+        self.assertEqual(profiled.fixture("fill").obj, 3)
+        self.assertEqual(profiled.fixture("fill").tags, ("set",))
+
+        rematerialized = rig.with_setup_profiles(profiles)
+        self.assertTrue(rematerialized.require_setup_profile("key", "read_status").ok)
+        with self.assertRaisesRegex(ValueError, "unknown fixture profile"):
+            rig.with_setup_profiles({"missing": profiles["key"]})
+
+        with patch(
+            "zhiyun_light_control.integration.local_setup_report",
+            side_effect=fake_report,
+        ):
+            generated = rig.setup_profiles_all(tag="set")
+        self.assertEqual(set(generated), {"key", "fill"})
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rig.json"
+            profiled.save(path)
+            restored = load_rig(path)
+
+        self.assertTrue(restored.require_setup_profile("key", "read_status").ok)
+        self.assertIsNotNone(restored.fixture("fill").setup_profile)
+
     def test_duplicate_fixture_names_are_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "duplicate"):
             LightRig([{"name": "key"}, {"name": "key"}])
@@ -1719,6 +1815,77 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             all(kwargs["include_object_reads"] for _config, kwargs in calls)
         )
+
+    async def test_async_setup_profiles_all_materializes_profiled_rig(
+        self,
+    ) -> None:
+        key = AsyncFakeLight("key")
+        fill = AsyncFakeLight("fill")
+        rig = async_rig_from_mapping(
+            {
+                "fixtures": {
+                    "key": {
+                        "transport": "ble",
+                        "name_contains": "KEY",
+                        "obj": 4,
+                        "tags": ["set"],
+                    },
+                    "fill": {
+                        "transport": "ble",
+                        "name_contains": "FILL",
+                        "obj": 5,
+                        "tags": ["set"],
+                    },
+                }
+            },
+            light_factories={
+                "key": FakeFactory(key),
+                "fill": FakeFactory(fill),
+            },
+        )
+
+        async def fake_report(
+            config: LightConnectionConfig,
+            **kwargs: object,
+        ) -> dict[str, object]:
+            del kwargs
+            return {
+                "ok": True,
+                "config": config.to_dict(),
+                "route_confirmed": True,
+                "require_confirmed_route": True,
+                "status_ok": True,
+                "status_error": None,
+                "ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_ready_for": {
+                    "read_status": True,
+                    "control_writes": False,
+                },
+                "validation_unconfirmed": ["set_brightness"],
+                "summary": {"ok": True, "errors": []},
+            }
+
+        with patch(
+            "zhiyun_light_control.integration.local_async_setup_report",
+            side_effect=fake_report,
+        ):
+            profiles = await rig.setup_profiles_all(tag="set", include_ble=True)
+
+        self.assertEqual(set(profiles), {"key", "fill"})
+        self.assertEqual(profiles["key"].config.name_contains, "KEY")
+        self.assertTrue(profiles["fill"].ready("read_status"))
+
+        profiled = rig.with_setup_profiles(
+            profiles,
+            require_setup_profile_controls=True,
+        )
+        self.assertTrue(profiled.require_setup_profile_controls)
+        self.assertEqual(profiled.fixture("fill").config.name_contains, "FILL")
+        self.assertEqual(profiled.fixture("key").obj, 4)
+        self.assertTrue(profiled.require_setup_profile("key", "read_status").ok)
 
 
 def _result(

@@ -258,6 +258,7 @@ from .rig import (
     load_rig_mapping,
     rig_from_json,
     rig_from_mapping,
+    rig_setup_profiles_from_report,
     rig_to_json,
     save_rig,
 )
@@ -553,6 +554,7 @@ __all__ = [
     "open_async_light",
     "rig_from_mapping",
     "rig_from_json",
+    "rig_setup_profiles_from_report",
     "rig_to_json",
     "save_rig",
     "scene_from_mapping",

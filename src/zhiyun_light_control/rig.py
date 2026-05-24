@@ -117,11 +117,11 @@ class LightRig:
         self.control_mode = control_mode
         self.require_acknowledged = require_acknowledged
         self.require_setup_profile_controls = require_setup_profile_controls
-        factories = dict(light_factories or {})
+        self.light_factories = dict(light_factories or {})
         self.controllers = {
             name: LightController(
                 fixture.config,
-                light_factory=factories.get(name),
+                light_factory=self.light_factories.get(name),
                 preset_library=preset_library,
                 cue_library=cue_library,
                 state_tracker=SceneStateTracker(),
@@ -277,6 +277,32 @@ class LightRig:
             responses,
             require_setup_profile_controls=self.require_setup_profile_controls,
             primitives=primitives,
+        )
+
+    def with_setup_profiles(
+        self,
+        profiles: Mapping[str, object],
+        *,
+        require_setup_profile_controls: bool | None = None,
+    ) -> LightRig:
+        profile_map = _setup_profile_map(profiles)
+        _require_known_profile_fixtures(profile_map, self.fixtures)
+        fixtures = [
+            _fixture_with_setup_profile(fixture, profile_map.get(name))
+            for name, fixture in self.fixtures.items()
+        ]
+        return LightRig(
+            fixtures,
+            light_factories=self.light_factories,
+            preset_library=self.preset_library,
+            cue_library=self.cue_library,
+            control_mode=self.control_mode,
+            require_acknowledged=self.require_acknowledged,
+            require_setup_profile_controls=(
+                self.require_setup_profile_controls
+                if require_setup_profile_controls is None
+                else require_setup_profile_controls
+            ),
         )
 
     def controller(self, name: str) -> LightController:
@@ -673,6 +699,59 @@ class LightRig:
                 stopped = True
                 break
         return _rig_response("rig_setup_report", responses, stopped=stopped)
+
+    def setup_profiles_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, LightSetupProfile]:
+        return rig_setup_profiles_from_report(
+            self.setup_report_all(
+                fixture_names=fixture_names,
+                tag=tag,
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+                require_confirmed_route=require_confirmed_route,
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=device_id,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+                red=red,
+                green=green,
+                blue=blue,
+                hue=hue,
+                saturation=saturation,
+                intensity=intensity,
+                control_mode=control_mode,
+                stop_on_unready=stop_on_unready,
+            )
+        )
 
     def probe(self, name: str) -> dict[str, object]:
         result = self.controller(name).probe()
@@ -1121,11 +1200,11 @@ class AsyncLightRig:
         self.control_mode = control_mode
         self.require_acknowledged = require_acknowledged
         self.require_setup_profile_controls = require_setup_profile_controls
-        factories = dict(light_factories or {})
+        self.light_factories = dict(light_factories or {})
         self.controllers = {
             name: AsyncLightController(
                 fixture.config,
-                light_factory=factories.get(name),
+                light_factory=self.light_factories.get(name),
                 preset_library=preset_library,
                 cue_library=cue_library,
                 state_tracker=SceneStateTracker(),
@@ -1281,6 +1360,32 @@ class AsyncLightRig:
             responses,
             require_setup_profile_controls=self.require_setup_profile_controls,
             primitives=primitives,
+        )
+
+    def with_setup_profiles(
+        self,
+        profiles: Mapping[str, object],
+        *,
+        require_setup_profile_controls: bool | None = None,
+    ) -> AsyncLightRig:
+        profile_map = _setup_profile_map(profiles)
+        _require_known_profile_fixtures(profile_map, self.fixtures)
+        fixtures = [
+            _fixture_with_setup_profile(fixture, profile_map.get(name))
+            for name, fixture in self.fixtures.items()
+        ]
+        return AsyncLightRig(
+            fixtures,
+            light_factories=self.light_factories,
+            preset_library=self.preset_library,
+            cue_library=self.cue_library,
+            control_mode=self.control_mode,
+            require_acknowledged=self.require_acknowledged,
+            require_setup_profile_controls=(
+                self.require_setup_profile_controls
+                if require_setup_profile_controls is None
+                else require_setup_profile_controls
+            ),
         )
 
     def controller(self, name: str) -> AsyncLightController:
@@ -1680,6 +1785,59 @@ class AsyncLightRig:
                 stopped = True
                 break
         return _rig_response("rig_setup_report", responses, stopped=stopped)
+
+    async def setup_profiles_all(
+        self,
+        *,
+        fixture_names: Iterable[str] | None = None,
+        tag: str | None = None,
+        include_usb: bool = True,
+        include_ble: bool = False,
+        include_ble_status: bool | None = None,
+        persistent: bool = False,
+        require_confirmed_route: bool = True,
+        allow_control: bool = False,
+        include_object_reads: bool = False,
+        include_color: bool = False,
+        device_id: int = 0,
+        brightness: float = 35.0,
+        kelvin: int = 5600,
+        sleep: int = 0,
+        red: int = 255,
+        green: int = 255,
+        blue: int = 255,
+        hue: float = 0.0,
+        saturation: float = 0.0,
+        intensity: int = 35,
+        control_mode: int | None = None,
+        stop_on_unready: bool = False,
+    ) -> dict[str, LightSetupProfile]:
+        return rig_setup_profiles_from_report(
+            await self.setup_report_all(
+                fixture_names=fixture_names,
+                tag=tag,
+                include_usb=include_usb,
+                include_ble=include_ble,
+                include_ble_status=include_ble_status,
+                persistent=persistent,
+                require_confirmed_route=require_confirmed_route,
+                allow_control=allow_control,
+                include_object_reads=include_object_reads,
+                include_color=include_color,
+                device_id=device_id,
+                brightness=brightness,
+                kelvin=kelvin,
+                sleep=sleep,
+                red=red,
+                green=green,
+                blue=blue,
+                hue=hue,
+                saturation=saturation,
+                intensity=intensity,
+                control_mode=control_mode,
+                stop_on_unready=stop_on_unready,
+            )
+        )
 
     async def probe(self, name: str) -> dict[str, object]:
         result = await self.controller(name).probe()
@@ -2261,6 +2419,18 @@ def async_rig_from_json(
     )
 
 
+def rig_setup_profiles_from_report(
+    payload: Mapping[str, object],
+) -> dict[str, LightSetupProfile]:
+    fixtures = payload.get("fixtures")
+    if not isinstance(fixtures, Mapping):
+        raise RigConfigError("rig setup report is missing fixtures")
+    profiles: dict[str, LightSetupProfile] = {}
+    for name, response in fixtures.items():
+        profiles[str(name)] = _setup_profile_from_value(response)
+    return profiles
+
+
 def rig_to_json(
     rig: LightRig | AsyncLightRig | Mapping[str, object],
     *,
@@ -2568,6 +2738,63 @@ def _setup_profile_from_fixture_mapping(
             {str(key): value for key, value in raw_profile.items()}
         )
     raise ValueError("fixture profile must be a path, mapping, or LightSetupProfile")
+
+
+def _setup_profile_map(
+    payload: Mapping[str, object],
+) -> dict[str, LightSetupProfile]:
+    if isinstance(payload.get("fixtures"), Mapping):
+        return rig_setup_profiles_from_report(payload)
+    return {
+        str(name): _setup_profile_from_value(profile)
+        for name, profile in payload.items()
+    }
+
+
+def _setup_profile_from_value(value: object) -> LightSetupProfile:
+    if isinstance(value, LightSetupProfile):
+        return value
+    if not isinstance(value, Mapping):
+        raise ValueError("setup profile value must be a mapping or LightSetupProfile")
+    payload = _string_key_dict(value)
+    if payload.get("kind") == "setup-profile":
+        return LightSetupProfile.from_mapping(payload)
+    raw_profile = payload.get("setup_profile", payload.get("profile"))
+    if raw_profile is not None:
+        return _setup_profile_from_value(raw_profile)
+    raw_setup = payload.get("setup_report")
+    if isinstance(raw_setup, Mapping):
+        return LightSetupProfile.from_setup_report(_string_key_dict(raw_setup))
+    if "config" in payload:
+        return LightSetupProfile.from_setup_report(payload)
+    raise ValueError("setup profile value is missing setup evidence")
+
+
+def _fixture_with_setup_profile(
+    fixture: LightFixture,
+    profile: LightSetupProfile | None,
+) -> LightFixture:
+    if profile is None:
+        return fixture
+    return LightFixture.from_setup_profile(
+        fixture.name,
+        profile,
+        obj=fixture.obj,
+        tags=fixture.tags,
+    )
+
+
+def _require_known_profile_fixtures(
+    profiles: Mapping[str, LightSetupProfile],
+    fixtures: Mapping[str, LightFixture],
+) -> None:
+    unknown = sorted(name for name in profiles if name not in fixtures)
+    if unknown:
+        raise ValueError("unknown fixture profile(s): " + ", ".join(unknown))
+
+
+def _string_key_dict(payload: Mapping[object, object]) -> dict[str, object]:
+    return {str(key): value for key, value in payload.items()}
 
 
 def _resolve_rig_profile_paths(

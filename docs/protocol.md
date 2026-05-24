@@ -351,6 +351,10 @@ that need to arm or save a full multi-light rig.
 `setup_report_all(include_ble=true)` then runs the full setup evidence pipeline
 per fixture: route selection, selected config, readiness, validation readiness,
 and primitive capability maps keyed by fixture name.
+`setup_profiles_all(...)` and `rig_setup_profiles_from_report(...)` convert
+those per-fixture reports into `LightSetupProfile` objects. `with_setup_profiles`
+attaches them back to a sync or async rig so `save_rig` can persist a reusable
+profiled rig definition.
 Rig planning helpers (`plan_scene`, `plan_preset`, `plan_transition`,
 `plan_sequence`, `plan_named_cue`, and their group variants) also run without
 opening USB/BLE and return exact per-fixture command plans. `execute_plan` sends
