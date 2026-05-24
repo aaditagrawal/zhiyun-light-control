@@ -19,7 +19,11 @@ from zhiyun_light_control.protocol import (
     first_response_frame,
     iter_frames,
 )
-from zhiyun_light_control.transports.ble import BleExchangeResult, BleWorkerError
+from zhiyun_light_control.transports.ble import (
+    BleExchangeResult,
+    BleSequenceExchangeResult,
+    BleWorkerError,
+)
 
 
 class CliTests(unittest.TestCase):
@@ -2357,6 +2361,51 @@ class CliTests(unittest.TestCase):
             [step["proxy_pdu_count"] for step in payload["proxy_pdu_sequence"]],
             [1, 1, 1, 2],
         )
+
+    def test_mesh_config_send_writes_proxy_pdu_sequence(self) -> None:
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.exchange_zhiyun_ble_sequence_safe",
+                return_value=BleSequenceExchangeResult(
+                    ok=True,
+                    tx=(b"\x01", b"\x02"),
+                    rx=(b"\xaa", b"\xbb"),
+                    rx_combined=b"\xaa\xbb",
+                    address="UUID-1",
+                    worker_python="python",
+                ),
+            ) as exchange,
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "mesh-config-send",
+                    "--address",
+                    "UUID-1",
+                    "--network-key-hex",
+                    bytes(range(16)).hex(),
+                    "--app-key-hex",
+                    bytes(range(32, 48)).hex(),
+                    "--device-key-hex",
+                    bytes(range(16, 32)).hex(),
+                    "--yes",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["action"], "mesh_config_send")
+        self.assertEqual(
+            [step["proxy_pdu_count"] for step in payload["proxy_pdu_sequence"]],
+            [1, 1, 1, 2],
+        )
+        self.assertEqual(payload["exchange"]["rx_hex"], "aabb")
+        sent = exchange.call_args.args[0]
+        self.assertEqual(len(sent), 5)
+        self.assertEqual(exchange.call_args.kwargs["profile"], "mesh-proxy")
 
     def test_ble_helper_reports_helper_and_opens_settings(self) -> None:
         stdout = io.StringIO()

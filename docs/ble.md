@@ -251,6 +251,21 @@ for the config messages, including the segmented app-key-add message. These are
 ready for the `1828/2ADD` write characteristic once the light advertises Mesh
 Proxy and the local BLE backend is authorized.
 
+The guarded sender for those PDUs is:
+
+```sh
+uv run zlight mesh-config-send \
+  --network-key-hex "$NETWORK_KEY_HEX" \
+  --app-key-hex "$APP_KEY_HEX" \
+  --device-key-hex "$DEVICE_KEY_HEX" \
+  --ble-backend macos-app \
+  --yes --json
+```
+
+It uses the Mesh Proxy profile (`1828`, Data In `2ADD`, Data Out `2ADE`) and
+returns the per-write exchange evidence. Use `--ble-backend worker` on platforms
+where the standard BLE worker can hold the sequence connection.
+
 If `mesh-session` cannot find the light, run:
 
 ```sh

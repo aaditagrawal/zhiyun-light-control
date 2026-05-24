@@ -100,10 +100,14 @@ from .transports.ble import (
     MESH_PROVISIONING_NOTIFY_UUID,
     MESH_PROVISIONING_SERVICE_UUID,
     MESH_PROVISIONING_WRITE_UUID,
+    MESH_PROXY_NOTIFY_UUID,
+    MESH_PROXY_SERVICE_UUID,
+    MESH_PROXY_WRITE_UUID,
     BleWorkerError,
     exchange_zhiyun_ble_macos_app,
     exchange_zhiyun_ble_safe,
     exchange_zhiyun_ble_sequence_macos_app,
+    exchange_zhiyun_ble_sequence_safe,
     filter_ble_devices_by_name,
     open_zhiyun_ble_ipc_macos_app,
     scan_zhiyun_devices,
@@ -604,6 +608,62 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print compact JSON.",
     )
     mesh_setup_plan.set_defaults(func=cmd_mesh_setup_plan)
+
+    mesh_config_send = sub.add_parser(
+        "mesh-config-send",
+        help="Send generated Zhiyun BLE Mesh config PDUs over Mesh Proxy.",
+    )
+    mesh_config_send.add_argument("--address", help="BLE address/identifier.")
+    mesh_config_send.add_argument(
+        "--name-contains",
+        default="PL103",
+        help="Filter discovered BLE names.",
+    )
+    mesh_config_send.add_argument("--timeout", type=float, default=8.0)
+    mesh_config_send.add_argument(
+        "--ble-backend",
+        choices=["worker", "macos-app"],
+        default="worker",
+        help="BLE sequence backend. macos-app uses a CoreBluetooth app bundle.",
+    )
+    mesh_config_send.add_argument("--python", help="Python executable for worker.")
+    mesh_config_send.add_argument(
+        "--network-key-hex",
+        required=True,
+        type=parse_hex_bytes,
+        help="16-byte Bluetooth Mesh network key used during provisioning.",
+    )
+    mesh_config_send.add_argument(
+        "--app-key-hex",
+        required=True,
+        type=parse_hex_bytes,
+        help="16-byte Bluetooth Mesh application key to add.",
+    )
+    mesh_config_send.add_argument(
+        "--device-key-hex",
+        required=True,
+        type=parse_hex_bytes,
+        help="16-byte device key derived from the provisioning session.",
+    )
+    mesh_config_send.add_argument("--mesh-uuid-hex", type=parse_hex_bytes)
+    mesh_config_send.add_argument("--key-index", type=parse_int, default=0)
+    mesh_config_send.add_argument("--app-key-index", type=parse_int, default=0)
+    mesh_config_send.add_argument("--iv-index", type=parse_int, default=0)
+    mesh_config_send.add_argument("--sequence-number", type=parse_int, default=1)
+    mesh_config_send.add_argument("--ttl", type=parse_int, default=5)
+    mesh_config_send.add_argument(
+        "--unicast-address",
+        type=parse_int,
+        default=0x0005,
+        help="Provisioned light unicast address.",
+    )
+    mesh_config_send.add_argument("--yes", action="store_true")
+    mesh_config_send.add_argument(
+        "--json",
+        action="store_true",
+        help="Print compact JSON.",
+    )
+    mesh_config_send.set_defaults(func=cmd_mesh_config_send)
 
     helper = sub.add_parser(
         "ble-helper",
@@ -1695,6 +1755,76 @@ def cmd_mesh_setup_plan(args: argparse.Namespace) -> int:
     }
     print_json(payload, compact=args.json)
     return 0
+
+
+def cmd_mesh_config_send(args: argparse.Namespace) -> int:
+    require_yes(
+        args,
+        "mesh-config-send writes persistent configuration to the BLE Mesh Proxy",
+    )
+    try:
+        plan = build_zy_mesh_network_plan(
+            mesh_uuid=args.mesh_uuid_hex,
+            network_key=args.network_key_hex,
+            app_key=args.app_key_hex,
+            key_index=args.key_index,
+            app_key_index=args.app_key_index,
+            iv_index=args.iv_index,
+            light_unicast_address=args.unicast_address,
+        )
+        config_sequence = build_mesh_config_sequence_plan(
+            plan.app_key,
+            net_key_index=plan.key_index,
+            app_key_index=plan.app_key_index,
+        )
+        proxy_pdu_sequence = build_mesh_config_proxy_pdu_sequence(
+            config_sequence,
+            network_key=plan.network_key,
+            device_key=args.device_key_hex,
+            src=plan.provisioner_unicast_address,
+            dst=plan.light_unicast_address,
+            iv_index=plan.iv_index,
+            sequence_number=args.sequence_number,
+            ttl=args.ttl,
+        )
+    except ValueError as exc:
+        payload = {
+            "ok": False,
+            "error": str(exc),
+        }
+        print_json(payload, compact=args.json)
+        return 2
+
+    tx = tuple(pdu for step in proxy_pdu_sequence for pdu in step.proxy_pdus)
+    exchange_args = {
+        "address": args.address,
+        "name_contains": args.name_contains,
+        "timeout": args.timeout,
+        "profile": "mesh-proxy",
+        "service_uuid": MESH_PROXY_SERVICE_UUID,
+        "write_uuid": MESH_PROXY_WRITE_UUID,
+        "notify_uuid": MESH_PROXY_NOTIFY_UUID,
+    }
+    if args.ble_backend == "macos-app":
+        result = exchange_zhiyun_ble_sequence_macos_app(tx, **exchange_args)
+    else:
+        result = exchange_zhiyun_ble_sequence_safe(
+            tx,
+            python=args.python,
+            **exchange_args,
+        )
+
+    payload = {
+        "ok": result.ok,
+        "action": "mesh_config_send",
+        "backend": args.ble_backend,
+        "network": plan.to_dict(),
+        "config_sequence": [step.to_dict() for step in config_sequence],
+        "proxy_pdu_sequence": [step.to_dict() for step in proxy_pdu_sequence],
+        "exchange": result.to_dict(),
+    }
+    print_json(payload, compact=args.json)
+    return 0 if result.ok else 2
 
 
 def load_mesh_session_payload(path: str) -> dict[str, object]:

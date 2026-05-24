@@ -132,7 +132,9 @@ When supplied with the provisioned light's device key, it also derives K2
 network material, encrypts device-key config access messages, handles
 unsegmented and segmented lower transport frames, and emits complete Mesh Proxy
 Network PDUs. The remaining live requirement is a BLE backend authorized to
-write those PDUs to Mesh Proxy service `1828`.
+write those PDUs to Mesh Proxy service `1828`. `mesh-config-send` is the guarded
+sender for that stage: it flattens the generated proxy PDU sequence and writes
+it through either the standard worker backend or the macOS helper backend.
 
 ## Planning and Transitions
 

@@ -898,6 +898,84 @@ def exchange_zhiyun_ble_safe(
     )
 
 
+def exchange_zhiyun_ble_sequence_safe(
+    tx: Iterable[bytes],
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+    service_uuid: str | None = None,
+    write_uuid: str | None = None,
+    notify_uuid: str | None = None,
+    timeout: float = 5.0,
+    python: str | None = None,
+) -> BleSequenceExchangeResult:
+    tx_items = tuple(tx)
+    resolved = resolve_ble_profile(
+        profile,
+        service_uuid=service_uuid,
+        write_uuid=write_uuid,
+        notify_uuid=notify_uuid,
+    )
+    args = [
+        "exchange-sequence",
+        "--tx-hexes",
+        ",".join(item.hex() for item in tx_items),
+        "--timeout",
+        str(timeout),
+        "--profile",
+        resolved.name,
+        "--service-uuid",
+        resolved.service_uuid,
+        "--write-uuid",
+        resolved.write_uuid,
+        "--notify-uuid",
+        resolved.notify_uuid,
+    ]
+    if address:
+        args.extend(["--address", address])
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    run = _run_ble_worker(args, timeout=timeout, python=python)
+    if not run.ok:
+        return BleSequenceExchangeResult(
+            ok=False,
+            tx=tx_items,
+            error=run.error,
+            returncode=run.returncode,
+            worker_python=run.executable,
+        )
+    try:
+        payload = json.loads(run.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        return BleSequenceExchangeResult(
+            ok=False,
+            tx=tx_items,
+            error=f"could not parse BLE worker output: {exc}",
+            returncode=run.returncode,
+            worker_python=run.executable,
+        )
+    if not isinstance(payload, dict):
+        return BleSequenceExchangeResult(
+            ok=False,
+            tx=tx_items,
+            error="BLE worker output was not a JSON object",
+            returncode=run.returncode,
+            worker_python=run.executable,
+        )
+    error = _payload_string(payload, "error")
+    return BleSequenceExchangeResult(
+        ok=error is None,
+        tx=tx_items,
+        rx=_payload_hex_bytes_list(payload, "rx_hexes"),
+        rx_combined=_payload_bytes(payload, "rx_hex"),
+        address=_payload_string(payload, "address"),
+        error=error,
+        returncode=run.returncode,
+        worker_python=run.executable,
+    )
+
+
 def exchange_zhiyun_ble_macos_app(
     tx: bytes,
     *,

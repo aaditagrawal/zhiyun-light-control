@@ -261,6 +261,21 @@ After a real provisioning session has produced a light `device_key_hex`,
 PDUs for `1828/2ADD`. Those PDUs are still offline artifacts until they are sent
 over an authorized BLE Mesh Proxy connection.
 
+To transmit those config PDUs after the light is provisioned and advertising
+Mesh Proxy:
+
+```sh
+uv run zlight mesh-config-send \
+  --network-key-hex "$NETWORK_KEY_HEX" \
+  --app-key-hex "$APP_KEY_HEX" \
+  --device-key-hex "$DEVICE_KEY_HEX" \
+  --ble-backend macos-app \
+  --yes --json
+```
+
+This is a mutating setup command; it writes the composition/default-TTL/network
+transmit/app-key-add sequence to `1828/2ADD`.
+
 When BLE discovery unexpectedly returns no Zhiyun devices on macOS, widen the
 scan before changing protocol code:
 

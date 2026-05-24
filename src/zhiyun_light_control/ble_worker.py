@@ -47,6 +47,20 @@ def main(argv: list[str] | None = None) -> int:
     exchange.add_argument("--write-uuid")
     exchange.add_argument("--notify-uuid")
 
+    sequence = sub.add_parser("exchange-sequence", help="Exchange raw frames.")
+    sequence.add_argument("--tx-hexes", required=True)
+    sequence.add_argument("--address")
+    sequence.add_argument("--name-contains")
+    sequence.add_argument("--timeout", type=float, default=1.5)
+    sequence.add_argument(
+        "--profile",
+        choices=BLE_PROFILE_NAMES,
+        default=DEFAULT_BLE_PROFILE.name,
+    )
+    sequence.add_argument("--service-uuid")
+    sequence.add_argument("--write-uuid")
+    sequence.add_argument("--notify-uuid")
+
     args = parser.parse_args(args_list)
     if args.command == "scan":
         return _scan_main(args.timeout, args.name_contains)
@@ -54,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
         return _inspect_main(args)
     if args.command == "exchange-raw":
         return _exchange_main(args)
+    if args.command == "exchange-sequence":
+        return _exchange_sequence_main(args)
     raise AssertionError(args.command)
 
 
@@ -111,6 +127,17 @@ def _exchange_main(args: argparse.Namespace) -> int:
     return 0
 
 
+def _exchange_sequence_main(args: argparse.Namespace) -> int:
+    try:
+        payloads = tuple(bytes.fromhex(item) for item in args.tx_hexes.split(","))
+        result = asyncio.run(_exchange_sequence(payloads, args))
+    except Exception as exc:
+        print(json.dumps({"address": args.address, "error": str(exc)}, sort_keys=True))
+        return 1
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 async def _exchange_raw(
     payload: bytes,
     args: argparse.Namespace,
@@ -128,6 +155,30 @@ async def _exchange_raw(
         return {
             "address": transport.address,
             "rx_hex": rx.hex() if rx else None,
+        }
+
+
+async def _exchange_sequence(
+    payloads: tuple[bytes, ...],
+    args: argparse.Namespace,
+) -> dict[str, object]:
+    async with BleTransport(
+        address=args.address,
+        name_contains=args.name_contains,
+        profile=args.profile,
+        service_uuid=args.service_uuid,
+        write_uuid=args.write_uuid,
+        notify_uuid=args.notify_uuid,
+        timeout=args.timeout,
+    ) as transport:
+        rx_items = []
+        for payload in payloads:
+            rx = await transport.exchange(payload, timeout=args.timeout)
+            rx_items.append(rx.hex() if rx else None)
+        return {
+            "address": transport.address,
+            "rx_hex": "".join(item or "" for item in rx_items) or None,
+            "rx_hexes": rx_items,
         }
 
 

@@ -46,6 +46,7 @@ from zhiyun_light_control.transports.ble import (
     exchange_zhiyun_ble_macos_app,
     exchange_zhiyun_ble_safe,
     exchange_zhiyun_ble_sequence_macos_app,
+    exchange_zhiyun_ble_sequence_safe,
     inspect_zhiyun_ble_macos_app,
     inspect_zhiyun_ble_safe,
     inspect_zhiyun_device,
@@ -836,6 +837,41 @@ class SafeBleExchangeTests(unittest.TestCase):
         self.assertEqual(helper_args[0], "exchange-sequence")
         self.assertIn("--tx-hexes", helper_args)
         self.assertIn("01,02,03", helper_args)
+
+    def test_worker_sequence_exchange_reports_per_write_rx(self) -> None:
+        worker_run = types.SimpleNamespace(
+            ok=True,
+            stdout=json.dumps(
+                {
+                    "address": "UUID-1",
+                    "rx_hex": "aabb",
+                    "rx_hexes": ["aa", "bb"],
+                }
+            ),
+            stderr="",
+            returncode=0,
+            executable="python",
+            error=None,
+        )
+
+        with patch(
+            "zhiyun_light_control.transports.ble._run_ble_worker",
+            return_value=worker_run,
+        ) as run:
+            result = exchange_zhiyun_ble_sequence_safe(
+                (b"\x01", b"\x02"),
+                address="UUID-1",
+                profile="mesh-proxy",
+                timeout=4.0,
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.rx, (b"\xaa", b"\xbb"))
+        self.assertEqual(result.rx_combined, b"\xaa\xbb")
+        worker_args = run.call_args.args[0]
+        self.assertEqual(worker_args[0], "exchange-sequence")
+        self.assertIn("--tx-hexes", worker_args)
+        self.assertIn("01,02", worker_args)
 
     def test_macos_app_ipc_session_uses_mesh_profile(self) -> None:
         with patch(
