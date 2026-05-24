@@ -13,6 +13,35 @@ from .bridge import LightConnectionConfig
 
 SETUP_PROFILE_KIND = "setup-profile"
 SETUP_PROFILE_SCHEMA_VERSION = 1
+SETUP_PROFILE_PRIMITIVE_REQUIREMENTS = {
+    "status": ("read_status",),
+    "probe": ("read_status",),
+    "readiness": ("read_status",),
+    "setup_report": ("read_status",),
+    "setup_profile": ("read_status",),
+    "devices": ("device_discovery",),
+    "state_events": ("state_events",),
+    "read_brightness": ("object_reads",),
+    "read_cct": ("object_reads",),
+    "read_sleep": ("object_reads",),
+    "read_object_voltage": ("object_reads",),
+    "read_object_mode": ("object_reads",),
+    "read_object_firmware": ("object_reads",),
+    "identify": ("object_reads",),
+    "register": ("control_setup",),
+    "register_default_group": ("control_setup",),
+    "set_brightness": ("control_writes",),
+    "set_cct": ("control_writes",),
+    "set_sleep": ("control_writes",),
+    "set_rgb": ("control_writes",),
+    "set_hsi": ("control_writes",),
+    "apply_scene": ("control_writes",),
+    "apply_preset": ("control_writes",),
+    "run_sequence": ("control_writes",),
+    "run_cue": ("control_writes",),
+    "run_named_cue": ("control_writes",),
+    "transition": ("control_writes",),
+}
 
 
 @dataclass(frozen=True)
@@ -130,6 +159,18 @@ class LightSetupProfile:
             raise SetupProfileNotReady(self, missing)
         return self
 
+    def primitive_requirements(self, primitive: str) -> tuple[str, ...]:
+        return setup_profile_primitive_requirements(primitive)
+
+    def primitive_ready(self, primitive: str) -> bool:
+        return not self.unready_primitive_capabilities(primitive)
+
+    def unready_primitive_capabilities(self, primitive: str) -> list[str]:
+        return self.unready_capabilities(*self.primitive_requirements(primitive))
+
+    def require_primitive(self, primitive: str) -> LightSetupProfile:
+        return self.require_ready(*self.primitive_requirements(primitive))
+
     def to_dict(self) -> dict[str, object]:
         return {
             "api": "zhiyun-light-control",
@@ -158,6 +199,19 @@ class SetupProfileNotReady(RuntimeError):
         self.validation_unconfirmed = profile.validation_unconfirmed
         missing = ", ".join(self.capabilities)
         super().__init__(f"setup profile not ready for {missing}")
+
+
+class SetupProfileMissing(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__("integration has no setup profile evidence")
+
+
+def setup_profile_primitive_requirements(primitive: str) -> tuple[str, ...]:
+    normalized = primitive.strip().lower().replace("-", "_")
+    requirements = SETUP_PROFILE_PRIMITIVE_REQUIREMENTS.get(normalized)
+    if requirements is None:
+        raise ValueError(f"unknown setup profile primitive: {primitive}")
+    return requirements
 
 
 def light_setup_profile_from_mapping(

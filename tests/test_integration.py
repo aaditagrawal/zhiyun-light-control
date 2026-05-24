@@ -16,6 +16,7 @@ from zhiyun_light_control import (
     PersistentLightFactory,
     Scene,
     ScenePresetLibrary,
+    SetupProfileMissing,
     SetupProfileNotReady,
     integration_pending_action_ids,
     integration_ready,
@@ -1790,10 +1791,26 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(integration.config.port, "/dev/cu.usbmodem21301")
+        self.assertIs(integration.setup_profile_evidence, profile)
         self.assertTrue(integration.allow_control)
         self.assertEqual(integration.cue_names, ("intro",))
         self.assertEqual(configured.config.port, "/dev/cu.usbmodem21301")
+        self.assertIs(configured.setup_profile_evidence, profile)
         self.assertEqual(configured.obj, 2)
+        self.assertTrue(configured.setup_profile_primitive_ready("status"))
+        self.assertFalse(
+            configured.setup_profile_primitive_ready("set_brightness")
+        )
+        self.assertTrue(
+            configured.require_setup_profile_primitive("status").ready("read_status")
+        )
+        self.assertIsNone(
+            configured.with_config(LightConnectionConfig.usb()).setup_profile_evidence
+        )
+        with self.assertRaises(SetupProfileMissing):
+            LightIntegration().require_setup_profile("read_status")
+        with self.assertRaises(SetupProfileNotReady):
+            configured.require_setup_profile_primitive("set_brightness")
         with self.assertRaises(SetupProfileNotReady):
             LightIntegration.from_setup_profile(profile, require="control_writes")
 
@@ -1881,9 +1898,15 @@ class AsyncIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(integration.config.address, "UUID-1")
+        self.assertIs(integration.setup_profile_evidence, profile)
         self.assertTrue(integration.allow_control)
         self.assertEqual(configured.config.address, "UUID-1")
+        self.assertIs(configured.setup_profile_evidence, profile)
         self.assertEqual(configured.obj, 3)
+        self.assertTrue(configured.setup_profile_ready("read_status"))
+        self.assertFalse(configured.setup_profile_primitive_ready("read_brightness"))
+        with self.assertRaises(SetupProfileMissing):
+            AsyncLightIntegration().require_setup_profile("read_status")
         with self.assertRaises(SetupProfileNotReady):
             AsyncLightIntegration.from_setup_profile(profile, require="object_reads")
 

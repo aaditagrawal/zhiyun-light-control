@@ -46,7 +46,7 @@ from .discovery import (
 )
 from .models import Scene
 from .presets import ScenePresetLibrary
-from .profiles import LightSetupProfile, load_light_setup_profile
+from .profiles import LightSetupProfile, SetupProfileMissing, load_light_setup_profile
 from .protocol import DEFAULT_CONTROL_MODE, RUNTIME_TYPE
 from .server import (
     capabilities_response,
@@ -97,6 +97,7 @@ class LightIntegration:
     cue_library: CueLibrary | None = None
     obj: int = 1
     state_tracker: SceneStateTracker = field(default_factory=SceneStateTracker)
+    setup_profile_evidence: LightSetupProfile | None = None
 
     def status(self) -> StatusSnapshot:
         return local_status_snapshot(
@@ -113,7 +114,11 @@ class LightIntegration:
         **options: object,
     ) -> LightIntegration:
         profile.require_ready(*_profile_requirements(require))
-        return cls(config=profile.config, **options)
+        return cls(
+            config=profile.config,
+            setup_profile_evidence=profile,
+            **options,
+        )
 
     @classmethod
     def from_setup_profile_file(
@@ -418,7 +423,7 @@ class LightIntegration:
         )
 
     def with_config(self, config: LightConnectionConfig) -> LightIntegration:
-        return replace(self, config=config)
+        return replace(self, config=config, setup_profile_evidence=None)
 
     def with_setup_profile(
         self,
@@ -427,7 +432,29 @@ class LightIntegration:
         require: str | Iterable[str] = (),
     ) -> LightIntegration:
         profile.require_ready(*_profile_requirements(require))
-        return self.with_config(profile.config)
+        return replace(self, config=profile.config, setup_profile_evidence=profile)
+
+    def require_setup_profile(self, *capabilities: str) -> LightSetupProfile:
+        if self.setup_profile_evidence is None:
+            raise SetupProfileMissing()
+        return self.setup_profile_evidence.require_ready(*capabilities)
+
+    def setup_profile_ready(self, capability: str) -> bool:
+        return (
+            self.setup_profile_evidence is not None
+            and self.setup_profile_evidence.ready(capability)
+        )
+
+    def setup_profile_primitive_ready(self, primitive: str) -> bool:
+        return (
+            self.setup_profile_evidence is not None
+            and self.setup_profile_evidence.primitive_ready(primitive)
+        )
+
+    def require_setup_profile_primitive(self, primitive: str) -> LightSetupProfile:
+        if self.setup_profile_evidence is None:
+            raise SetupProfileMissing()
+        return self.setup_profile_evidence.require_primitive(primitive)
 
     def with_best_connection(
         self,
@@ -1280,6 +1307,7 @@ class AsyncLightIntegration:
     cue_library: CueLibrary | None = None
     obj: int = 1
     state_tracker: SceneStateTracker = field(default_factory=SceneStateTracker)
+    setup_profile_evidence: LightSetupProfile | None = None
 
     async def status(self) -> StatusSnapshot:
         return await local_async_status_snapshot(
@@ -1296,7 +1324,11 @@ class AsyncLightIntegration:
         **options: object,
     ) -> AsyncLightIntegration:
         profile.require_ready(*_profile_requirements(require))
-        return cls(config=profile.config, **options)
+        return cls(
+            config=profile.config,
+            setup_profile_evidence=profile,
+            **options,
+        )
 
     @classmethod
     def from_setup_profile_file(
@@ -1606,7 +1638,7 @@ class AsyncLightIntegration:
         )
 
     def with_config(self, config: LightConnectionConfig) -> AsyncLightIntegration:
-        return replace(self, config=config)
+        return replace(self, config=config, setup_profile_evidence=None)
 
     def with_setup_profile(
         self,
@@ -1615,7 +1647,29 @@ class AsyncLightIntegration:
         require: str | Iterable[str] = (),
     ) -> AsyncLightIntegration:
         profile.require_ready(*_profile_requirements(require))
-        return self.with_config(profile.config)
+        return replace(self, config=profile.config, setup_profile_evidence=profile)
+
+    def require_setup_profile(self, *capabilities: str) -> LightSetupProfile:
+        if self.setup_profile_evidence is None:
+            raise SetupProfileMissing()
+        return self.setup_profile_evidence.require_ready(*capabilities)
+
+    def setup_profile_ready(self, capability: str) -> bool:
+        return (
+            self.setup_profile_evidence is not None
+            and self.setup_profile_evidence.ready(capability)
+        )
+
+    def setup_profile_primitive_ready(self, primitive: str) -> bool:
+        return (
+            self.setup_profile_evidence is not None
+            and self.setup_profile_evidence.primitive_ready(primitive)
+        )
+
+    def require_setup_profile_primitive(self, primitive: str) -> LightSetupProfile:
+        if self.setup_profile_evidence is None:
+            raise SetupProfileMissing()
+        return self.setup_profile_evidence.require_primitive(primitive)
 
     async def with_best_connection(
         self,

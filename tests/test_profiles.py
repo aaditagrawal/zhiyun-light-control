@@ -12,6 +12,7 @@ from zhiyun_light_control import (
     light_setup_profile_to_json,
     load_light_setup_profile,
     save_light_setup_profile,
+    setup_profile_primitive_requirements,
 )
 
 
@@ -40,6 +41,24 @@ class SetupProfileTests(unittest.TestCase):
         self.assertEqual(
             profile.unready_capabilities("read_status", "control_writes"),
             ["control_writes"],
+        )
+        self.assertEqual(
+            profile.primitive_requirements("set_brightness"),
+            ("control_writes",),
+        )
+        self.assertEqual(
+            profile.primitive_requirements("read_brightness"),
+            ("object_reads",),
+        )
+        self.assertTrue(profile.primitive_ready("status"))
+        self.assertFalse(profile.primitive_ready("set_brightness"))
+        self.assertEqual(
+            profile.unready_primitive_capabilities("set_brightness"),
+            ["control_writes"],
+        )
+        self.assertEqual(
+            setup_profile_primitive_requirements("set-brightness"),
+            ("control_writes",),
         )
 
         payload = profile.to_dict()
@@ -101,6 +120,12 @@ class SetupProfileTests(unittest.TestCase):
             },
         )
         self.assertEqual(error.exception.validation_unconfirmed, ["set_brightness"])
+
+        with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+            profile.require_primitive("set_brightness")
+
+        with self.assertRaisesRegex(ValueError, "unknown setup profile primitive"):
+            profile.primitive_ready("fan_speed")
 
 
 def setup_report(

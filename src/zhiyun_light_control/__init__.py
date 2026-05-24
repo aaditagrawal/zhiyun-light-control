@@ -181,12 +181,14 @@ from .models import (
 from .presets import PresetError, ScenePresetLibrary, merge_scene, scene_from_mapping
 from .profiles import (
     LightSetupProfile,
+    SetupProfileMissing,
     SetupProfileNotReady,
     light_setup_profile_from_json,
     light_setup_profile_from_mapping,
     light_setup_profile_to_json,
     load_light_setup_profile,
     save_light_setup_profile,
+    setup_profile_primitive_requirements,
 )
 from .protocol import (
     DEFAULT_CONTROL_MODE,
@@ -327,6 +329,7 @@ __all__ = [
     "SceneTransition",
     "ScenePresetLibrary",
     "SacnPacket",
+    "SetupProfileMissing",
     "SetupProfileNotReady",
     "UsbDiscoveryReport",
     "UsbPortInfo",
@@ -468,6 +471,7 @@ __all__ = [
     "light_setup_profile_from_json",
     "light_setup_profile_from_mapping",
     "light_setup_profile_to_json",
+    "setup_profile_primitive_requirements",
     "bridge_connection_config",
     "bridge_setup_report",
     "test_ble_endpoint_candidates",

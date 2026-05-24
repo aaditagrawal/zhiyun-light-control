@@ -282,6 +282,13 @@ the same setup evidence between processes or operating systems. Profiles expose
 facades expose `from_setup_profile`, `from_setup_profile_file`, and
 `with_setup_profile` so host applications can rebuild SDK clients from saved
 evidence while failing fast on missing capabilities.
+Profiles also expose primitive-level checks. `primitive_ready("set_brightness")`
+and `require_primitive("read_brightness")` map public SDK operations to the
+evidence capabilities they require (`control_writes`, `object_reads`,
+`control_setup`, or `read_status`). `LightIntegration` and
+`AsyncLightIntegration` instances created from a profile retain that evidence as
+`setup_profile_evidence` and expose matching
+`setup_profile_primitive_ready`/`require_setup_profile_primitive` helpers.
 When a host talks to a long-running HTTP bridge instead of embedding the
 transport directly, `LightBridgeClient.setup_report`,
 `LightBridgeClient.setup_profile`, and `LightBridgeClient.save_setup_profile`

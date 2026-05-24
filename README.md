@@ -771,10 +771,16 @@ unconfirmed primitive names. This is the same evidence model used by
 Call `setup_profile()` when that evidence should be persisted with the selected
 config. A `LightSetupProfile` is plain JSON and can later answer capability
 checks such as `profile.ready("read_status")` or
-`profile.ready("control_writes")` before a host enables a workflow.
+`profile.ready("control_writes")` before a host enables a workflow. It can also
+gate by primitive name with `profile.primitive_ready("set_brightness")` or
+`profile.require_primitive("read_brightness")`, so a media host does not need to
+hard-code which setup capability protects each operation.
 Use `LightIntegration.from_setup_profile()` or
 `LightIntegration.from_setup_profile_file()` to turn that saved profile back
-into a host integration while requiring capabilities up front.
+into a host integration while requiring capabilities up front. Integrations
+created this way retain the profile evidence as `setup_profile_evidence` and
+expose `setup_profile_primitive_ready()` plus
+`require_setup_profile_primitive()` for fail-fast show-control guards.
 The integration facade also exposes direct control helpers:
 `register()`, `read_brightness()`, `read_cct()`, `read_sleep()`,
 `set_brightness()`, `set_cct()`, `set_sleep()`, `set_rgb()`, `set_hsi()`,
@@ -861,11 +867,13 @@ save_light_setup_profile(profile, "./zhiyun-light-profile.json")
 restored_profile = load_light_setup_profile("./zhiyun-light-profile.json")
 print(restored_profile.config.to_dict())
 restored_profile.require_ready("read_status")
+print(restored_profile.primitive_ready("set_brightness"))
 restored_integration = LightIntegration.from_setup_profile(
     restored_profile,
     require="read_status",
 )
 print(restored_integration.config.to_dict())
+restored_integration.require_setup_profile_primitive("status")
 
 result = integration.apply_scene(
     {"brightness": 35, "kelvin": 5600},
