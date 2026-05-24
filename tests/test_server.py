@@ -1264,6 +1264,37 @@ class ServerTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+    def test_http_events_stream_after_version(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{server.server_port}"
+        try:
+            for value in (11, 22):
+                request = Request(
+                    f"{base}/brightness",
+                    data=json.dumps({"value": value}).encode(),
+                    headers={"content-type": "application/json"},
+                    method="POST",
+                )
+                urlopen(request, timeout=3).read()
+            response = urlopen(
+                f"{base}/events?after=1&limit=1&timeout=0.1&initial=false",
+                timeout=3,
+            )
+            payload = response.read().decode("utf-8")
+            self.assertIn('"version": 2', payload)
+            self.assertIn('"brightness": 22.0', payload)
+            self.assertNotIn('"brightness": 11.0', payload)
+        finally:
+            server.shutdown()
+            server.server_close()
+
     def test_http_exposes_openapi_schema_and_configurable_cors(self) -> None:
         light = FakeLight()
         server = LightHttpServer(

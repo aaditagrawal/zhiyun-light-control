@@ -421,7 +421,8 @@ what actually happened.
 `GET /events` streams bridge state as Server-Sent Events for dashboards and
 automation panels that should react to cue/control requests without polling.
 Use `limit`, `timeout`, and `initial=false` query parameters for finite scripts
-and tests.
+and tests. Use `after=<version>` to replay buffered state changes newer than
+the caller's last seen version before the stream switches to live updates.
 
 `GET /history` returns recent requested-state events with their monotonically
 increasing versions. Use `after` and `limit` query parameters when a dashboard
@@ -628,6 +629,7 @@ from zhiyun_light_control import (
     serialized_plan_bundle,
     setup_profile_primitive_readiness,
     setup_profile_primitive_ready_for,
+    state_history_events,
     usb_config_from_devices,
 )
 
@@ -691,7 +693,15 @@ print(bridge_execution["applied"], bridge_execution["planned_action"])
 print(bridge.discover_usb(object_ids=[0, 1], first_words=["0x0100"])["summary"])
 print(bridge_setup_report(bridge.integration(), validation=bridge.validate())["config"])
 print(next(bridge.state_events(limit=1))["state"])
-print(bridge.history(limit=10)["events"])
+history = bridge.history(limit=10)
+print(state_history_events(history))
+for event in bridge.follow_state_events(
+    after=history["version"],
+    limit=1,
+    timeout=0.1,
+    reconnect=False,
+):
+    print(event["version"], event["state"])
 
 result = bridge.set_brightness(35, obj=1)
 print(result["transport_status"])

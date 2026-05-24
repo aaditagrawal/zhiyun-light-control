@@ -351,6 +351,7 @@ class LightBridgeClient:
     def state_events(
         self,
         *,
+        after: int | None = None,
         limit: int | None = None,
         timeout: float = 30.0,
         initial: bool = True,
@@ -359,6 +360,8 @@ class LightBridgeClient:
             "timeout": timeout,
             "initial": str(initial).lower(),
         }
+        if after is not None:
+            query["after"] = after
         if limit is not None:
             query["limit"] = limit
         request = Request(
@@ -381,6 +384,57 @@ class LightBridgeClient:
                     continue
                 if line.startswith("data:"):
                     data_lines.append(line[5:].lstrip())
+
+    def follow_state_events(
+        self,
+        *,
+        after: int | None = None,
+        limit: int | None = None,
+        timeout: float = 30.0,
+        initial: bool = True,
+        reconnect: bool = True,
+        max_reconnects: int | None = None,
+        retry_delay: float = 0.25,
+    ) -> Iterator[dict[str, object]]:
+        remaining = limit
+        last_version = after
+        include_initial = initial and last_version is None
+        reconnects = 0
+        while remaining is None or remaining > 0:
+            try:
+                for event in self.state_events(
+                    after=last_version,
+                    limit=remaining,
+                    timeout=timeout,
+                    initial=include_initial,
+                ):
+                    yield event
+                    include_initial = False
+                    version = state_event_version(event)
+                    if version is not None:
+                        last_version = version
+                    if remaining is not None:
+                        remaining -= 1
+                        if remaining <= 0:
+                            return
+            except OSError:
+                if not _should_reconnect(
+                    reconnect=reconnect,
+                    reconnects=reconnects,
+                    max_reconnects=max_reconnects,
+                ):
+                    raise
+            else:
+                if not _should_reconnect(
+                    reconnect=reconnect,
+                    reconnects=reconnects,
+                    max_reconnects=max_reconnects,
+                ):
+                    return
+            reconnects += 1
+            include_initial = False
+            if retry_delay > 0:
+                time.sleep(retry_delay)
 
     def validate(
         self,
@@ -1109,6 +1163,25 @@ def bridge_response_reason(payload: Mapping[str, object]) -> str | None:
     return None
 
 
+def state_event_version(payload: Mapping[str, object]) -> int | None:
+    version = payload.get("version")
+    if isinstance(version, int):
+        return version
+    if isinstance(version, str):
+        try:
+            return int(version, 0)
+        except ValueError:
+            return None
+    return None
+
+
+def state_history_events(payload: Mapping[str, object]) -> list[dict[str, object]]:
+    events = payload.get("events")
+    if not isinstance(events, list):
+        return []
+    return [_string_key_dict(event) for event in events if isinstance(event, Mapping)]
+
+
 def require_acknowledged_response(
     payload: Mapping[str, object],
 ) -> dict[str, object]:
@@ -1116,6 +1189,17 @@ def require_acknowledged_response(
     if not bridge_response_applied(response):
         raise LightBridgeUnconfirmed(response)
     return response
+
+
+def _should_reconnect(
+    *,
+    reconnect: bool,
+    reconnects: int,
+    max_reconnects: int | None,
+) -> bool:
+    if not reconnect:
+        return False
+    return max_reconnects is None or reconnects < max_reconnects
 
 
 def validation_summary(payload: Mapping[str, object]) -> dict[str, object]:

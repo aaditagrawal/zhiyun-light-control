@@ -1217,6 +1217,8 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         limit = _query_int(params, "limit", default=0)
         timeout = _query_float(params, "timeout", default=30.0)
         include_initial = _query_bool(params, "initial", default=True)
+        after_version = _query_int(params, "after", default=-1)
+        use_after = "after" in params
         self.send_response(HTTPStatus.OK)
         self.send_header("content-type", "text/event-stream")
         self.send_header("cache-control", "no-cache")
@@ -1231,7 +1233,27 @@ class LightRequestHandler(BaseHTTPRequestHandler):
         sent = 0
         version, state = self.server.state_tracker.versioned_snapshot()
         try:
-            if include_initial:
+            if use_after:
+                requested_version = max(0, after_version)
+                if requested_version > version:
+                    if include_initial:
+                        self._write_state_event(version, state)
+                        sent += 1
+                    if limit > 0 and sent >= limit:
+                        return
+                else:
+                    version = requested_version
+                    for event_version, event_state in (
+                        self.server.state_tracker.history(
+                            after_version=requested_version,
+                        )
+                    ):
+                        if limit > 0 and sent >= limit:
+                            return
+                        version = event_version
+                        self._write_state_event(version, event_state)
+                        sent += 1
+            elif include_initial:
                 self._write_state_event(version, state)
                 sent += 1
             while limit <= 0 or sent < limit:
@@ -1956,7 +1978,7 @@ def integration_manifest_response(
             "events": {
                 "method": "GET",
                 "path": "/events",
-                "query": ["limit", "timeout", "initial"],
+                "query": ["after", "limit", "timeout", "initial"],
             },
             "history": {
                 "method": "GET",
@@ -2289,7 +2311,12 @@ def request_templates_response() -> dict[str, object]:
             "events": {
                 "method": "GET",
                 "path": "/events",
-                "query": {"limit": 1, "timeout": 30, "initial": True},
+                "query": {
+                    "after": 0,
+                    "limit": 1,
+                    "timeout": 30,
+                    "initial": True,
+                },
             },
         },
         "setup": {
@@ -2642,7 +2669,7 @@ def capabilities_response(
                 "method": "GET",
                 "path": "/events",
                 "requires_control": False,
-                "fields": ["limit", "timeout", "initial"],
+                "fields": ["after", "limit", "timeout", "initial"],
                 "confirmation": "state-event stream mirrors requested bridge state",
             },
             {

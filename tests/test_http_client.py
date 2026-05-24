@@ -56,6 +56,8 @@ from zhiyun_light_control import (
     request_templates,
     require_acknowledged_response,
     serialized_plan_bundle,
+    state_event_version,
+    state_history_events,
     validation_category,
     validation_ready,
     validation_ready_for,
@@ -512,9 +514,10 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(light.commands[-1][1][2], 0x01)
             history = client.history(limit=1)
             self.assertEqual(history["version"], 2)
-            self.assertEqual(history["events"][0]["state"]["action"], "brightness")
+            history_events = state_history_events(history)
+            self.assertEqual(history_events[0]["state"]["action"], "brightness")
             self.assertEqual(
-                history["events"][0]["state"]["result_summaries"][0]["command"],
+                history_events[0]["state"]["result_summaries"][0]["command"],
                 RuntimeCommand.BRIGHTNESS,
             )
             self.assertTrue(bridge_response_applied(history))
@@ -1305,6 +1308,45 @@ class HttpClientTests(unittest.TestCase):
             self.assertEqual(state["action"], "brightness")
             self.assertEqual(state["result_summaries"][0]["command"], 0x1001)
             self.assertTrue(state["result_summaries"][0]["acknowledged"])
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_client_resumes_state_events_after_version(self) -> None:
+        light = FakeLight()
+        server = LightHttpServer(
+            ("127.0.0.1", 0),
+            allow_control=True,
+            light_factory=lambda: light,
+        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        client = LightBridgeClient(f"http://127.0.0.1:{server.server_port}")
+        try:
+            client.set_brightness(11)
+            client.set_brightness(22)
+
+            resumed = next(
+                client.state_events(
+                    after=1,
+                    limit=1,
+                    timeout=0.1,
+                    initial=False,
+                )
+            )
+            self.assertEqual(state_event_version(resumed), 2)
+            self.assertEqual(resumed["state"]["scene"]["brightness"], 22.0)
+
+            followed = list(
+                client.follow_state_events(
+                    after=1,
+                    limit=1,
+                    timeout=0.1,
+                    retry_delay=0,
+                )
+            )
+            self.assertEqual([state_event_version(event) for event in followed], [2])
+            self.assertEqual(followed[0]["state"]["action"], "brightness")
         finally:
             server.shutdown()
             server.server_close()
