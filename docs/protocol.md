@@ -196,6 +196,10 @@ and `/manifest` both include `primitive_requirements`, a transport-neutral map
 from public primitive names and aliases to setup-profile capabilities. For
 example, `brightness` and `set_brightness` require `control_writes`, while
 `read_brightness` requires `object_reads` and `status` requires `read_status`.
+Shell-driven controllers can get the same bootstrap metadata without opening a
+transport or starting the HTTP bridge through
+`zlight metadata --kind all --json`; use `--kind openapi`, `manifest`, or
+`capabilities` when a single payload is enough.
 The Python HTTP client exposes that metadata through
 `primitive_requirements_map()` and `primitive_requirements(name)` for
 controllers that use the bridge as the process boundary.

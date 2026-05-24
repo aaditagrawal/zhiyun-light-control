@@ -716,6 +716,67 @@ class CliTests(unittest.TestCase):
             ble_python=None,
         )
 
+    def test_metadata_cli_exports_api_payloads_without_opening_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            preset_path = Path(tmp) / "scenes.json"
+            cue_path = Path(tmp) / "cues.json"
+            preset_path.write_text(
+                json.dumps({"scenes": {"key": {"brightness": 35}}}),
+                encoding="utf-8",
+            )
+            cue_path.write_text(
+                json.dumps({"cues": {"intro": {"steps": [{"preset": "key"}]}}}),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            with (
+                patch("zhiyun_light_control.cli.ZhiyunLight.usb") as usb,
+                patch("zhiyun_light_control.cli.AsyncZhiyunLight.isolated_ble") as ble,
+                contextlib.redirect_stdout(stdout),
+            ):
+                code = main(
+                    [
+                        "metadata",
+                        "--transport",
+                        "ble",
+                        "--ble-backend",
+                        "macos-app",
+                        "--name-contains",
+                        "PL103",
+                        "--preset-file",
+                        str(preset_path),
+                        "--cue-file",
+                        str(cue_path),
+                        "--allow-control",
+                        "--json",
+                    ]
+                )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["transport"]["transport"], "ble")
+        self.assertEqual(payload["payloads"]["manifest"]["transport"]["active"], "ble")
+        self.assertEqual(
+            payload["payloads"]["manifest"]["transport"]["ble_backend"],
+            "macos-app",
+        )
+        self.assertEqual(payload["payloads"]["manifest"]["presets"], ["key"])
+        self.assertEqual(payload["payloads"]["capabilities"]["cues"], ["intro"])
+        self.assertIn("/execute-plan", payload["payloads"]["openapi"]["paths"])
+        self.assertTrue(payload["payloads"]["capabilities"]["control_enabled"])
+        usb.assert_not_called()
+        ble.assert_not_called()
+
+    def test_metadata_cli_can_print_single_payload_kind(self) -> None:
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = main(["metadata", "--kind", "openapi", "--json"])
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["openapi"], "3.1.0")
+        self.assertIn("/manifest", payload["paths"])
+
     def test_set_returns_nonzero_when_command_is_unacknowledged(self) -> None:
         class FakeLight:
             def __init__(self) -> None:

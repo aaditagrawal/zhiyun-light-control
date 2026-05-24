@@ -37,7 +37,12 @@ from .discovery import (
     discover_usb_primitives,
 )
 from .http_client import LightBridgeClient, LightBridgeError
-from .integration import local_integration_snapshot, local_readiness
+from .integration import (
+    local_capabilities,
+    local_integration_snapshot,
+    local_manifest,
+    local_readiness,
+)
 from .macos_ble_app import (
     macos_ble_app_info,
     macos_ble_app_status,
@@ -60,7 +65,7 @@ from .protocol import (
     sleep_payload,
 )
 from .sacn import serve_sacn
-from .server import serve
+from .server import openapi_schema, serve
 from .status import read_async_status, read_sync_status
 from .transports.ble import (
     BLE_PROFILE_NAMES,
@@ -140,6 +145,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     integration.add_argument("--json", action="store_true", help="Print compact JSON.")
     integration.set_defaults(func=cmd_integration)
+
+    metadata = sub.add_parser(
+        "metadata",
+        help="Print API metadata without opening USB/BLE or starting a bridge.",
+    )
+    add_bridge_transport_args(metadata)
+    metadata.add_argument(
+        "--kind",
+        choices=["all", "openapi", "manifest", "capabilities"],
+        default="all",
+        help="Metadata payload to print.",
+    )
+    metadata.add_argument(
+        "--allow-control",
+        action="store_true",
+        help="Report control-request endpoints as enabled in metadata.",
+    )
+    metadata.add_argument(
+        "--preset-file", help="JSON file containing named scene presets."
+    )
+    metadata.add_argument("--cue-file", help="JSON file containing named cues.")
+    metadata.add_argument("--json", action="store_true", help="Print compact JSON.")
+    metadata.set_defaults(func=cmd_metadata)
 
     validate = sub.add_parser(
         "validate",
@@ -861,6 +889,40 @@ def cmd_integration(args: argparse.Namespace) -> int:
     return 0 if ready.get("connection_confirmed") is True else 2
 
 
+def cmd_metadata(args: argparse.Namespace) -> int:
+    preset_names = library_names(load_preset_library(args))
+    cue_names = library_names(load_cue_library(args))
+    config = light_connection_config_from_args(args)
+    manifest = local_manifest(
+        config,
+        allow_control=args.allow_control,
+        presets=preset_names,
+        cues=cue_names,
+    )
+    capabilities = local_capabilities(
+        allow_control=args.allow_control,
+        presets=preset_names,
+        cues=cue_names,
+    )
+    payloads = {
+        "openapi": openapi_schema(),
+        "manifest": manifest,
+        "capabilities": capabilities,
+    }
+    payload = (
+        {
+            "api": "zhiyun-light-control",
+            "version": "0.1.0",
+            "transport": config.to_dict(),
+            "payloads": payloads,
+        }
+        if args.kind == "all"
+        else payloads[args.kind]
+    )
+    print_json(payload, compact=args.json)
+    return 0
+
+
 async def _status_ble(args: argparse.Namespace):
     async with async_ble_light_from_args(args) as light:
         return await read_async_status(
@@ -1521,6 +1583,10 @@ def load_preset_library(args: argparse.Namespace) -> ScenePresetLibrary | None:
 def load_cue_library(args: argparse.Namespace) -> CueLibrary | None:
     path = getattr(args, "cue_file", None)
     return CueLibrary.load(path) if path else None
+
+
+def library_names(library) -> list[str]:
+    return [] if library is None else library.names()
 
 
 def cmd_serve(args: argparse.Namespace) -> int:

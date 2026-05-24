@@ -2594,6 +2594,31 @@ def capabilities_response(
                 ),
             },
             {
+                "name": "metadata-cli",
+                "method": "CLI",
+                "command": "zlight metadata --kind all --json",
+                "requires_control": False,
+                "confirmation": (
+                    "no-I/O local OpenAPI, manifest, and capabilities export"
+                ),
+            },
+            {
+                "name": "plan-cli",
+                "method": "CLI",
+                "command": "zlight plan --brightness 35 --output plan.json --json",
+                "requires_control": False,
+                "confirmation": (
+                    "serialized plan bundle created without opening USB/BLE"
+                ),
+            },
+            {
+                "name": "execute-plan-cli",
+                "method": "CLI",
+                "command": "zlight execute-plan plan.json --transport usb --yes --json",
+                "requires_control": True,
+                "confirmation": "all planned frame results acknowledged",
+            },
+            {
                 "name": "devices",
                 "method": "GET",
                 "path": "/devices",

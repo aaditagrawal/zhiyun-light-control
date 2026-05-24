@@ -689,6 +689,13 @@ class ServerTests(unittest.TestCase):
                 "zlight integration --transport usb --json",
             )
             self.assertFalse(primitives["integration-cli"]["requires_control"])
+            self.assertEqual(
+                primitives["metadata-cli"]["command"],
+                "zlight metadata --kind all --json",
+            )
+            self.assertFalse(primitives["metadata-cli"]["requires_control"])
+            self.assertFalse(primitives["plan-cli"]["requires_control"])
+            self.assertTrue(primitives["execute-plan-cli"]["requires_control"])
             self.assertFalse(primitives["events"]["requires_control"])
             self.assertFalse(primitives["history"]["requires_control"])
 

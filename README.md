@@ -223,6 +223,14 @@ control writes; in macOS BLE helper mode it includes `devices.ble.macos_status`.
 the local manifest, capabilities, readiness, and device-discovery payloads in the
 same `summary` shape as HTTP `GET /integration`; add `--include-ble` when a setup
 script should also run a bounded BLE scan.
+`metadata` is the no-I/O version for controller bootstrap: it prints OpenAPI,
+manifest, and capabilities JSON without starting a bridge or opening USB/BLE.
+
+```sh
+uv run zlight metadata --kind all --json
+uv run zlight metadata --kind openapi --json
+uv run zlight metadata --transport ble --ble-backend macos-app --name-contains PL103 --json
+```
 
 Scan BLE devices:
 
@@ -426,10 +434,12 @@ loaded preset names, local preflight commands such as `zlight ready`, and the
 transport evidence statuses a client should expect. It also includes
 `control_guard` readiness rules and `request_templates` for setup, read, and
 control requests so external controllers can bootstrap valid JSON bodies without
-hard-coding endpoint shapes. `primitive_requirements` maps each SDK/HTTP
-operation name, including aliases such as `brightness` and `set_brightness`, to
-the setup-profile capability that must be ready before a production workflow
-arms that operation.
+hard-coding endpoint shapes. CLI process-boundary primitives such as
+`metadata-cli`, `plan-cli`, and `execute-plan-cli` are listed alongside HTTP
+primitives. `primitive_requirements` maps each SDK/HTTP operation name,
+including aliases such as `brightness` and `set_brightness`, to the
+setup-profile capability that must be ready before a production workflow arms
+that operation.
 
 `GET /manifest` is the one-call integration map for media controllers. It lists
 HTTP control paths, state/event paths, OSC addresses, Art-Net/sACN defaults, BLE
