@@ -151,6 +151,7 @@ BLE discovery and endpoint checks:
 uv run zlight scan-ble --name-contains MOLUS
 uv run zlight inspect-ble --name-contains MOLUS --json
 uv run zlight test-ble-endpoints --name-contains MOLUS --json
+uv run --extra mesh zlight mesh-session --name-contains PL103 --json
 ```
 
 See [ble.md](ble.md) for profiles, macOS helper setup, and worker isolation.

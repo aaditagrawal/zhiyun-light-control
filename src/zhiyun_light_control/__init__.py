@@ -529,6 +529,7 @@ _LEGACY_EXPORT_GROUPS: dict[str, tuple[str, ...]] = {
         "BleWorkerError",
         "CrashIsolatedBleTransport",
         "MacosBleAppTransport",
+        "open_zhiyun_ble_ipc_macos_app",
         "resolve_ble_profile",
         "scan_zhiyun_devices_macos_app",
         "suggest_ble_endpoint_candidates",

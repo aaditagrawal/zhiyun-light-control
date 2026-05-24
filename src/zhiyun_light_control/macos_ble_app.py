@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -33,6 +34,178 @@ class MacosBleAppRun:
     error: str | None = None
     returncode: int | None = None
     command: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MacosBleIpcResult:
+    ok: bool
+    tx: tuple[bytes, ...]
+    rx: tuple[bytes, ...]
+    payload: dict[str, object]
+    error: str | None = None
+    returncode: int | None = None
+    command: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "tx_hexes": [item.hex() for item in self.tx],
+            "rx_hexes": [item.hex() if item else None for item in self.rx],
+            "payload": self.payload,
+            "error": self.error,
+            "returncode": self.returncode,
+            "command": list(self.command),
+        }
+
+
+class MacosBleIpcSession:
+    """File-IPC session for one continuous CoreBluetooth exchange."""
+
+    def __init__(
+        self,
+        args: list[str],
+        *,
+        timeout: float,
+        bundle_name: str = APP_BUNDLE_NAME,
+    ):
+        self.args = args
+        self.timeout = timeout
+        self.bundle_name = bundle_name
+        self._tmp = tempfile.TemporaryDirectory(prefix="zhiyun-ble-ipc-")
+        self.session_dir = Path(self._tmp.name) / "session"
+        self.output = Path(self._tmp.name) / "result.json"
+        self.session_dir.mkdir()
+        self._process: subprocess.Popen[str] | None = None
+        self._command: tuple[str, ...] = ()
+        self._tx: list[bytes] = []
+        self._rx: list[bytes] = []
+        self._closed = False
+        self._final_result: MacosBleIpcResult | None = None
+
+    def __enter__(self) -> MacosBleIpcSession:
+        if sys.platform != "darwin":
+            raise RuntimeError("macOS BLE app backend requires macOS")
+        open_path = shutil.which("open")
+        swiftc_path = _find_swiftc()
+        if open_path is None:
+            raise RuntimeError("macOS open command not found")
+        if swiftc_path is None:
+            raise RuntimeError("Swift compiler not found")
+        app_path = ensure_macos_ble_app(
+            bundle_name=self.bundle_name,
+            swift_path=swiftc_path,
+        )
+        command = [
+            open_path,
+            "-W",
+            "-n",
+            str(app_path),
+            "--args",
+            *self.args,
+            "--session-dir",
+            str(self.session_dir),
+            "--output",
+            str(self.output),
+        ]
+        self._command = tuple(command)
+        self._process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return self
+
+    def __exit__(self, _exc_type, _exc, _tb) -> None:
+        self.close()
+
+    @property
+    def command(self) -> tuple[str, ...]:
+        return self._command
+
+    def exchange(self, tx: bytes, *, timeout: float | None = None) -> bytes:
+        if self._process is None:
+            raise RuntimeError("macOS BLE IPC session is not open")
+        if self._closed:
+            raise RuntimeError("macOS BLE IPC session is closed")
+        index = len(self._tx)
+        self._tx.append(tx)
+        tx_path = self.session_dir / f"tx-{index}.hex"
+        rx_path = self.session_dir / f"rx-{index}.hex"
+        tx_path.write_text(tx.hex(), encoding="utf-8")
+        rx = self._wait_for_rx(rx_path, timeout=timeout or self.timeout)
+        self._rx.append(rx)
+        return rx
+
+    def close(self) -> MacosBleIpcResult:
+        if self._closed:
+            if self._final_result is not None:
+                return self._final_result
+            return self._result()
+        self._closed = True
+        try:
+            (self.session_dir / "done").write_text("", encoding="utf-8")
+            if self._process is not None:
+                try:
+                    self._process.communicate(timeout=max(self.timeout + 5.0, 10.0))
+                except subprocess.TimeoutExpired:
+                    _terminate_helper(self.bundle_name)
+                    self._process.kill()
+                    self._process.communicate()
+        finally:
+            result = self._result()
+            self._final_result = result
+            self._tmp.cleanup()
+        return result
+
+    def _wait_for_rx(self, path: Path, *, timeout: float) -> bytes:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if path.exists():
+                text = path.read_text(encoding="utf-8").strip()
+                if not text:
+                    return b""
+                try:
+                    return bytes.fromhex(text)
+                except ValueError as exc:
+                    raise RuntimeError(f"could not parse IPC rx hex: {exc}") from exc
+            if self.output.exists():
+                result = self._result()
+                raise RuntimeError(result.error or "macOS BLE IPC helper exited")
+            if self._process is not None and self._process.poll() is not None:
+                result = self._result()
+                raise RuntimeError(result.error or "macOS BLE IPC helper exited")
+            time.sleep(0.05)
+        raise TimeoutError(f"timed out waiting for IPC rx file {path.name}")
+
+    def _result(self) -> MacosBleIpcResult:
+        payload: dict[str, object] = {}
+        error: str | None = None
+        if self.output.exists():
+            try:
+                parsed = json.loads(self.output.read_text(encoding="utf-8"))
+                if isinstance(parsed, dict):
+                    payload = parsed
+                else:
+                    error = "macOS BLE app output was not a JSON object"
+            except json.JSONDecodeError as exc:
+                error = f"could not parse macOS BLE app output: {exc}"
+        elif self._process is not None and self._process.poll() is not None:
+            stdout, stderr = self._process.communicate()
+            error = stderr.strip() or stdout.strip() or "no JSON output"
+        error_value = payload.get("error")
+        if error is None and error_value is not None:
+            error = str(error_value)
+        returncode = self._process.returncode if self._process is not None else None
+        return MacosBleIpcResult(
+            ok=returncode == 0 and error is None,
+            tx=tuple(self._tx),
+            rx=tuple(self._rx),
+            payload=payload,
+            error=error,
+            returncode=returncode,
+            command=self._command,
+        )
 
 
 def macos_ble_app_info(
@@ -488,6 +661,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
     private let notifyUuid: CBUUID?
     private let tx: Data?
     private let txSequence: [Data]
+    private let sessionDir: String?
     private var devices: [String: JsonDevice] = [:]
     private var peripheral: CBPeripheral?
     private var writeCharacteristic: CBCharacteristic?
@@ -510,6 +684,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
         self.notifyUuid = argument("--notify-uuid").map {{ CBUUID(string: $0) }}
         self.tx = argument("--tx-hex").flatMap {{ hexData($0) }}
         self.txSequence = argument("--tx-hexes").flatMap {{ hexDataList($0) }} ?? []
+        self.sessionDir = argument("--session-dir")
         super.init()
         self.central = CBCentralManager(delegate: self, queue: DispatchQueue.main)
         DispatchQueue.main.asyncAfter(deadline: .now() + self.timeout) {{
@@ -558,7 +733,7 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             devices[device.address] = device
         }}
         guard (mode == "exchange-raw" || mode == "exchange-sequence" ||
-              mode == "inspect") &&
+              mode == "exchange-ipc" || mode == "inspect") &&
               peripheralMatches(device) else {{
             return
         }}
@@ -684,6 +859,10 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             sendSequenceWrite(peripheral, write)
             return
         }}
+        if mode == "exchange-ipc" {{
+            waitForIpcWrite(peripheral, write)
+            return
+        }}
         guard let tx = tx else {{
             return
         }}
@@ -699,6 +878,40 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             return
         }}
         sendWrite(txSequence[txIndex], peripheral, write)
+    }}
+
+    private func waitForIpcWrite(
+        _ peripheral: CBPeripheral,
+        _ write: CBCharacteristic
+    ) {{
+        guard let sessionDir = sessionDir else {{
+            finish(error: "session dir is required")
+            return
+        }}
+        let directory = URL(fileURLWithPath: sessionDir)
+        let done = directory.appendingPathComponent("done")
+        if FileManager.default.fileExists(atPath: done.path) {{
+            finish(error: nil)
+            return
+        }}
+        let txUrl = directory.appendingPathComponent("tx-\\(txIndex).hex")
+        if FileManager.default.fileExists(atPath: txUrl.path) {{
+            do {{
+                let text = try String(contentsOf: txUrl, encoding: .utf8)
+                guard let tx = hexData(text) else {{
+                    finish(error: "invalid IPC tx hex at index \\(txIndex)")
+                    return
+                }}
+                try? FileManager.default.removeItem(at: txUrl)
+                sendWrite(tx, peripheral, write)
+            }} catch {{
+                finish(error: "could not read IPC tx at index \\(txIndex): \\(error)")
+            }}
+            return
+        }}
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {{
+            self.waitForIpcWrite(peripheral, write)
+        }}
     }}
 
     private func sendWrite(
@@ -749,8 +962,35 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
                         return
                     }}
                 }}
+                if self.mode == "exchange-ipc" {{
+                    if let error = self.writeIpcRx(self.currentRx) {{
+                        self.finish(error: error)
+                        return
+                    }}
+                    self.rxChunks.append(self.currentRx.hexString)
+                    self.txIndex += 1
+                    if let peripheral = self.peripheral,
+                       let write = self.writeCharacteristic {{
+                        self.waitForIpcWrite(peripheral, write)
+                        return
+                    }}
+                }}
                 self.finish(error: nil)
             }}
+        }}
+    }}
+
+    private func writeIpcRx(_ data: Data) -> String? {{
+        guard let sessionDir = sessionDir else {{
+            return "session dir is required"
+        }}
+        let rxUrl = URL(fileURLWithPath: sessionDir)
+            .appendingPathComponent("rx-\\(txIndex).hex")
+        do {{
+            try data.hexString.write(to: rxUrl, atomically: true, encoding: .utf8)
+            return nil
+        }} catch {{
+            return "could not write IPC rx at index \\(txIndex): \\(error)"
         }}
     }}
 
@@ -823,7 +1063,8 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
                 return "BLE inspect timed out"
             }}
         }}
-        if mode == "exchange-raw" || mode == "exchange-sequence" {{
+        if mode == "exchange-raw" || mode == "exchange-sequence" ||
+            mode == "exchange-ipc" {{
             if peripheral == nil {{
                 return "no matching BLE device found"
             }}
@@ -867,7 +1108,9 @@ final class BleTool: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {{
             writeJson(ExchangeOutput(
                 address: peripheral?.identifier.uuidString,
                 rx_hex: rx.isEmpty ? nil : rx.hexString,
-                rx_hexes: mode == "exchange-sequence" ? rxChunks : nil,
+                rx_hexes: (mode == "exchange-sequence" || mode == "exchange-ipc")
+                    ? rxChunks
+                    : nil,
                 error: error
             ))
         }}
@@ -892,6 +1135,15 @@ if mode == "exchange-sequence" &&
         rx_hex: nil,
         rx_hexes: nil,
         error: "invalid tx hex sequence"
+    ))
+    exit(1)
+}}
+if mode == "exchange-ipc" && argument("--session-dir") == nil {{
+    writeJson(ExchangeOutput(
+        address: nil,
+        rx_hex: nil,
+        rx_hexes: nil,
+        error: "session dir is required"
     ))
     exit(1)
 }}

@@ -1026,6 +1026,42 @@ def exchange_zhiyun_ble_sequence_macos_app(
     )
 
 
+def open_zhiyun_ble_ipc_macos_app(
+    *,
+    address: str | None = None,
+    name_contains: str | None = None,
+    profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
+    service_uuid: str | None = None,
+    write_uuid: str | None = None,
+    notify_uuid: str | None = None,
+    timeout: float = 5.0,
+):
+    from ..macos_ble_app import MacosBleIpcSession
+
+    resolved = resolve_ble_profile(
+        profile,
+        service_uuid=service_uuid,
+        write_uuid=write_uuid,
+        notify_uuid=notify_uuid,
+    )
+    args = [
+        "exchange-ipc",
+        "--timeout",
+        str(timeout),
+        "--service-uuid",
+        resolved.service_uuid,
+        "--write-uuid",
+        resolved.write_uuid,
+        "--notify-uuid",
+        resolved.notify_uuid,
+    ]
+    if address:
+        args.extend(["--address", address])
+    if name_contains:
+        args.extend(["--name-contains", name_contains])
+    return MacosBleIpcSession(args, timeout=timeout)
+
+
 def resolve_ble_profile(
     profile: str | BleProfile = DEFAULT_BLE_PROFILE.name,
     *,

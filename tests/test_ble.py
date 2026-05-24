@@ -48,6 +48,7 @@ from zhiyun_light_control.transports.ble import (
     inspect_zhiyun_ble_macos_app,
     inspect_zhiyun_ble_safe,
     inspect_zhiyun_device,
+    open_zhiyun_ble_ipc_macos_app,
     resolve_ble_profile,
     scan_zhiyun_devices,
     scan_zhiyun_devices_macos_app,
@@ -695,6 +696,24 @@ class SafeBleExchangeTests(unittest.TestCase):
         self.assertEqual(helper_args[0], "exchange-sequence")
         self.assertIn("--tx-hexes", helper_args)
         self.assertIn("01,02,03", helper_args)
+
+    def test_macos_app_ipc_session_uses_mesh_profile(self) -> None:
+        with patch(
+            "zhiyun_light_control.macos_ble_app.MacosBleIpcSession",
+        ) as session_class:
+            session = open_zhiyun_ble_ipc_macos_app(
+                address="UUID-1",
+                profile="mesh-provisioning",
+                timeout=4.0,
+            )
+
+        self.assertIs(session, session_class.return_value)
+        helper_args = session_class.call_args.args[0]
+        self.assertEqual(helper_args[0], "exchange-ipc")
+        self.assertIn(MESH_PROVISIONING_SERVICE_UUID, helper_args)
+        self.assertIn(MESH_PROVISIONING_WRITE_UUID, helper_args)
+        self.assertIn(MESH_PROVISIONING_NOTIFY_UUID, helper_args)
+        self.assertIn("UUID-1", helper_args)
 
 
 class AsyncBleTests(unittest.IsolatedAsyncioTestCase):

@@ -178,6 +178,19 @@ expected next device response is a provisioning public key PDU. On macOS this
 depends on the rebuilt `ZhiyunBleScan` helper being allowed in Privacy &
 Security > Bluetooth.
 
+The dynamic follow-up probe is:
+
+```sh
+uv run --extra mesh zlight mesh-session --name-contains PL103 --json
+```
+
+It uses the macOS helper's file-IPC mode to keep one CoreBluetooth connection
+open while Python computes the confirmation and random frames from the live
+provisionee public key. This is required because the G60 changes its public key
+between provisioning sessions. The command stops before provisioning data by
+default; sending provisioning data is persistent mesh setup and should be a
+separate, explicit operation.
+
 The SDK also implements the provisioning cryptographic primitives needed after
 public-key exchange: confirmation inputs, confirmation key, provisioner
 confirmation, provisioner random, provisioning salt, session key, session nonce,

@@ -2148,6 +2148,100 @@ class CliTests(unittest.TestCase):
             max_candidates=2,
         )
 
+    def test_mesh_session_runs_dynamic_ipc_flow(self) -> None:
+        class FakePublicKey:
+            xy = b"p" * 64
+
+            def to_dict(self):
+                return {"xy_hex": self.xy.hex()}
+
+        class FakeKeypair:
+            private_key = object()
+            public_key = FakePublicKey()
+
+        class FakeSecrets:
+            def to_dict(self):
+                return {"device_key_hex": "dd"}
+
+        class FakeSessionResult:
+            def to_dict(self):
+                return {"ok": True, "tx_hexes": [], "rx_hexes": []}
+
+        class FakeSession:
+            def __init__(self):
+                self.rx = [
+                    bytes.fromhex("03010100010001000000000000"),
+                    b"",
+                    b"\x03\x03" + (b"k" * 64),
+                    b"\x03\x05" + (b"c" * 16),
+                    b"\x03\x06" + (b"r" * 16),
+                ]
+                self.tx: list[bytes] = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def exchange(self, tx: bytes, *, timeout: float):
+                self.tx.append(tx)
+                return self.rx.pop(0)
+
+            def close(self):
+                return FakeSessionResult()
+
+        fake_session = FakeSession()
+        stdout = io.StringIO()
+        with (
+            patch(
+                "zhiyun_light_control.cli.open_zhiyun_ble_ipc_macos_app",
+                return_value=fake_session,
+            ) as open_session,
+            patch(
+                "zhiyun_light_control.cli.generate_provisioner_keypair",
+                return_value=FakeKeypair(),
+            ),
+            patch(
+                "zhiyun_light_control.cli.derive_shared_ecdh_secret",
+                return_value=b"s" * 32,
+            ),
+            patch(
+                "zhiyun_light_control.cli.generate_provisioning_random",
+                return_value=b"q" * 16,
+            ),
+            patch(
+                "zhiyun_light_control.cli.build_provisioner_confirmation",
+                return_value=b"\x03\x05" + (b"p" * 16),
+            ),
+            patch(
+                "zhiyun_light_control.cli.verify_provisionee_confirmation",
+                return_value=True,
+            ),
+            patch(
+                "zhiyun_light_control.cli.provisioning_session_secrets",
+                return_value=FakeSecrets(),
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            code = main(
+                [
+                    "mesh-session",
+                    "--name-contains",
+                    "PL103",
+                    "--timeout",
+                    "2",
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["confirmation_verified"])
+        self.assertEqual(len(fake_session.tx), 5)
+        self.assertEqual(payload["provisionee_random_hex"], (b"r" * 16).hex())
+        open_session.assert_called_once()
+
     def test_ble_helper_reports_helper_and_opens_settings(self) -> None:
         stdout = io.StringIO()
         with (

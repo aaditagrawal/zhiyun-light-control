@@ -146,6 +146,13 @@ produced provisioning failure `030904`, decoded as `confirmation_failed`. Future
 provisioning must therefore compute and send confirmation/random inside one
 continuous BLE provisioning session.
 
+The SDK now includes a dynamic `mesh-session` probe for that continuous BLE
+session. On 2026-05-24, after the helper was rebuilt for IPC support, macOS
+reported `ZhiyunBleScan` Bluetooth authorization as `not_determined` and the
+hardware run failed before receiving capabilities with helper error
+`no matching BLE device found`. Re-authorize the helper before treating
+`mesh-session` hardware results as protocol evidence.
+
 Direct Swift/Python processes without an app bundle were killed by macOS TCC
 before scan results were returned, which matches the bleak worker `SIGABRT`
 diagnostics. Use `zlight ble-helper --ensure --open-settings` to build the

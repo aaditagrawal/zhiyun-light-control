@@ -62,7 +62,12 @@ from .mesh import (
     generate_provisioner_keypair,
     generate_provisioning_random,
     parse_provisioning_capabilities,
+    parse_provisioning_confirmation,
+    parse_provisioning_failure,
     parse_provisioning_public_key,
+    parse_provisioning_random,
+    provisioning_session_secrets,
+    verify_provisionee_confirmation,
 )
 from .models import CommandResult, Scene
 from .osc import serve_osc
@@ -94,6 +99,7 @@ from .transports.ble import (
     exchange_zhiyun_ble_safe,
     exchange_zhiyun_ble_sequence_macos_app,
     filter_ble_devices_by_name,
+    open_zhiyun_ble_ipc_macos_app,
     scan_zhiyun_devices,
     scan_zhiyun_devices_macos_app,
     scan_zhiyun_devices_safe,
@@ -483,6 +489,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print compact JSON.",
     )
     mesh_handshake.set_defaults(func=cmd_mesh_handshake)
+
+    mesh_session = sub.add_parser(
+        "mesh-session",
+        help="Run a dynamic BLE Mesh provisioning confirmation session.",
+    )
+    mesh_session.add_argument("--address", help="BLE address/identifier.")
+    mesh_session.add_argument(
+        "--name-contains",
+        default="PL103",
+        help="Filter discovered BLE names.",
+    )
+    mesh_session.add_argument("--timeout", type=float, default=12.0)
+    mesh_session.add_argument("--attention", type=parse_int, default=5)
+    mesh_session.add_argument(
+        "--json",
+        action="store_true",
+        help="Print compact JSON.",
+    )
+    mesh_session.set_defaults(func=cmd_mesh_session)
 
     helper = sub.add_parser(
         "ble-helper",
@@ -1328,6 +1353,133 @@ def cmd_mesh_handshake(args: argparse.Namespace) -> int:
     }
     print_json(payload, compact=args.json)
     return 0 if payload["complete"] else 2
+
+
+def cmd_mesh_session(args: argparse.Namespace) -> int:
+    keypair = generate_provisioner_keypair()
+    invite = build_provisioning_invite(args.attention)
+    start = build_provisioning_start_no_oob()
+    public_key_frame = build_provisioning_public_key(keypair.public_key.xy)
+    provisioner_random = generate_provisioning_random()
+    frames: list[bytes] = [invite, start, public_key_frame]
+    rx_values: list[bytes] = []
+    parse_errors: list[str] = []
+    error: str | None = None
+    session_result = None
+    capabilities: dict[str, object] | None = None
+    provisionee_public_key: dict[str, object] | None = None
+    shared_secret: bytes | None = None
+    inputs: bytes | None = None
+    provisionee_confirmation: bytes | None = None
+    provisionee_random: bytes | None = None
+    confirmation_verified = False
+    failure: dict[str, object] | None = None
+    secrets: dict[str, object] | None = None
+
+    session = open_zhiyun_ble_ipc_macos_app(
+        address=args.address,
+        name_contains=args.name_contains,
+        timeout=args.timeout,
+        service_uuid=MESH_PROVISIONING_SERVICE_UUID,
+        write_uuid=MESH_PROVISIONING_WRITE_UUID,
+        notify_uuid=MESH_PROVISIONING_NOTIFY_UUID,
+    )
+    try:
+        with session:
+            capabilities_rx = session.exchange(invite, timeout=args.timeout)
+            rx_values.append(capabilities_rx)
+            parsed_capabilities = parse_provisioning_capabilities(capabilities_rx)
+            capabilities = parsed_capabilities.to_dict()
+
+            start_rx = session.exchange(start, timeout=args.timeout)
+            rx_values.append(start_rx)
+
+            public_key_rx = session.exchange(public_key_frame, timeout=args.timeout)
+            rx_values.append(public_key_rx)
+            parsed_public_key = parse_provisioning_public_key(public_key_rx)
+            provisionee_public_key = parsed_public_key.to_dict()
+            shared_secret = derive_shared_ecdh_secret(
+                keypair.private_key,
+                parsed_public_key.xy,
+            )
+            inputs = confirmation_inputs(
+                invite_pdu=invite,
+                capabilities_pdu=capabilities_rx,
+                start_pdu=start,
+                provisioner_public_key_xy=keypair.public_key.xy,
+                provisionee_public_key_xy=parsed_public_key.xy,
+            )
+
+            confirmation_frame = build_provisioner_confirmation(
+                shared_secret=shared_secret,
+                confirmation_inputs=inputs,
+                provisioner_random=provisioner_random,
+            )
+            frames.append(confirmation_frame)
+            confirmation_rx = session.exchange(confirmation_frame, timeout=args.timeout)
+            rx_values.append(confirmation_rx)
+            provisionee_confirmation = parse_provisioning_confirmation(
+                confirmation_rx
+            )
+
+            random_frame = build_provisioner_random(provisioner_random)
+            frames.append(random_frame)
+            random_rx = session.exchange(random_frame, timeout=args.timeout)
+            rx_values.append(random_rx)
+            try:
+                provisionee_random = parse_provisioning_random(random_rx)
+            except ValueError:
+                failure = parse_provisioning_failure(random_rx).to_dict()
+                raise
+            confirmation_verified = verify_provisionee_confirmation(
+                shared_secret=shared_secret,
+                confirmation_inputs=inputs,
+                provisionee_confirmation=provisionee_confirmation,
+                provisionee_random=provisionee_random,
+            )
+            secrets = provisioning_session_secrets(
+                shared_secret=shared_secret,
+                confirmation_inputs=inputs,
+                provisioner_random=provisioner_random,
+                provisionee_random=provisionee_random,
+            ).to_dict()
+            session_result = session.close()
+    except Exception as exc:
+        error = str(exc)
+        try:
+            session_result = session.close()
+            if session_result.error is not None:
+                error = session_result.error
+        except Exception as close_exc:
+            parse_errors.append(f"close: {close_exc}")
+
+    payload = {
+        "ok": bool(confirmation_verified and error is None),
+        "probe": "mesh_provisioning_dynamic_session",
+        "attention": args.attention,
+        "exchange": session_result.to_dict() if session_result else None,
+        "tx_hexes": [frame.hex() for frame in frames],
+        "rx_hexes": [value.hex() if value else None for value in rx_values],
+        "provisioner_public_key": keypair.public_key.to_dict(),
+        "capabilities": capabilities,
+        "provisionee_public_key": provisionee_public_key,
+        "shared_ecdh_secret_hex": shared_secret.hex() if shared_secret else None,
+        "provisionee_confirmation_hex": (
+            provisionee_confirmation.hex() if provisionee_confirmation else None
+        ),
+        "provisioner_random_hex": provisioner_random.hex(),
+        "provisionee_random_hex": (
+            provisionee_random.hex() if provisionee_random else None
+        ),
+        "confirmation_verified": confirmation_verified,
+        "session_secrets": secrets,
+        "failure": failure,
+        "error": error,
+        "parse_errors": parse_errors,
+        "complete": bool(confirmation_verified),
+    }
+    print_json(payload, compact=args.json)
+    return 0 if payload["ok"] else 2
 
 
 def cmd_devices(args: argparse.Namespace) -> int:

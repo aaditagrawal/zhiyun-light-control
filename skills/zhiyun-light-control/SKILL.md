@@ -97,13 +97,16 @@ Use the macOS helper backend after Bluetooth permission is allowed:
 ```sh
 uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
 uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
+uv run --extra mesh zlight mesh-session --name-contains PL103 --json
 ```
 
 `mesh-probe` proves the `1827/2ADB/2ADC` provisioning bearer by decoding
 capabilities. `mesh-handshake` sends invite, no-OOB start, and a generated P-256
-public key in one CoreBluetooth connection. Treat this as setup progress only;
-actual brightness/CCT control still requires completing provisioning, proxy
-reconnect, app-key setup, and the Zhiyun native register/control stage.
+public key in one CoreBluetooth connection. `mesh-session` keeps that connection
+open and dynamically sends confirmation/random frames derived from the live
+provisionee public key. Treat this as setup progress only; actual brightness/CCT
+control still requires completing provisioning, proxy reconnect, app-key setup,
+and the Zhiyun native register/control stage.
 
 After the provisionee public key is available, use `zhiyun_light_control.mesh`
 helpers for confirmation inputs, provisioner confirmation/random, session

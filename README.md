@@ -214,6 +214,7 @@ uv run zlight inspect-ble --name-contains MOLUS --json
 uv run zlight test-ble-endpoints --name-contains MOLUS --json
 uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
 uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
+uv run --extra mesh zlight mesh-session --name-contains PL103 --json
 ```
 
 `mesh-probe` sends a Bluetooth Mesh provisioning invite on `1827/2ADB` and
@@ -226,6 +227,11 @@ no-OOB provisioning start, and provisioner public key. It requires the `mesh`
 extra for P-256 key generation. A complete response should include the
 provisionee public key and derived ECDH secret; this is still pre-control setup,
 not a finished light-output command.
+
+`mesh-session` extends that flow with per-session confirmation and random
+frames, computed after the G60 returns its public key and sent on the same BLE
+connection. It intentionally stops before provisioning data, so it does not
+persistently add the light to a generated mesh network.
 
 For lower-level provisioning work, import from `zhiyun_light_control.mesh`.
 The module includes confirmation/random helpers and encrypted provisioning-data

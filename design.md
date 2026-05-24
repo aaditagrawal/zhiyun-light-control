@@ -112,14 +112,16 @@ runtime-frame write. Official Vega code first talks to mesh provisioning service
 `1827`, then reconnects through mesh proxy service `1828`, adds an application
 key, reads identity/status over the Zhiyun `FEE9` service, runs native
 local-control registration, and only then sends brightness/CCT/sleep packets.
-The SDK therefore treats `mesh-probe`, `mesh-handshake`, and `mesh.py` as
-setup/discovery primitives, not as solved output control. `mesh-handshake`
-extends the verified invite/capabilities probe with a no-OOB provisioning start
-and generated P-256 provisioner public key over a single BLE connection.
-`mesh.py` now also owns the Bluetooth Mesh provisioning crypto needed for the
-next state transition: confirmation inputs, AES-CMAC based salts/keys,
-provisioner confirmation/random, session nonce/key, device key, and encrypted
-provisioning data.
+The SDK therefore treats `mesh-probe`, `mesh-handshake`, `mesh-session`, and
+`mesh.py` as setup/discovery primitives, not as solved output control.
+`mesh-handshake` extends the verified invite/capabilities probe with a no-OOB
+provisioning start and generated P-256 provisioner public key over a single BLE
+connection. `mesh-session` adds a file-IPC mode to the macOS helper so Python
+can compute confirmation/random frames from the live provisionee public key
+without dropping the BLE bearer. `mesh.py` owns the Bluetooth Mesh provisioning
+crypto needed for the next state transition: confirmation inputs, AES-CMAC
+based salts/keys, provisioner confirmation/random, session nonce/key, device
+key, and encrypted provisioning data.
 
 ## Planning and Transitions
 

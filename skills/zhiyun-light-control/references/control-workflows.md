@@ -76,6 +76,19 @@ The sleep probe has physically blinked the local G60 while reporting
 `echoed_write`. A broader brightness/CCT pass reached `2700K` at `20%`, also
 while reporting `echoed_write`.
 
+## Dynamic Mesh Session
+
+Use this when continuing BLE Mesh provisioning past public-key exchange:
+
+```sh
+uv run --extra mesh zlight mesh-session --name-contains PL103 --json
+```
+
+This keeps one CoreBluetooth helper connection open and lets Python calculate
+the confirmation/random frames from the session-specific provisionee public key.
+It stops before provisioning data, so it should not persistently attach the G60
+to a generated mesh network.
+
 ## SDK Use
 
 Prefer the high-level SDK for integrations when the standard ACK-backed route is
