@@ -53,12 +53,14 @@ from .macos_ble_app import (
     open_macos_bluetooth_settings,
 )
 from .mesh import (
+    build_mesh_config_sequence_plan,
     build_provisioner_confirmation,
     build_provisioner_random,
     build_provisioning_data_plan,
     build_provisioning_invite,
     build_provisioning_public_key,
     build_provisioning_start_no_oob,
+    build_zy_mesh_network_plan,
     confirmation_inputs,
     derive_shared_ecdh_secret,
     generate_network_key,
@@ -545,6 +547,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print compact JSON.",
     )
     mesh_provision_plan.set_defaults(func=cmd_mesh_provision_plan)
+
+    mesh_setup_plan = sub.add_parser(
+        "mesh-setup-plan",
+        help="Build the official Zhiyun BLE Mesh setup/config plan offline.",
+    )
+    mesh_setup_plan.add_argument(
+        "--mesh-uuid-hex",
+        type=parse_hex_bytes,
+        help="16-byte mesh UUID. Generated if omitted.",
+    )
+    mesh_setup_plan.add_argument(
+        "--network-key-hex",
+        type=parse_hex_bytes,
+        help="16-byte Bluetooth Mesh network key. Generated if omitted.",
+    )
+    mesh_setup_plan.add_argument(
+        "--app-key-hex",
+        type=parse_hex_bytes,
+        help="16-byte Bluetooth Mesh application key. Generated if omitted.",
+    )
+    mesh_setup_plan.add_argument("--key-index", type=parse_int, default=0)
+    mesh_setup_plan.add_argument("--app-key-index", type=parse_int, default=0)
+    mesh_setup_plan.add_argument("--flags", type=parse_int, default=0)
+    mesh_setup_plan.add_argument("--iv-index", type=parse_int, default=0)
+    mesh_setup_plan.add_argument(
+        "--unicast-address",
+        type=parse_int,
+        default=0x0005,
+        help="Light unicast address assigned during provisioning.",
+    )
+    mesh_setup_plan.add_argument(
+        "--json",
+        action="store_true",
+        help="Print compact JSON.",
+    )
+    mesh_setup_plan.set_defaults(func=cmd_mesh_setup_plan)
 
     helper = sub.add_parser(
         "ble-helper",
@@ -1574,6 +1612,52 @@ def cmd_mesh_provision_plan(args: argparse.Namespace) -> int:
             "characteristic; this command does not send it."
         ),
         "plan": plan.to_dict(),
+    }
+    print_json(payload, compact=args.json)
+    return 0
+
+
+def cmd_mesh_setup_plan(args: argparse.Namespace) -> int:
+    try:
+        plan = build_zy_mesh_network_plan(
+            mesh_uuid=args.mesh_uuid_hex,
+            network_key=args.network_key_hex,
+            app_key=args.app_key_hex,
+            key_index=args.key_index,
+            app_key_index=args.app_key_index,
+            flags=args.flags,
+            iv_index=args.iv_index,
+            light_unicast_address=args.unicast_address,
+        )
+        config_sequence = build_mesh_config_sequence_plan(
+            plan.app_key,
+            net_key_index=plan.key_index,
+            app_key_index=plan.app_key_index,
+        )
+    except ValueError as exc:
+        payload = {
+            "ok": False,
+            "error": str(exc),
+        }
+        print_json(payload, compact=args.json)
+        return 2
+
+    payload = {
+        "ok": True,
+        "action": "mesh_setup_plan",
+        "offline": True,
+        "send_warning": (
+            "This builds the official setup data and post-provisioning config "
+            "access messages only; it does not provision or control the light."
+        ),
+        "pipeline": [
+            "pb_gatt_provisioning_1827_2adb_2adc",
+            "mesh_proxy_configuration_1828_2add_2ade",
+            "fee9_identity_status_and_native_runtime_control",
+        ],
+        "network": plan.to_dict(),
+        "cdb": plan.to_cdb_dict(),
+        "config_sequence": [step.to_dict() for step in config_sequence],
     }
     print_json(payload, compact=args.json)
     return 0

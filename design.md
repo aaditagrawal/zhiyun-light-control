@@ -124,6 +124,12 @@ based salts/keys, provisioner confirmation/random, session nonce/key, device
 key, and encrypted provisioning data. `mesh-provision-plan` exposes the
 encrypted provisioning-data step as an offline artifact builder so the SDK can
 verify the exact PDU before any persistent mesh setup command is added.
+`mesh-setup-plan` covers the following official config phase without touching
+hardware: generated mesh UUID/network key/app key, Vega's provisioner UUID and
+device key defaults, a CDB skeleton, and the access-message payloads for
+composition data get, default TTL get, network transmit set, and app key add.
+This keeps the instruction model explicit while the remaining sender work is
+implemented for Mesh Proxy service `1828`.
 
 ## Planning and Transitions
 

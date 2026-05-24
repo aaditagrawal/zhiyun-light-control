@@ -2321,6 +2321,37 @@ class CliTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertIn("confirmation_inputs_hex", payload["error"])
 
+    def test_mesh_setup_plan_builds_official_config_sequence(self) -> None:
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            code = main(
+                [
+                    "mesh-setup-plan",
+                    "--mesh-uuid-hex",
+                    bytes(range(16)).hex(),
+                    "--network-key-hex",
+                    (b"n" * 16).hex(),
+                    "--app-key-hex",
+                    (b"a" * 16).hex(),
+                    "--json",
+                ]
+            )
+
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(code, 0)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["network"]["mesh_name"], "ZY Mesh Network")
+        self.assertEqual(payload["cdb"]["meshUUID"], bytes(range(16)).hex().upper())
+        self.assertEqual(
+            [step["access_payload_hex"] for step in payload["config_sequence"]],
+            [
+                "8008ff",
+                "800c",
+                "80240a",
+                "00000000" + (b"a" * 16).hex(),
+            ],
+        )
+
     def test_ble_helper_reports_helper_and_opens_settings(self) -> None:
         stdout = io.StringIO()
         with (

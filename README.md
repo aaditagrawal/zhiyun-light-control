@@ -226,6 +226,7 @@ uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
 uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
 uv run --extra mesh zlight mesh-session --name-contains PL103 --json
 uv run --extra mesh zlight mesh-provision-plan --session-json session.json --json
+uv run zlight mesh-setup-plan --json
 ```
 
 `mesh-probe` sends a Bluetooth Mesh provisioning invite on `1827/2ADB` and
@@ -248,6 +249,12 @@ persistently add the light to a generated mesh network.
 `mesh-session` JSON transcript and derives the encrypted provisioning-data PDU,
 network key metadata, session nonce/key, and device key. It does not send
 anything to the light; sending that PDU is a later explicit provisioning step.
+
+`mesh-setup-plan` builds the official Zhiyun mesh network defaults and the
+post-provisioning access-message sequence observed in Vega: composition data
+get, default TTL get, network transmit set, and app key add. It is also
+non-mutating; it proves the SDK can construct the next control-plane
+instructions before a sender for `1828/2ADD/2ADE` is added.
 
 When BLE discovery unexpectedly returns no Zhiyun devices on macOS, widen the
 scan before changing protocol code:

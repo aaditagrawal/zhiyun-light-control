@@ -228,6 +228,18 @@ The output includes `provisioning_data_pdu_hex`, generated or supplied
 This command is intentionally non-mutating; it only proves the next instruction
 can be constructed from the live session transcript.
 
+The post-provisioning config plan can be built without a live BLE session:
+
+```sh
+uv run zlight mesh-setup-plan --json
+```
+
+It emits a generated Zhiyun-compatible CDB skeleton plus the exact config access
+payloads Vega sends after provisioning: `8008ff`, `800c`, `80240a`, and app key
+add `00 + key-index-pack + app-key`. Those payloads still need to be encrypted
+and sent over the Mesh Proxy bearer `1828/2ADD/2ADE`; the command does not
+mutate the light.
+
 If `mesh-session` cannot find the light, run:
 
 ```sh

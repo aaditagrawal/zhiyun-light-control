@@ -6,6 +6,8 @@ from zhiyun_light_control.mesh import (
     MESH_MESSAGE_TYPE_PROVISIONING,
     PROVISIONING_INVITE,
     aes_cmac,
+    build_config_app_key_add_params,
+    build_mesh_config_sequence_plan,
     build_mesh_proxy_pdu,
     build_provisioner_confirmation,
     build_provisioner_random,
@@ -14,10 +16,13 @@ from zhiyun_light_control.mesh import (
     build_provisioning_invite,
     build_provisioning_public_key,
     build_provisioning_start_no_oob,
+    build_zy_mesh_network_plan,
     confirmation_inputs,
+    generate_application_key,
     generate_network_key,
     mesh_k1,
     mesh_salt,
+    pack_mesh_key_indexes,
     parse_mesh_proxy_pdu,
     parse_provisioning_capabilities,
     parse_provisioning_confirmation,
@@ -205,6 +210,65 @@ class MeshProvisioningTests(unittest.TestCase):
 
     def test_generate_network_key_returns_mesh_key_size(self) -> None:
         self.assertEqual(len(generate_network_key()), 16)
+        self.assertEqual(len(generate_application_key()), 16)
+
+    def test_zy_mesh_network_plan_matches_official_defaults(self) -> None:
+        plan = build_zy_mesh_network_plan(
+            mesh_uuid=bytes(range(16)),
+            network_key=bytes(range(16, 32)),
+            app_key=bytes(range(32, 48)),
+            iv_index=1,
+            light_unicast_address=0x0005,
+        )
+
+        payload = plan.to_dict()
+        cdb = plan.to_cdb_dict()
+
+        self.assertEqual(payload["mesh_name"], "ZY Mesh Network")
+        self.assertEqual(
+            payload["provisioner_uuid_hex"],
+            "9ee44bef29fc41e89e53ee567a2118df",
+        )
+        self.assertEqual(
+            payload["provisioner_device_key_hex"],
+            "cabf7e4ac8b9e254372bbd6146d318bb",
+        )
+        self.assertEqual(payload["group_address_hex"], "0xc000")
+        self.assertEqual(cdb["meshUUID"], bytes(range(16)).hex().upper())
+        self.assertEqual(cdb["netKeys"][0]["key"], bytes(range(16, 32)).hex().upper())
+        self.assertEqual(cdb["appKeys"][0]["key"], bytes(range(32, 48)).hex().upper())
+        self.assertEqual(
+            cdb["provisioners"][0]["UUID"],
+            "9EE44BEF29FC41E89E53EE567A2118DF",
+        )
+
+    def test_mesh_config_sequence_matches_vega_register_order(self) -> None:
+        app_key = bytes(range(16))
+        sequence = build_mesh_config_sequence_plan(app_key)
+
+        self.assertEqual(
+            [step.name for step in sequence],
+            [
+                "config_composition_data_get",
+                "config_default_ttl_get",
+                "config_network_transmit_set",
+                "config_app_key_add",
+            ],
+        )
+        self.assertEqual(sequence[0].access_payload.hex(), "8008ff")
+        self.assertEqual(sequence[0].delay_after_status_ms, 500)
+        self.assertEqual(sequence[1].access_payload.hex(), "800c")
+        self.assertEqual(sequence[2].access_payload.hex(), "80240a")
+        self.assertEqual(sequence[3].access_payload.hex(), "00000000" + app_key.hex())
+        self.assertEqual(sequence[3].expected_status_opcode, 0x8003)
+
+    def test_mesh_key_index_packing_matches_app_key_add_shape(self) -> None:
+        self.assertEqual(pack_mesh_key_indexes(0, 0), bytes.fromhex("000000"))
+        self.assertEqual(pack_mesh_key_indexes(0x123, 0x456), bytes.fromhex("236145"))
+        self.assertEqual(
+            build_config_app_key_add_params(bytes(range(16))),
+            bytes.fromhex("000000") + bytes(range(16)),
+        )
 
     def test_mesh_crypto_helpers_match_known_shapes(self) -> None:
         self.assertEqual(len(aes_cmac(b"abc", b"\x00" * 16)), 16)

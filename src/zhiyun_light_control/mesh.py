@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from uuid import uuid4
 
 MESH_SAR_COMPLETE = 0
 MESH_MESSAGE_TYPE_PROVISIONING = 0x03
@@ -25,6 +26,22 @@ PRCK = b"prck"
 PRSK = b"prsk"
 PRSN = b"prsn"
 PRDK = b"prdk"
+
+ZY_MESH_NAME = "ZY Mesh Network"
+ZY_MESH_PROVISIONER_UUID = bytes.fromhex("9ee44bef29fc41e89e53ee567a2118df")
+ZY_MESH_PROVISIONER_DEVICE_KEY = bytes.fromhex("cabf7e4ac8b9e254372bbd6146d318bb")
+ZY_MESH_GROUP_ADDRESS = 0xC000
+ZY_MESH_PROVISIONER_UNICAST_ADDRESS = 0x0001
+ZY_MESH_LIGHT_UNICAST_ADDRESS = 0x0005
+
+CONFIG_APPKEY_ADD = 0x0000
+CONFIG_COMPOSITION_DATA_GET = 0x8008
+CONFIG_COMPOSITION_DATA_STATUS = 0x0002
+CONFIG_DEFAULT_TTL_GET = 0x800C
+CONFIG_DEFAULT_TTL_STATUS = 0x800E
+CONFIG_NETWORK_TRANSMIT_SET = 0x8024
+CONFIG_NETWORK_TRANSMIT_STATUS = 0x8025
+CONFIG_APPKEY_STATUS = 0x8003
 
 
 @dataclass(frozen=True)
@@ -143,6 +160,151 @@ class ProvisioningDataPlan:
             "unicast_address": self.unicast_address,
             "unicast_address_hex": f"0x{self.unicast_address:04x}",
             "session_secrets": self.secrets.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class MeshConfigAccessMessagePlan:
+    name: str
+    opcode: int
+    params: bytes
+    expected_status_opcode: int
+    delay_after_status_ms: int = 0
+
+    @property
+    def access_payload(self) -> bytes:
+        return _mesh_access_opcode_bytes(self.opcode) + self.params
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "opcode": self.opcode,
+            "opcode_hex": f"0x{self.opcode:04x}",
+            "params_hex": self.params.hex(),
+            "access_payload_hex": self.access_payload.hex(),
+            "expected_status_opcode": self.expected_status_opcode,
+            "expected_status_opcode_hex": f"0x{self.expected_status_opcode:04x}",
+            "delay_after_status_ms": self.delay_after_status_ms,
+        }
+
+
+@dataclass(frozen=True)
+class MeshNetworkPlan:
+    mesh_uuid: bytes
+    network_key: bytes
+    app_key: bytes
+    key_index: int = 0
+    app_key_index: int = 0
+    flags: int = 0
+    iv_index: int = 0
+    light_unicast_address: int = ZY_MESH_LIGHT_UNICAST_ADDRESS
+    provisioner_uuid: bytes = ZY_MESH_PROVISIONER_UUID
+    provisioner_device_key: bytes = ZY_MESH_PROVISIONER_DEVICE_KEY
+    provisioner_unicast_address: int = ZY_MESH_PROVISIONER_UNICAST_ADDRESS
+    group_address: int = ZY_MESH_GROUP_ADDRESS
+    mesh_name: str = ZY_MESH_NAME
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "mesh_name": self.mesh_name,
+            "mesh_uuid_hex": self.mesh_uuid.hex(),
+            "network_key_hex": self.network_key.hex(),
+            "app_key_hex": self.app_key.hex(),
+            "key_index": self.key_index,
+            "key_index_hex": f"0x{self.key_index:03x}",
+            "app_key_index": self.app_key_index,
+            "app_key_index_hex": f"0x{self.app_key_index:03x}",
+            "flags": self.flags,
+            "flags_hex": f"0x{self.flags:02x}",
+            "iv_index": self.iv_index,
+            "iv_index_hex": f"0x{self.iv_index:08x}",
+            "light_unicast_address": self.light_unicast_address,
+            "light_unicast_address_hex": f"0x{self.light_unicast_address:04x}",
+            "provisioner_uuid_hex": self.provisioner_uuid.hex(),
+            "provisioner_device_key_hex": self.provisioner_device_key.hex(),
+            "provisioner_unicast_address": self.provisioner_unicast_address,
+            "provisioner_unicast_address_hex": (
+                f"0x{self.provisioner_unicast_address:04x}"
+            ),
+            "group_address": self.group_address,
+            "group_address_hex": f"0x{self.group_address:04x}",
+        }
+
+    def to_cdb_dict(self) -> dict[str, object]:
+        return {
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "id": self.mesh_uuid.hex().upper(),
+            "version": "1.0.0",
+            "meshName": self.mesh_name,
+            "meshUUID": self.mesh_uuid.hex().upper(),
+            "timestamp": "1970-01-01T00:00:00Z",
+            "IVindex": f"{self.iv_index:08X}",
+            "IVupdate": 0,
+            "netKeys": [
+                {
+                    "index": f"{self.key_index:04X}",
+                    "key": self.network_key.hex().upper(),
+                    "name": "Network Key 1",
+                    "minSecurity": "secure",
+                    "timestamp": "1970-01-01T00:00:00Z",
+                }
+            ],
+            "appKeys": [
+                {
+                    "index": f"{self.app_key_index:04X}",
+                    "boundNetKey": f"{self.key_index:04X}",
+                    "key": self.app_key.hex().upper(),
+                    "name": "Application Key 1",
+                }
+            ],
+            "provisioners": [
+                {
+                    "UUID": self.provisioner_uuid.hex().upper(),
+                    "provisionerName": "ZY Provisioner",
+                    "allocatedUnicastRange": [
+                        {"lowAddress": "0001", "highAddress": "199A"}
+                    ],
+                    "allocatedGroupRange": [
+                        {"lowAddress": "C000", "highAddress": "FEFF"}
+                    ],
+                    "allocatedSceneRange": [
+                        {"firstScene": "0001", "lastScene": "3333"}
+                    ],
+                }
+            ],
+            "groups": [
+                {
+                    "name": "ZY Group",
+                    "address": f"{self.group_address:04X}",
+                    "parentAddress": "0000",
+                }
+            ],
+            "nodes": [
+                {
+                    "UUID": self.provisioner_uuid.hex().upper(),
+                    "deviceKey": self.provisioner_device_key.hex().upper(),
+                    "unicastAddress": f"{self.provisioner_unicast_address:04X}",
+                    "name": "Provisioner",
+                    "cid": "0000",
+                    "pid": "0000",
+                    "vid": "0000",
+                    "crpl": "0000",
+                    "features": {
+                        "friend": 2,
+                        "lowPower": 2,
+                        "proxy": 2,
+                        "relay": 2,
+                    },
+                    "elements": [
+                        {
+                            "name": "Provisioner",
+                            "index": 0,
+                            "location": "0000",
+                            "models": [],
+                        }
+                    ],
+                }
+            ],
         }
 
 
@@ -353,6 +515,118 @@ def generate_network_key() -> bytes:
     return os.urandom(16)
 
 
+def generate_application_key() -> bytes:
+    return os.urandom(16)
+
+
+def build_zy_mesh_network_plan(
+    *,
+    mesh_uuid: bytes | None = None,
+    network_key: bytes | None = None,
+    app_key: bytes | None = None,
+    key_index: int = 0,
+    app_key_index: int = 0,
+    flags: int = 0,
+    iv_index: int = 0,
+    light_unicast_address: int = ZY_MESH_LIGHT_UNICAST_ADDRESS,
+) -> MeshNetworkPlan:
+    mesh_uuid = mesh_uuid or uuid4().bytes
+    network_key = network_key or generate_network_key()
+    app_key = app_key or generate_application_key()
+    _validate_key("mesh_uuid", mesh_uuid)
+    _validate_key("network_key", network_key)
+    _validate_key("app_key", app_key)
+    _validate_key_index("key_index", key_index)
+    _validate_key_index("app_key_index", app_key_index)
+    _validate_byte("flags", flags)
+    _validate_u32("iv_index", iv_index)
+    _validate_u16("light_unicast_address", light_unicast_address)
+    return MeshNetworkPlan(
+        mesh_uuid=mesh_uuid,
+        network_key=network_key,
+        app_key=app_key,
+        key_index=key_index,
+        app_key_index=app_key_index,
+        flags=flags,
+        iv_index=iv_index,
+        light_unicast_address=light_unicast_address,
+    )
+
+
+def pack_mesh_key_indexes(net_key_index: int, app_key_index: int) -> bytes:
+    _validate_key_index("net_key_index", net_key_index)
+    _validate_key_index("app_key_index", app_key_index)
+    return bytes(
+        (
+            net_key_index & 0xFF,
+            ((net_key_index >> 8) & 0x0F) | ((app_key_index & 0x0F) << 4),
+            (app_key_index >> 4) & 0xFF,
+        )
+    )
+
+
+def build_config_app_key_add_params(
+    app_key: bytes,
+    *,
+    net_key_index: int = 0,
+    app_key_index: int = 0,
+) -> bytes:
+    _validate_key("app_key", app_key)
+    return pack_mesh_key_indexes(net_key_index, app_key_index) + app_key
+
+
+def build_mesh_config_sequence_plan(
+    app_key: bytes,
+    *,
+    net_key_index: int = 0,
+    app_key_index: int = 0,
+    network_transmit_count: int = 2,
+    network_transmit_interval_steps: int = 1,
+) -> tuple[MeshConfigAccessMessagePlan, ...]:
+    _validate_key("app_key", app_key)
+    _validate_key_index("net_key_index", net_key_index)
+    _validate_key_index("app_key_index", app_key_index)
+    if not 0 <= network_transmit_count <= 7:
+        raise ValueError("network_transmit_count must fit in three bits")
+    if not 0 <= network_transmit_interval_steps <= 31:
+        raise ValueError("network_transmit_interval_steps must fit in five bits")
+    network_transmit = (
+        ((network_transmit_interval_steps << 3) & 0xFF)
+        | (network_transmit_count & 0x07)
+    )
+    return (
+        MeshConfigAccessMessagePlan(
+            name="config_composition_data_get",
+            opcode=CONFIG_COMPOSITION_DATA_GET,
+            params=b"\xff",
+            expected_status_opcode=CONFIG_COMPOSITION_DATA_STATUS,
+            delay_after_status_ms=500,
+        ),
+        MeshConfigAccessMessagePlan(
+            name="config_default_ttl_get",
+            opcode=CONFIG_DEFAULT_TTL_GET,
+            params=b"",
+            expected_status_opcode=CONFIG_DEFAULT_TTL_STATUS,
+        ),
+        MeshConfigAccessMessagePlan(
+            name="config_network_transmit_set",
+            opcode=CONFIG_NETWORK_TRANSMIT_SET,
+            params=bytes((network_transmit,)),
+            expected_status_opcode=CONFIG_NETWORK_TRANSMIT_STATUS,
+        ),
+        MeshConfigAccessMessagePlan(
+            name="config_app_key_add",
+            opcode=CONFIG_APPKEY_ADD,
+            params=build_config_app_key_add_params(
+                app_key,
+                net_key_index=net_key_index,
+                app_key_index=app_key_index,
+            ),
+            expected_status_opcode=CONFIG_APPKEY_STATUS,
+        ),
+    )
+
+
 def generate_provisioner_keypair() -> ProvisionerKeypair:
     try:
         from cryptography.hazmat.primitives.asymmetric import ec
@@ -502,6 +776,39 @@ def provisioning_data_plaintext(
         + iv_index.to_bytes(4, "big")
         + unicast_address.to_bytes(2, "big")
     )
+
+
+def _mesh_access_opcode_bytes(opcode: int) -> bytes:
+    if not 0 <= opcode <= 0xFFFF:
+        raise ValueError("only one- and two-byte mesh opcodes are supported")
+    if opcode <= 0xFF:
+        return bytes((opcode,))
+    return opcode.to_bytes(2, "big")
+
+
+def _validate_key(name: str, value: bytes) -> None:
+    if len(value) != 16:
+        raise ValueError(f"{name} must be 16 bytes")
+
+
+def _validate_key_index(name: str, value: int) -> None:
+    if not 0 <= value <= 0x0FFF:
+        raise ValueError(f"{name} must fit in 12 bits")
+
+
+def _validate_byte(name: str, value: int) -> None:
+    if not 0 <= value <= 0xFF:
+        raise ValueError(f"{name} must fit in one byte")
+
+
+def _validate_u16(name: str, value: int) -> None:
+    if not 0x0001 <= value <= 0x7FFF:
+        raise ValueError(f"{name} must be a unicast address")
+
+
+def _validate_u32(name: str, value: int) -> None:
+    if not 0 <= value <= 0xFFFFFFFF:
+        raise ValueError(f"{name} must fit in four bytes")
 
 
 def mesh_salt(data: bytes) -> bytes:
