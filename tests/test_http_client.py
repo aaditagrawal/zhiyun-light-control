@@ -12,6 +12,8 @@ from zhiyun_light_control import (
     LightBridgeNotReady,
     LightBridgeUnconfirmed,
     bridge_connection_config,
+    bridge_primitive_requirements,
+    bridge_primitive_requirements_map,
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
@@ -757,6 +759,12 @@ class HttpClientTests(unittest.TestCase):
                 35,
             )
             self.assertEqual(
+                snapshot["payloads"]["capabilities"]["primitive_requirements"][
+                    "brightness"
+                ],
+                ["control_writes"],
+            )
+            self.assertEqual(
                 snapshot["payloads"]["capabilities"]["request_templates"]["setup"][
                     "validate_control"
                 ]["body"],
@@ -789,6 +797,18 @@ class HttpClientTests(unittest.TestCase):
                 ["control_requests"],
             )
             self.assertEqual(
+                bridge_primitive_requirements(snapshot, "brightness"),
+                ["control_writes"],
+            )
+            self.assertEqual(
+                bridge_primitive_requirements(capabilities, "read-brightness"),
+                ["object_reads"],
+            )
+            self.assertEqual(
+                bridge_primitive_requirements_map(snapshot)["status"],
+                ["read_status"],
+            )
+            self.assertEqual(
                 client.control_guard()["default_required_readiness"],
                 ["control_requests"],
             )
@@ -806,6 +826,14 @@ class HttpClientTests(unittest.TestCase):
                     "brightness",
                 ),
                 ["control_requests"],
+            )
+            self.assertEqual(
+                client.primitive_requirements("brightness"),
+                ["control_writes"],
+            )
+            self.assertEqual(
+                client.primitive_requirements_map()["read_brightness"],
+                ["object_reads"],
             )
             self.assertEqual(snapshot["payloads"]["devices"], devices)
 

@@ -13,6 +13,7 @@ from zhiyun_light_control import (
     load_light_setup_profile,
     save_light_setup_profile,
     setup_profile_primitive_requirements,
+    setup_profile_primitive_requirements_map,
 )
 
 
@@ -58,6 +59,14 @@ class SetupProfileTests(unittest.TestCase):
         )
         self.assertEqual(
             setup_profile_primitive_requirements("set-brightness"),
+            ("control_writes",),
+        )
+        self.assertEqual(
+            setup_profile_primitive_requirements("brightness"),
+            ("control_writes",),
+        )
+        self.assertEqual(
+            setup_profile_primitive_requirements_map()["brightness"],
             ("control_writes",),
         )
 

@@ -625,6 +625,18 @@ class ServerTests(unittest.TestCase):
                 ],
                 True,
             )
+            self.assertEqual(
+                capabilities["primitive_requirements"]["brightness"],
+                ["control_writes"],
+            )
+            self.assertEqual(
+                capabilities["primitive_requirements"]["read_brightness"],
+                ["object_reads"],
+            )
+            self.assertEqual(
+                capabilities["primitive_requirements"]["status"],
+                ["read_status"],
+            )
             primitives = {
                 primitive["name"]: primitive for primitive in capabilities["primitives"]
             }
@@ -693,6 +705,10 @@ class ServerTests(unittest.TestCase):
             self.assertEqual(
                 manifest["request_templates"]["setup"]["integration"]["path"],
                 "/integration",
+            )
+            self.assertEqual(
+                manifest["primitive_requirements"]["brightness"],
+                ["control_writes"],
             )
 
             diagnostics = json.loads(urlopen(f"{base}/diagnostics", timeout=3).read())

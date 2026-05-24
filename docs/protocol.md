@@ -190,7 +190,14 @@ surface without using the gated raw-frame endpoint.
 HTTP read/control/bench endpoints, local CLI preflight commands, state
 stream/history paths, OSC addresses, Art-Net and sACN defaults, BLE
 authorization commands, scene fields, loaded preset/cue names, and ACK evidence
-semantics into one response for show-control setup tools.
+semantics into one response for show-control setup tools. `GET /capabilities`
+and `/manifest` both include `primitive_requirements`, a transport-neutral map
+from public primitive names and aliases to setup-profile capabilities. For
+example, `brightness` and `set_brightness` require `control_writes`, while
+`read_brightness` requires `object_reads` and `status` requires `read_status`.
+The Python HTTP client exposes that metadata through
+`primitive_requirements_map()` and `primitive_requirements(name)` for
+controllers that use the bridge as the process boundary.
 
 `GET /ready` is a dashboard/controller preflight that combines the same
 ACK-backed status read with non-scanning device discovery, the current requested

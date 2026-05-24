@@ -117,6 +117,12 @@ class LightBridgeClient:
             name,
         )
 
+    def primitive_requirements_map(self) -> dict[str, list[str]]:
+        return bridge_primitive_requirements_map(self.capabilities())
+
+    def primitive_requirements(self, primitive: str) -> list[str]:
+        return bridge_primitive_requirements(self.capabilities(), primitive)
+
     def diagnostics(self) -> dict[str, object]:
         return self._get("/diagnostics")
 
@@ -1119,6 +1125,34 @@ def request_template_required_readiness(
     if not isinstance(required, list):
         return []
     return [str(item) for item in required if item is not None]
+
+
+def bridge_primitive_requirements_map(
+    payload: Mapping[str, object],
+) -> dict[str, list[str]]:
+    raw_requirements = _metadata_payload(payload).get("primitive_requirements")
+    if not isinstance(raw_requirements, Mapping):
+        return {}
+    requirements: dict[str, list[str]] = {}
+    for raw_primitive, raw_capabilities in raw_requirements.items():
+        if not isinstance(raw_primitive, str):
+            continue
+        if not isinstance(raw_capabilities, list):
+            continue
+        requirements[raw_primitive] = [
+            str(capability)
+            for capability in raw_capabilities
+            if capability is not None
+        ]
+    return requirements
+
+
+def bridge_primitive_requirements(
+    payload: Mapping[str, object],
+    primitive: str,
+) -> list[str]:
+    normalized = primitive.strip().lower().replace("-", "_")
+    return bridge_primitive_requirements_map(payload).get(normalized, [])
 
 
 def readiness_ready_for(payload: Mapping[str, object]) -> dict[str, bool]:

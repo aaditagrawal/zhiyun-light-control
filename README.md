@@ -412,7 +412,10 @@ loaded preset names, local preflight commands such as `zlight ready`, and the
 transport evidence statuses a client should expect. It also includes
 `control_guard` readiness rules and `request_templates` for setup, read, and
 control requests so external controllers can bootstrap valid JSON bodies without
-hard-coding endpoint shapes.
+hard-coding endpoint shapes. `primitive_requirements` maps each SDK/HTTP
+operation name, including aliases such as `brightness` and `set_brightness`, to
+the setup-profile capability that must be ready before a production workflow
+arms that operation.
 
 `GET /manifest` is the one-call integration map for media controllers. It lists
 HTTP control paths, state/event paths, OSC addresses, Art-Net/sACN defaults, BLE
@@ -580,6 +583,8 @@ from zhiyun_light_control import (
     ble_config_from_endpoint_report,
     ble_config_from_scan,
     bridge_connection_config,
+    bridge_primitive_requirements,
+    bridge_primitive_requirements_map,
     bridge_response_applied,
     bridge_response_reason,
     bridge_response_statuses,
@@ -601,6 +606,7 @@ print(bridge.integration(include_ble_status=True)["summary"])
 print(bridge.ready()["ready_for"])
 print(bridge.pending_readiness_actions())
 print(bridge.capabilities()["evidence_statuses"])
+print(bridge.primitive_requirements("brightness"))
 print(bridge.cues()["cues"])
 setup = bridge.setup_report(include_ble_status=True, include_object_reads=True)
 profile = bridge.setup_profile(include_ble_status=True, include_object_reads=True)
@@ -621,6 +627,8 @@ print([candidate.to_dict() for candidate in route_candidates])
 print(best_config.to_dict())
 print(usb_config.to_dict())
 print(bridge_config.to_dict())
+print(bridge_primitive_requirements_map(bridge.capabilities())["status"])
+print(bridge_primitive_requirements(bridge.integration(), "read-brightness"))
 print(ble_scan_config.to_dict())
 ble = bridge.inspect_ble(backend="macos-app", name_contains="PL103")
 print(ble["endpoint_candidates"])
@@ -679,6 +687,11 @@ Use `control_guard()`, `request_templates()`, `request_template(category, name)`
 `request_template_body(category, name)`, `request_template_query(category, name)`,
 and `request_template_required_readiness(category, name)` to consume the
 machine-readable request metadata without hand-parsing nested JSON.
+Use `primitive_requirements_map()` or `primitive_requirements(name)` to consume
+the bridge's primitive-to-setup-evidence map from `GET /capabilities`; the
+standalone helpers `bridge_primitive_requirements_map(payload)` and
+`bridge_primitive_requirements(payload, name)` work on already-fetched
+`/capabilities`, `/manifest`, or `/integration` JSON.
 It also includes `readiness_actions()`, `readiness_action(id)`, and
 `pending_readiness_actions()` helpers for setup dashboards that consume
 `GET /ready`. Create `LightBridgeClient(..., require_ready_for_controls=True)` to

@@ -21,6 +21,8 @@ SETUP_PROFILE_PRIMITIVE_REQUIREMENTS = {
     "setup_profile": ("read_status",),
     "devices": ("device_discovery",),
     "state_events": ("state_events",),
+    "events": ("state_events",),
+    "history": ("state_events",),
     "read_brightness": ("object_reads",),
     "read_cct": ("object_reads",),
     "read_sleep": ("object_reads",),
@@ -30,11 +32,21 @@ SETUP_PROFILE_PRIMITIVE_REQUIREMENTS = {
     "identify": ("object_reads",),
     "register": ("control_setup",),
     "register_default_group": ("control_setup",),
+    "brightness": ("control_writes",),
+    "cct": ("control_writes",),
+    "sleep": ("control_writes",),
+    "rgb": ("control_writes",),
+    "hsi": ("control_writes",),
     "set_brightness": ("control_writes",),
     "set_cct": ("control_writes",),
     "set_sleep": ("control_writes",),
     "set_rgb": ("control_writes",),
     "set_hsi": ("control_writes",),
+    "scene": ("control_writes",),
+    "preset": ("control_writes",),
+    "sequence": ("control_writes",),
+    "cue": ("control_writes",),
+    "frame": ("control_writes",),
     "apply_scene": ("control_writes",),
     "apply_preset": ("control_writes",),
     "run_sequence": ("control_writes",),
@@ -212,6 +224,15 @@ def setup_profile_primitive_requirements(primitive: str) -> tuple[str, ...]:
     if requirements is None:
         raise ValueError(f"unknown setup profile primitive: {primitive}")
     return requirements
+
+
+def setup_profile_primitive_requirements_map() -> dict[str, tuple[str, ...]]:
+    return {
+        primitive: tuple(requirements)
+        for primitive, requirements in sorted(
+            SETUP_PROFILE_PRIMITIVE_REQUIREMENTS.items()
+        )
+    }
 
 
 def light_setup_profile_from_mapping(

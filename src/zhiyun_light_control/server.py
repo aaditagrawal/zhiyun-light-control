@@ -30,6 +30,7 @@ from .discovery import (
 )
 from .models import Scene
 from .presets import ScenePresetLibrary, merge_scene, scene_from_optional_mapping
+from .profiles import setup_profile_primitive_requirements_map
 from .protocol import (
     DEFAULT_CONTROL_MODE,
     RUNTIME_TYPE,
@@ -1942,6 +1943,7 @@ def integration_manifest_response(
         "cues": cues,
         "control_guard": control_guard_response(),
         "request_templates": request_templates_response(),
+        "primitive_requirements": primitive_requirements_response(),
         "evidence": {
             "statuses": [
                 "acknowledged",
@@ -2355,6 +2357,13 @@ def request_templates_response() -> dict[str, object]:
     }
 
 
+def primitive_requirements_response() -> dict[str, object]:
+    return {
+        name: list(requirements)
+        for name, requirements in setup_profile_primitive_requirements_map().items()
+    }
+
+
 def capabilities_response(
     *,
     allow_control: bool,
@@ -2369,6 +2378,7 @@ def capabilities_response(
         "cues": cues,
         "control_guard": control_guard_response(),
         "request_templates": request_templates_response(),
+        "primitive_requirements": primitive_requirements_response(),
         "evidence_statuses": [
             "acknowledged",
             "sent_no_response",
