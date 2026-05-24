@@ -1176,6 +1176,9 @@ from zhiyun_light_control import load_rig
 rig = load_rig("examples/rig.json")
 print(rig.fixture_names())
 print(rig.to_dict()["fixtures"])
+rig.save("saved-rig.json")
+restored = load_rig("saved-rig.json")
+print(restored.fixture_names())
 ```
 
 Fixture entries may use `profile_path` or an inline `profile` object instead of
@@ -1189,6 +1192,12 @@ rig JSON file:
   }
 }
 ```
+
+Programmatic setup code can build the same saved rig shape with
+`LightFixture.from_setup_profile()`, `rig.to_json()`, `rig_from_json()`,
+`rig_to_json()`, and `save_rig()`. This keeps multi-light route/profile files
+plain JSON while letting host applications generate them through the SDK instead
+of shelling out to the CLI.
 
 Use `rig.require_setup_profile("key", "read_status")` to fail fast from saved
 profile evidence before opening the transport, or

@@ -16,12 +16,17 @@ from zhiyun_light_control import (
     RigConfigError,
     RigNotReady,
     Scene,
+    ScenePresetLibrary,
     SetupProfileNotReady,
+    async_rig_from_json,
     async_rig_from_mapping,
     fixture_from_mapping,
     load_rig,
+    rig_from_json,
     rig_from_mapping,
+    rig_to_json,
     save_light_setup_profile,
+    save_rig,
 )
 from zhiyun_light_control.protocol import (
     RUNTIME_TYPE,
@@ -180,6 +185,30 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(fixture.obj, 3)
         self.assertEqual(fixture.tags, ("profiled",))
 
+    def test_fixture_can_be_created_from_setup_profile(self) -> None:
+        profile = setup_profile(
+            LightConnectionConfig.ble(
+                address="UUID-1",
+                backend="worker",
+                profile="legacy",
+            )
+        )
+
+        fixture = LightFixture.from_setup_profile(
+            "rim",
+            profile,
+            obj=5,
+            tags=("stage-right",),
+        )
+
+        self.assertEqual(fixture.name, "rim")
+        self.assertEqual(fixture.config.transport, "ble")
+        self.assertEqual(fixture.config.address, "UUID-1")
+        self.assertEqual(fixture.config.ble_profile, "legacy")
+        self.assertEqual(fixture.obj, 5)
+        self.assertEqual(fixture.tags, ("stage-right",))
+        self.assertIs(fixture.setup_profile, profile)
+
     def test_fixture_rejects_mixed_config_and_profile(self) -> None:
         with self.assertRaisesRegex(ValueError, "config and setup profile"):
             fixture_from_mapping(
@@ -247,6 +276,61 @@ class LightRigTests(unittest.TestCase):
         self.assertEqual(rig.fixture("key").config.port, "/dev/cu.key")
         response = rig.controller("key").apply_preset("key")
         self.assertEqual(response["scene"]["brightness"], 30.0)
+
+    def test_rig_json_helpers_round_trip_profiled_fixture_groups(self) -> None:
+        key = FakeLight("key")
+        rig = LightRig(
+            [
+                LightFixture.from_setup_profile(
+                    "key",
+                    setup_profile(control_writes=True),
+                    obj=2,
+                    tags=("set",),
+                )
+            ],
+            light_factories={"key": FakeFactory(key)},
+            preset_library=ScenePresetLibrary.from_mapping(
+                {"scenes": {"look": {"brightness": 25}}}
+            ),
+            require_acknowledged=True,
+            require_setup_profile_controls=True,
+        )
+
+        text = rig.to_json()
+        restored = rig_from_json(text, light_factories={"key": FakeFactory(key)})
+        compact = rig_to_json(restored, indent=None)
+        mapped = rig_to_json({"fixtures": [{"name": "fill"}]}, indent=None)
+
+        self.assertEqual(restored.fixture_names(), ("key",))
+        self.assertTrue(restored.require_acknowledged)
+        self.assertTrue(restored.require_setup_profile_controls)
+        self.assertEqual(restored.fixture("key").obj, 2)
+        self.assertEqual(restored.fixture("key").tags, ("set",))
+        self.assertTrue(restored.require_setup_profile("key", "control_writes").ok)
+        self.assertEqual(
+            restored.to_dict()["presets"]["scenes"]["look"]["brightness"],
+            25.0,
+        )
+        self.assertIn('"require_setup_profile_controls": true', compact)
+        self.assertEqual(mapped, '{"fixtures": [{"name": "fill"}]}')
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rig.json"
+            restored.save(path)
+            saved = load_rig(path, light_factories={"key": FakeFactory(key)})
+            alt_path = Path(directory) / "rig-alt.json"
+            save_rig(saved, alt_path)
+            saved_again = load_rig(alt_path)
+
+        self.assertTrue(saved_again.require_setup_profile_controls)
+        self.assertEqual(
+            saved_again.fixture("key").config.port,
+            "/dev/cu.usbmodem21301",
+        )
+        self.assertIsNotNone(saved_again.fixture("key").setup_profile)
+
+        with self.assertRaisesRegex(RigConfigError, "rig JSON"):
+            rig_from_json("[]")
 
     def test_load_rig_resolves_relative_fixture_profile_path(self) -> None:
         key = FakeLight("key")
@@ -654,6 +738,47 @@ class AsyncLightRigTests(unittest.IsolatedAsyncioTestCase):
         integration = rig.integration("key")
         self.assertTrue(integration.require_setup_profile_controls)
         self.assertFalse(integration.setup_profile_primitive_ready("brightness"))
+
+    async def test_async_rig_json_helpers_load_saved_sdk_profiles(self) -> None:
+        rig = AsyncLightRig(
+            [
+                LightFixture.from_setup_profile(
+                    "rim",
+                    setup_profile(
+                        LightConnectionConfig.ble(
+                            address="UUID-2",
+                            backend="worker",
+                        )
+                    ),
+                    obj=7,
+                )
+            ],
+            require_setup_profile_controls=True,
+        )
+
+        restored = async_rig_from_json(rig.to_json())
+
+        self.assertEqual(restored.fixture_names(), ("rim",))
+        self.assertTrue(restored.require_setup_profile_controls)
+        self.assertEqual(restored.fixture("rim").config.transport, "ble")
+        self.assertEqual(restored.fixture("rim").config.address, "UUID-2")
+        self.assertEqual(restored.fixture("rim").obj, 7)
+        self.assertTrue(restored.require_setup_profile("rim", "read_status").ok)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "async-rig.json"
+            restored.save(path)
+            saved = AsyncLightRig.load(
+                path,
+                light_factories={"rim": FakeFactory(AsyncFakeLight("rim"))},
+            )
+
+            with self.assertRaisesRegex(SetupProfileNotReady, "control_writes"):
+                await saved.apply_scene(
+                    "rim",
+                    {"brightness": 10},
+                    require_setup_profile=True,
+                )
 
     async def test_async_rig_can_guard_fixture_controls_with_setup_profiles(
         self,

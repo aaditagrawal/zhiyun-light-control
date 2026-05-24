@@ -34,15 +34,33 @@ class LightFixture:
     tags: tuple[str, ...] = ()
     setup_profile: LightSetupProfile | None = None
 
+    @classmethod
+    def from_setup_profile(
+        cls,
+        name: str,
+        profile: LightSetupProfile,
+        *,
+        obj: int = 1,
+        tags: Iterable[str] = (),
+    ) -> LightFixture:
+        return cls(
+            name=name,
+            config=profile.config,
+            obj=obj,
+            tags=tuple(str(tag) for tag in tags),
+            setup_profile=profile,
+        )
+
     def to_dict(self) -> dict[str, object]:
         payload: dict[str, object] = {
             "name": self.name,
             "obj": self.obj,
             "tags": list(self.tags),
-            "config": asdict(self.config),
         }
         if self.setup_profile is not None:
             payload["setup_profile"] = self.setup_profile.to_dict()
+        else:
+            payload["config"] = asdict(self.config)
         return payload
 
 
@@ -183,6 +201,12 @@ class LightRig:
         if self.cue_library is not None:
             data["cues"] = self.cue_library.to_dict()
         return data
+
+    def to_json(self, *, indent: int | None = 2) -> str:
+        return rig_to_json(self, indent=indent)
+
+    def save(self, path: str | Path, *, indent: int | None = 2) -> None:
+        save_rig(self, path, indent=indent)
 
     def fixture_names(self, *, tag: str | None = None) -> tuple[str, ...]:
         return tuple(
@@ -801,6 +825,12 @@ class AsyncLightRig:
             data["cues"] = self.cue_library.to_dict()
         return data
 
+    def to_json(self, *, indent: int | None = 2) -> str:
+        return rig_to_json(self, indent=indent)
+
+    def save(self, path: str | Path, *, indent: int | None = 2) -> None:
+        save_rig(self, path, indent=indent)
+
     def fixture_names(self, *, tag: str | None = None) -> tuple[str, ...]:
         return tuple(
             name
@@ -1409,6 +1439,72 @@ def load_async_rig(
         require_acknowledged=require_acknowledged,
         require_setup_profile_controls=require_setup_profile_controls,
     )
+
+
+def rig_from_json(
+    text: str,
+    *,
+    light_factories: Mapping[str, LightFactory] | None = None,
+    preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
+    control_mode: int | None = None,
+    require_acknowledged: bool | None = None,
+    require_setup_profile_controls: bool | None = None,
+) -> LightRig:
+    payload = json.loads(text)
+    if not isinstance(payload, Mapping):
+        raise RigConfigError("rig JSON must contain an object")
+    return rig_from_mapping(
+        {str(key): value for key, value in payload.items()},
+        light_factories=light_factories,
+        preset_library=preset_library,
+        cue_library=cue_library,
+        control_mode=control_mode,
+        require_acknowledged=require_acknowledged,
+        require_setup_profile_controls=require_setup_profile_controls,
+    )
+
+
+def async_rig_from_json(
+    text: str,
+    *,
+    light_factories: Mapping[str, AsyncLightFactory] | None = None,
+    preset_library: ScenePresetLibrary | None = None,
+    cue_library: CueLibrary | None = None,
+    control_mode: int | None = None,
+    require_acknowledged: bool | None = None,
+    require_setup_profile_controls: bool | None = None,
+) -> AsyncLightRig:
+    payload = json.loads(text)
+    if not isinstance(payload, Mapping):
+        raise RigConfigError("rig JSON must contain an object")
+    return async_rig_from_mapping(
+        {str(key): value for key, value in payload.items()},
+        light_factories=light_factories,
+        preset_library=preset_library,
+        cue_library=cue_library,
+        control_mode=control_mode,
+        require_acknowledged=require_acknowledged,
+        require_setup_profile_controls=require_setup_profile_controls,
+    )
+
+
+def rig_to_json(
+    rig: LightRig | AsyncLightRig | Mapping[str, object],
+    *,
+    indent: int | None = 2,
+) -> str:
+    payload = dict(rig) if isinstance(rig, Mapping) else rig.to_dict()
+    return json.dumps(payload, indent=indent, sort_keys=True)
+
+
+def save_rig(
+    rig: LightRig | AsyncLightRig | Mapping[str, object],
+    path: str | Path,
+    *,
+    indent: int | None = 2,
+) -> None:
+    Path(path).write_text(f"{rig_to_json(rig, indent=indent)}\n", encoding="utf-8")
 
 
 def load_rig_mapping(path: str | Path) -> dict[str, object]:
