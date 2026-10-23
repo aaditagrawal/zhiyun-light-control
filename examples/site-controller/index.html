@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My G60 controller</title>
+<style>
+  :root { color-scheme: light dark; font: 17px system-ui, sans-serif; }
+  body { max-width: 34rem; margin: 3rem auto; padding: 0 1rem; }
+  label { display: grid; gap: .5rem; margin: 1.3rem 0; }
+  input, select, button { font: inherit; }
+  input[type="range"] { width: 100%; }
+  button { padding: .6rem 1rem; margin: .4rem .4rem .4rem 0; }
+  #status { min-height: 3rem; }
+  #actual { font-weight: 650; }
+</style>
+<h1>My G60</h1>
+<p id="status" role="status">Finding your light…</p>
+<button id="connect">Find / reconnect light</button>
+<form id="settings">
+  <fieldset id="controls" disabled>
+    <legend>Requested settings</legend>
+    <label>Brightness <output id="brightness-label">5%</output>
+      <input id="brightness" type="range" min="0" max="100" step="1" value="5">
+    </label>
+    <label>Color temperature <output id="cct-label">5000 K</output>
+      <input id="cct" type="range" min="2700" max="6500" step="100" value="5000">
+    </label>
+    <button type="submit">Apply</button>
+    <label>Scene <select id="preset"></select></label>
+    <button id="start" type="button">Start scene</button>
+    <button id="stop" type="button">Stop &amp; restore</button>
+  </fieldset>
+</form>
+<p id="actual">No verified readback yet.</p>
+<script type="module">
+  import { BridgeClient, EFFECT_PRESETS } from '/lighttime.js';
+
+  // Serve this file with: uv run --frozen lighttime serve --web-root examples/site-controller
+  const light = new BridgeClient({ baseUrl: location.origin, timeoutMs: 60_000 });
+  const $ = id => document.getElementById(id);
+  let busy = false, connected = false;
+  const updateDraft = () => {
+    $('brightness-label').value = `${$('brightness').value}%`;
+    $('cct-label').value = `${$('cct').value} K`;
+  };
+  for (const id of ['brightness', 'cct']) $(id).addEventListener('input', updateDraft);
+  for (const key of Object.keys(EFFECT_PRESETS)) $('preset').add(new Option(key, key));
+  function readback(state, syncDraft = false) {
+    connected = state.connected;
+    if (!connected) {
+      $('actual').textContent = 'Light disconnected. No current readback.';
+      return;
+    }
+    $('actual').textContent = `Actual: ${state.brightness}% · ${state.cct} K · read ${new Date(state.updatedAt).toLocaleTimeString()}`;
+    if (syncDraft) {
+      $('brightness').value = String(state.brightness);
+      $('cct').value = String(state.cct);
+      updateDraft();
+    }
+  }
+  async function action(work) {
+    if (busy) return;
+    busy = true;
+    $('connect').disabled = true;
+    $('controls').disabled = true;
+    try { await work(); }
+    catch (error) {
+      connected = false;
+      $('status').textContent = `${error.message} Turn on your G60 and try Find / reconnect light.`;
+    } finally {
+      busy = false;
+      $('connect').disabled = false;
+      $('controls').disabled = !connected;
+    }
+  }
+  const connect = () => action(async () => {
+    $('status').textContent = 'Finding your light and reading its actual settings…';
+    readback(await light.connect(), true);
+    $('status').textContent = 'Connected. Choose your settings or a scene.';
+  });
+  $('connect').addEventListener('click', connect);
+  $('settings').addEventListener('submit', event => {
+    event.preventDefault();
+    void action(async () => {
+      readback(await light.setState({ brightness: Number($('brightness').value), cct: Number($('cct').value) }));
+      $('status').textContent = 'Settings confirmed by the light.';
+    });
+  });
+  $('start').addEventListener('click', () => void action(async () => {
+    await light.startEffect(EFFECT_PRESETS[$('preset').value]);
+    readback(await light.refresh());
+    $('status').textContent = 'Scene running. Stop & restore returns to the starting settings.';
+  }));
+  $('stop').addEventListener('click', () => void action(async () => {
+    await light.stopEffect();
+    readback(await light.refresh(), true);
+    $('status').textContent = 'Scene stopped. Starting settings restored.';
+  }));
+  // The shared bridge owns a scene after this page closes.
+  addEventListener('pagehide', () => light.dispose(), { once: true });
+  addEventListener('pageshow', event => { if (event.persisted) location.reload(); });
+  void connect();
+</script>
+</html>

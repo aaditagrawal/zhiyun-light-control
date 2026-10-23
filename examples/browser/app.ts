@@ -23,6 +23,9 @@ const effectStop = el<HTMLButtonElement>('effect-stop');
 const reconnect = el<HTMLButtonElement>('reconnect-light');
 const connectionSettings = el('connection-settings');
 const reconnectActions = el('reconnect-actions');
+const chooseLight = el<HTMLButtonElement>('choose-light');
+const personalPicker = el('personal-picker');
+let nearbyLights: Device[] = [];
 const connectionButtons = ['attach', 'scan', 'connect-device', 'direct'].map(id => el<HTMLButtonElement>(id));
 const storageKey = 'lighttime.browser.session';
 let client: BridgeClient | LightController | null = null;
@@ -167,7 +170,11 @@ function controls() {
   const retryHttp = discoveryNeeded || eventsLost;
   reconnect.disabled = busy || healthProbe !== null || (eventsLost && eventsRecovering);
   reconnectActions.hidden = !retryHttp && (!automatic || state.connected);
-  reconnect.textContent = !retryHttp && lightDisconnected && defaultAddress ? 'Reconnect light' : 'Retry connection';
+  reconnect.textContent = !retryHttp && lightDisconnected ? (defaultAddress ? 'Reconnect light' : 'Find my light') : 'Retry connection';
+  chooseLight.hidden = !automatic || state.connected || Boolean(defaultAddress) || discoveryNeeded;
+  chooseLight.disabled = busy || healthProbe !== null;
+  el<HTMLButtonElement>('personal-connect').disabled = busy;
+  el<HTMLSelectElement>('personal-devices').disabled = busy;
   const patternsAvailable = connected && bridge !== null;
   effectSettings.disabled = !patternsAvailable;
   effectStart.disabled = !patternsAvailable || writing;
@@ -235,6 +242,7 @@ try {
 } catch { /* private browsing may disallow session storage */ }
 remember.addEventListener('change', persistToken); token.addEventListener('input', persistToken); url.addEventListener('input', persistToken);
 async function release(disconnectBridge = false) {
+  nearbyLights = []; personalPicker.hidden = true;
   stopDeviceWatch();
   epoch++; clearTimeout(timer); pending = null; dirty = false; revision++;
   healthProbe?.abort(); healthProbe = null;
@@ -369,8 +377,8 @@ function attachAutomatically(connectLight = false) {
   void configuring(async (current, signal) => {
     status(connectLight ? 'Reconnecting the light…' : 'Reading the light…', 'busy');
     try {
-      if (connectLight && defaultAddress) {
-        const actual = await next.connect({ transport: 'ble', address: defaultAddress }, { signal });
+      if (connectLight) {
+        const actual = await next.connect({ transport: 'ble', ...(defaultAddress ? { address: defaultAddress } : {}) }, { signal });
         if (!current()) return;
         if (actual.connected && render(actual)) {
           status('Light connected · actual readback received.', 'connected');
@@ -396,8 +404,8 @@ function attachAutomatically(connectLight = false) {
         await waitForRetry(signal);
       } while (current());
       if (!current()) return;
-      status(lightDisconnected && defaultAddress ? 'Light is unavailable. Use Reconnect light to try again.'
-        : `Light is unavailable. Retry when it is connected to the bridge.${lastError ? ` ${errorText(lastError)}` : ''}`, 'error');
+      status(lightDisconnected ? `Turn on your G60, then use ${defaultAddress ? 'Reconnect light' : 'Find my light'} to try again.${lastError ? ` ${errorText(lastError)}` : ''}`
+        : 'Waiting for your light. Retry connection if it stays unavailable.', 'error');
       watchBridgeDevice();
     } catch (error) { if (current()) status(`Reconnect failed: ${errorText(error)}`, 'error'); }
   });
@@ -451,6 +459,28 @@ reconnect.addEventListener('click', () => {
   if (discoveryNeeded) void inspectLocalBridge();
   else if (bridge && state.connected && eventsLost) startEvents(bridge);
   else attachAutomatically(lightDisconnected);
+});
+chooseLight.addEventListener('click', () => {
+  if (busy || !automatic) return;
+  const next = new BridgeClient({ baseUrl: location.origin, timeoutMs: 60_000 });
+  void release().catch(() => {}); client = next; bridge = next;
+  void configuring(async (current, signal) => {
+    status('Finding nearby G60 lights…', 'busy');
+    const found = await next.devices(5, { signal });
+    if (!current()) return;
+    nearbyLights = found.filter(device => device.transport === 'ble');
+    const select = el<HTMLSelectElement>('personal-devices'); select.replaceChildren();
+    for (const [index, device] of nearbyLights.entries()) select.add(new Option(`${device.name} · ${device.address}`, String(index)));
+    personalPicker.hidden = nearbyLights.length === 0;
+    status(nearbyLights.length ? 'Choose your G60, then connect.' : 'No G60 found. Turn on the light and try again.');
+  });
+});
+el('personal-connect').addEventListener('click', () => {
+  if (busy || !automatic) return;
+  const selected = nearbyLights[Number(el<HTMLSelectElement>('personal-devices').value)];
+  if (!selected) return;
+  defaultAddress = selected.address;
+  attachAutomatically(true);
 });
 window.addEventListener('online', recoverConnection);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) recoverConnection(); });

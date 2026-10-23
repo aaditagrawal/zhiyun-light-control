@@ -63,6 +63,8 @@ jobs:
         run: bun run typecheck
       - name: Build ESM and declarations
         run: bun run build
+      - name: Check the SDK included in Python wheels
+        run: cmp dist/index.js ../../src/lighttime/static/sdk.js
       - name: Package import smoke test
         run: bun run smoke
       - name: Build browser controller

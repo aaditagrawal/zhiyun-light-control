@@ -241,6 +241,31 @@ versus 84.3, 85.3 and 114.1 ms on the preceding BLE-only run. Each mode used
 twenty measured pairs. These laptop API round trips include fresh BLE
 readback, not remote-phone latency or optical response; see [latency.md](latency.md).
 
+## Plug-and-play startup and site integration
+
+The subsequent plug-and-play update makes `lighttime` start a loopback bridge
+without a token and discover a single nearby G60. Authentication is optional
+with `serve --auth`. The actual service was restarted without an address or
+authentication flag; it discovered the G60, verified the USB/BLE identity and
+read back the unchanged off state at 6100 K. Default Python and built TypeScript
+clients connected without options or an address. A browser imported the served
+`/lighttime.js` module over the private HTTPS route and received real readback.
+
+The static-site example separately passed initial connection, settings,
+scene start and baseline restoration in a real browser against an explicit
+`MOCK-NOT-HARDWARE` HTTP test server. That test did not control the lamp.
+The server was stopped afterward. The built-in controller passed **66 browser
+regressions**, including address-free retry, explicit multi-light selection
+and ignoring late picker results after restoration.
+
+Frozen Python checks passed **452 tests and 34 subtests**, including 37 new
+plug-and-play cases. The SDK passed **124 tests / 3157 assertions** and Android
+offline checks remained **24 tests / 204 assertions**. TypeScript, package
+builds, Ruff and ty passed. The review's whitespace-address and queued automatic
+connection findings were corrected and their original reproductions passed.
+The new `AGENTS.md` and website guide describe the one-command path and the
+drop-in module; no physical Android or direct Web Bluetooth claim is added.
+
 ## Scope of verified compatibility
 
 Linux BLE control and camera-visible output have been tested on this G60.

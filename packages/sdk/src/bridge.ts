@@ -6,7 +6,7 @@ import { validatePatch } from './types';
 export type FetchFunction = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export interface BridgeOptions { baseUrl?: string; token?: string; timeoutMs?: number; fetch?: FetchFunction }
 export interface BridgeHealth { name: string; version: string; authRequired?: boolean; defaultAddress?: string | null }
-export interface ConnectOptions { transport: 'ble' | 'serial' | 'mock'; address: string; deviceId?: number }
+export interface ConnectOptions { transport?: 'ble' | 'serial' | 'mock'; address?: string; deviceId?: number }
 export interface EventOptions { signal?: AbortSignal; idleTimeoutMs?: number }
 /** fetch streaming supports Authorization on SSE; credentials never enter a URL. */
 export class BridgeClient {
@@ -17,7 +17,7 @@ export class BridgeClient {
   private readonly active = new Set<AbortController>();
   private readonly mutations = new SerialQueue();
   private disposed = false;
-  constructor(options: BridgeOptions) {
+  constructor(options: BridgeOptions = {}) {
     const url = new URL(options.baseUrl ?? 'http://127.0.0.1:8877');
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new TypeError('Bridge URL must be HTTP(S), without credentials, query, or fragment');
     const token = options.token ?? '';
@@ -49,7 +49,8 @@ export class BridgeClient {
     if (!record(value) || !Array.isArray(value.devices) || !value.devices.every(validDevice)) throw new ProtocolError('Invalid devices response');
     return value.devices;
   }
-  async connect(connection: ConnectOptions, options: OperationOptions = {}): Promise<State> {
+  /** Reuse the connected light, or let the bridge discover a single nearby G60. */
+  async connect(connection: ConnectOptions = {}, options: OperationOptions = {}): Promise<State> {
     return this.mutation('/v1/connect', 'POST', { ...connection }, { ...options, timeoutMs: options.timeoutMs ?? 60_000 }, parseState);
   }
   async disconnect(options: OperationOptions = {}): Promise<State> { return this.mutation('/v1/disconnect', 'POST', {}, options, parseState); }

@@ -18,27 +18,22 @@ hooks, and timer callbacks in its [official scripting documentation](https://doc
 From the repository root:
 
 ```sh
-uv sync --frozen
-uv run lighttime serve --host 127.0.0.1 --port 8877
+uv run --frozen lighttime
 ```
 
-For a personal bridge started with `--no-auth`, leave both token fields empty.
-The OBS worker omits Authorization. The same controls accept verified
-`usb+ble` state when the bridge uses USB writes and Bluetooth readback.
+No arguments means `serve`: loopback port 8877, tokenless access and automatic
+connection to one nearby PL103/G60. `uv run` prepares the environment without
+a separate sync step. Leave both OBS token fields empty; the worker omits
+Authorization. Existing `serve --no-auth` commands remain compatible. The
+same controls accept verified `usb+ble` state when the bridge uses USB writes
+and Bluetooth readback.
 
-The default authenticated bridge creates its token file and prints the **path**, without printing the
-token. `uv run lighttime token-path` also reports the default path. Normally it
-is `~/.config/lighttime/bridge.token` on Linux (honoring `XDG_CONFIG_HOME`),
-`~/Library/Application Support/lighttime/bridge.token` on macOS, and
-`%APPDATA%/lighttime/bridge.token` on Windows. `serve --token-file PATH` overrides
-it. Use the file path from the running bridge if it uses an override.
-
-Find your light's address using the browser controller's discovery controls or
-the bridge's authenticated `GET /v1/devices?timeout=5` endpoint. macOS uses a
+If several G60s are found, use an identifier from the error with
+`serve --address YOUR_DEVICE_IDENTIFIER`, or list the bridge's
+`GET /v1/devices?timeout=5` endpoint and select one explicitly. macOS uses a
 CoreBluetooth identifier instead of a Bluetooth MAC address. The OBS script
-accepts that platform identifier verbatim. It does not scan or open Bluetooth
-itself. You can also start the bridge with `--address YOUR_DEVICE_IDENTIFIER`
-to have the bridge connect at startup.
+accepts that identifier verbatim; it does not scan or open Bluetooth itself.
+`serve --no-auto-connect` defers startup discovery when needed.
 
 ## Load the Python script
 
@@ -46,16 +41,12 @@ to have the bridge connect at startup.
    with a matching Python installation, as described by OBS's scripting docs.
 2. Add [`integrations/obs/lighttime_obs.py`](../integrations/obs/lighttime_obs.py).
    A single copy of this file is sufficient; it has no sibling-module dependencies.
-3. Set **Local bridge URL** to `http://127.0.0.1:8877` and select the bridge's
-   token file. The file can contain the UTF-8 token alone, or a JSON object with
-   a `token` string field. It is read on the worker thread for every request.
-   A selected file overrides the password input. Alternatively paste the token
-   in **Bearer token**; OBS saves this masked input in its settings as plaintext,
-   so prefer the protected token file and leave the input empty.
-4. Enter **BLE address / platform identifier**, then click **Connect BLE via
-   bridge**. If the bridge already has the correct light connected, use
-   **Refresh verified state**. Connecting or disconnecting affects all clients
-   sharing this bridge.
+3. Set **Local bridge URL** to `http://127.0.0.1:8877`; leave token fields empty
+   for the default bridge. Optional authentication is described below.
+4. Use **Refresh verified state** to read the light connected at startup.
+   For explicit selection, enter **BLE address / platform identifier**, then
+   click **Connect BLE via bridge**. Connecting or disconnecting affects all
+   clients sharing this bridge.
 5. Change **Brightness (%)** from 0–100 in whole-percent steps or **CCT (K)**
    from 2700–6500 in 100 K steps. A changed slider sends only its own field;
    **Apply both sliders** explicitly sends
@@ -122,19 +113,23 @@ Wire-format brightness remains float32; public control resolution is 1%/100 K.
 ## Browser dock
 
 Use the TypeScript controller in `examples/browser`; no second UI is maintained
-by this integration. Build its JavaScript using the SDK package's Bun script:
+by this integration. Packaged builds already include it. To rebuild from the
+checkout, install the SDK's locked dependencies, then run the canonical web
+build from the repository root:
 
 ```sh
 cd packages/sdk
 bun install --frozen-lockfile
-bun run build:browser
+cd ../..
+bun scripts/build-web.ts
 ```
 
-That writes `examples/browser/app.js` beside `index.html` and `style.css`.
+That writes `examples/browser/app.js` and the SDK module, and copies web assets
+into the Python package's static directory.
 From the repository root, start the bridge with that directory explicitly:
 
 ```sh
-uv run lighttime serve --host 127.0.0.1 --port 8877 --web-root examples/browser
+uv run --frozen lighttime serve --web-root examples/browser
 ```
 
 Packaged bridge builds serve their bundled UI by default, so a normal
@@ -153,8 +148,8 @@ The bridge root `http://127.0.0.1:8877/` redirects there when the built index is
 available; otherwise it shows a bridge-running message. Static assets are
 served under `/ui/`. If the dock gives a 404, build the example first, verify
 the web-root directory, then restart the bridge so it registers the static
-route. Use the controller's bridge mode and its token input, without placing
-credentials in the dock URL. Same-origin hosting on port 8877 needs no extra
+route. The default bridge controller attaches automatically without a token
+field. Same-origin hosting on port 8877 needs no extra
 CORS origin flag. A separate development origin must be explicitly allowed
 with the bridge's `--allow-origin` setting. Do not use a Browser Source in the
 scene to expose your control panel or credentials on-stream.
@@ -173,12 +168,28 @@ The script uses these actual endpoints from [the shared contract](api-contract.m
 - `POST /v1/disconnect` with an empty JSON object.
 - `PATCH /v1/state` with changed `brightness`, `cct`, or `power` fields.
 
-Every request carries `Authorization: Bearer …` in its header. The shared
-browser client also uses `GET /v1/devices?timeout=5` and authenticated fetch
-streaming from `GET /v1/events`. `GET /v1/health` is public. Static UI routes
+The default bridge needs no Authorization header. If `serve --auth` is enabled,
+requests carry `Authorization: Bearer …` in the header. The shared browser
+client also uses `GET /v1/devices?timeout=5`, addressless `POST /v1/connect`
+with `{}`, and fetch streaming from `GET /v1/events`. `GET /v1/health` is public. Static UI routes
 contain no embedded token. The bridge returns typed State objects and reports
 hardware/verification errors; the OBS script validates their shape before
 showing success.
+
+### Optional authenticated bridge
+
+`uv run --frozen lighttime serve --auth` creates a token file and prints its
+**path**, without printing the token. `uv run --frozen lighttime token-path`
+reports the default path: normally `~/.config/lighttime/bridge.token` on Linux
+(honoring `XDG_CONFIG_HOME`), `~/Library/Application Support/lighttime/bridge.token`
+on macOS, and `%APPDATA%/lighttime/bridge.token` on Windows. Optionally use
+`serve --auth --token-file PATH` for a custom location.
+
+For that deployment, select the token file in OBS. It can contain the UTF-8
+token alone or a JSON object with a `token` string field; the worker reads it
+for every request. A selected file overrides **Bearer token**. The masked
+input is saved by OBS as plaintext, so prefer the file. The secured browser
+dock also supports a token input; keep credentials out of its URL.
 
 ## Threading, failures, and validation
 

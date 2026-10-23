@@ -702,10 +702,11 @@ def test_personal_mode_no_token_controls_effects_health_and_sse(monkeypatch, tok
     asyncio.run(scenario())
 
 
-def test_secure_default_health_and_tokenless_sdk_rejection(monkeypatch):
+def test_auth_opt_in_health_and_tokenless_sdk_rejection(monkeypatch):
     assert Bridge(TOKEN).auth_required is True
+    assert Bridge().auth_required is False
     with pytest.raises(ValueError, match="requires a token"):
-        Bridge()
+        Bridge(auth_required=True)
 
     async def scenario():
         async with server(monkeypatch) as (_, bridge, _, url, _, http):
@@ -721,12 +722,12 @@ def test_secure_default_health_and_tokenless_sdk_rejection(monkeypatch):
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("no_auth", [True, False])
-def test_cli_no_auth_skips_token_creation_and_print(monkeypatch, capsys, tmp_path, no_auth):
+@pytest.mark.parametrize("auth_option", [None, "--no-auth", "--auth"])
+def test_cli_auth_opt_in_token_creation_and_print(monkeypatch, capsys, tmp_path, auth_option):
     token_file = tmp_path / "never-create.token"
     arguments = ["lighttime", "serve", "--address", "OFFLINE", "--token-file", str(token_file)]
-    if no_auth:
-        arguments.append("--no-auth")
+    if auth_option:
+        arguments.append(auth_option)
     monkeypatch.setattr("sys.argv", arguments)
     calls, applications = [], []
 
@@ -743,13 +744,14 @@ def test_cli_no_auth_skips_token_creation_and_print(monkeypatch, capsys, tmp_pat
     monkeypatch.setattr(cli_module.web, "run_app", run_app)
     cli_module.main()
     bridge = applications[0]
-    assert bridge.auth_required is not no_auth
+    authenticated = auth_option == "--auth"
+    assert bridge.auth_required is authenticated
     assert bridge.initial_address == "OFFLINE"
-    assert calls == ([] if no_auth else [token_file])
+    assert calls == ([token_file] if authenticated else [])
     assert not token_file.exists()
     output = capsys.readouterr().out
-    assert ("Bridge token file:" in output) is not no_auth
-    if no_auth:
+    assert ("Bridge token file:" in output) is authenticated
+    if not authenticated:
         assert str(token_file) not in output and bridge.token == ""
 
 

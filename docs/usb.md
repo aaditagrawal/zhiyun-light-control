@@ -20,7 +20,7 @@ uv run lighttime serve --host 127.0.0.1 --address YOUR_BLE_ADDRESS \
 Open `http://127.0.0.1:8877/`. The same Python/TypeScript HTTP clients, website,
 OBS dock and effects API work with the hybrid bridge. State reports
 `transport: "usb+ble"`; the connection request still uses `transport: "ble"`.
-For default authenticated deployment, omit `--no-auth`.
+Authentication is optional; add `--auth` if your deployment needs a token.
 
 If access is denied, [the USB access helper](../scripts/install-usb-access.sh)
 documents a device-specific Linux rule. A temporary ACL can disappear when

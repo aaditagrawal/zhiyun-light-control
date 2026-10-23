@@ -2,6 +2,13 @@
 
 `packages/sdk` is the independent, MIT-licensed `@lighttime/sdk` package. It implements the documented protocol facts and hardware captures in [api-contract.md](api-contract.md), without copying unlicensed vendor implementations. There are no runtime dependencies. Core framing, transport and controller code uses `Uint8Array` / `DataView`, with no Node `Buffer` or Node builtins.
 
+Turn on the G60 and run `uv run --frozen lighttime` in the repository root.
+Open `http://localhost:8877/`: one nearby PL103 is discovered/connected
+automatically, with no address or token setup. For a site integration, begin
+with [the website guide](integrating-sites.md). A no-build page can import
+`{ BridgeClient, EFFECT_PRESETS }` from `/lighttime.js` served by the bridge;
+run `uv run --frozen lighttime serve --web-root examples/site-controller`.
+
 ## Build and verify
 
 Use Bun 1.4.3 (pinned in the SDK package) and its independent lockfile:
@@ -14,8 +21,14 @@ bun test
 bun run build
 bun run smoke
 bun audit
-bun run build:browser
+cd ../..
+bun scripts/build-web.ts
 ```
+
+`bun scripts/build-web.ts` is the canonical web rebuild from the repository
+root. It builds the SDK and browser controller, then copies the controller
+assets and standalone `/lighttime.js` module into Python's static directory.
+Use it after SDK/browser changes so packaged assets and CI comparisons agree.
 
 `build` bundles browser-compatible ESM to `dist/index.js` with Bun and emits declarations with `tsc`. A small declaration pass adds `.js` references for NodeNext consumers, while source imports remain compatible with Metro. The package export's `react-native` condition selects `src/index.ts`; npm ESM/types consumers select `dist`. Expo can depend on `"@lighttime/sdk": "file:../../packages/sdk"` without building dist first when Metro resolves the `react-native` condition. The package also has the conventional `react-native` field. Exported web types are structural; no Web Bluetooth type dependency is required.
 
@@ -23,8 +36,14 @@ Tests use an in-memory BLE adapter, the actual captured frames, and injected HTT
 
 ### Install in another project
 
-The package is built locally; it has not been published to npm. To create a
-portable archive from `packages/sdk`, run:
+The package is built locally; it has not been published to npm. After
+`bun run build` in `packages/sdk`, install it from the consuming app with:
+
+```sh
+bun add /absolute/path/to/zhiyun-light-control/packages/sdk
+```
+
+To create a portable archive from `packages/sdk`, run:
 
 ```sh
 bun run build
@@ -57,14 +76,10 @@ Direct writes use `transport.send(...)`, which waits for the adapter's GATT writ
 ```ts
 import { BridgeClient, BridgeError } from '@lighttime/sdk';
 
-// Supply a token for secured bridges; omit it for an explicit --no-auth bridge.
-const bridge = new BridgeClient({
-  baseUrl: 'http://127.0.0.1:8877',
-  token: tokenFromUserInput,
-});
+const bridge = new BridgeClient();
 try {
-  // Attach to the existing bridge-owned connection without another BLE owner.
-  const actual = await bridge.refresh();
+  // Reuse the bridge connection, or discover a single nearby G60.
+  const actual = await bridge.connect();
   const verified = await bridge.setState({ brightness: 5, cct: 5000 });
   console.log(actual.brightness, verified.cct);
 } catch (error) {
@@ -75,11 +90,28 @@ try {
 }
 ```
 
-`devices(scanSeconds = 5)` accepts 0.1–30 seconds. `connect({ transport, address, deviceId? })` calls the bridge's connect route with a **60-second default timeout**, because BLE setup can take over 30 seconds. Effect calls also default to 60 seconds. Other requests default to 15 seconds; scan defaults allow the scan duration plus five seconds. Per-call `{ signal, timeoutMs }` overrides are supported; finite deadlines must be positive and no more than 300000 ms. Connect, disconnect, state and effect mutations share one serialized queue per client, with deadlines covering queueing; a queued request that expires is never sent. Calls preserve contract State field names such as `updatedAt`, and validate JSON response shapes.
+The constructor's default endpoint stays `http://127.0.0.1:8877`. When the
+bridge serves your site, construct it with `{ baseUrl: location.origin }`.
+For a remote app, pass its configured private HTTPS bridge URL or use a
+same-origin proxy, as described in [website architecture](integrating-sites.md#choose-where-the-site-runs).
+
+`devices(scanSeconds = 5)` accepts 0.1–30 seconds. `connect()` sends `{}`:
+an existing connection gets fresh readback; otherwise the bridge discovers a
+single PL103. Multiple candidates require explicit selection via
+`connect({ transport: 'ble', address: selectedIdentifier })`. It never picks a
+random light. The connect route has a **60-second default timeout**, because
+BLE setup can take over 30 seconds. Effect calls also default to 60 seconds.
+Other requests default to 15 seconds; scan defaults allow the scan duration
+plus five seconds. Per-call `{ signal, timeoutMs }` overrides are supported;
+finite deadlines must be positive and no more than 300000 ms. Connect,
+disconnect, state and effect mutations share one serialized queue per client,
+with deadlines covering queueing; an expired queued request is never sent.
+Calls preserve State fields such as `updatedAt` and validate JSON shapes.
 
 When a nonempty token is supplied, requests carry `Authorization: Bearer …` in
-a header. The constructor accepts an omitted or empty token for an explicitly
-configured `--no-auth` bridge and omits Authorization entirely for JSON and SSE.
+a header. Authentication is opt-in with `serve --auth`; the default bridge
+needs no token. An omitted or empty token omits Authorization for JSON and SSE.
+Existing `--no-auth` commands remain compatible.
 All requests use `credentials: 'omit'` and refuse redirects. Tokens are not
 included in URLs. `health()` validates optional `authRequired` and
 `defaultAddress` discovery metadata along with `name` and `version`.
@@ -89,7 +121,8 @@ throws `ProtocolError`; cancellation and deadlines throw `CancelledError` /
 `TimeoutError`. Native fetch network errors also propagate. Handle rejected
 promises; do not infer success from draft UI values.
 
-SSE uses fetch streaming instead of `EventSource`, retaining the auth header:
+SSE uses fetch streaming instead of `EventSource`, retaining the auth header
+when optional authentication is configured:
 
 ```ts
 const cancel = new AbortController();
@@ -259,16 +292,23 @@ Bluetooth recovery during a refresh or write. The SDK's general default stays
 15 seconds for non-connect calls; use `timeoutMs: 60_000` when your application
 should wait for that recovery rather than time out first.
 
-The static webroot is **`examples/browser`**, containing **`index.html`, `style.css`, and `app.js`**. `app.ts` is source; rebuild with `bun run build:browser` after SDK or UI edits. The Python bridge can copy/serve those three assets from its own webroot without another runtime. No root JS workspace or lockfile is required.
+The full controller webroot is **`examples/browser`**, containing
+**`index.html`, `style.css`, and `app.js`**. `app.ts` is source; rebuild with
+`bun scripts/build-web.ts` from the repository root after SDK or UI edits.
+That canonical command also copies those assets and the SDK module into the
+Python package, which serves them without another runtime. The smaller
+`examples/site-controller/index.html` imports `/lighttime.js` directly and
+needs no JavaScript build of its own.
 
 For a standalone local preview, run `bun run dev:browser` from `packages/sdk` (default port 5187, override `PORT`). The Bun server binds `0.0.0.0`; the local URL is `http://localhost:5187`. Other-device access needs a reachable host address, and ordinary LAN HTTP does **not** qualify as a secure Web Bluetooth context. This static server has no proxy/API; configure the bridge's explicit CORS origin allowlist for a separate preview origin. Serving the example from the bridge itself avoids that cross-origin setup.
 
-A bridge-served `/ui/` page checks same-origin health on load. For an explicit
-`--no-auth` bridge reporting `authRequired: false`, it hides the entire setup
+A bridge-served `/ui/` page checks same-origin health on load. For the default
+bridge reporting `authRequired: false`, it hides the entire setup
 section and attaches to the existing bridge connection automatically, without
 using a saved token or endpoint. It briefly retries readback during bridge
-startup, then offers a simple Reconnect light action using `defaultAddress`
-when available and the bridge has reported the light disconnected. A temporary
+startup, then offers a simple Reconnect light action through addressless
+connect when the bridge has reported the light disconnected. Multiple lights
+require explicit selection. A temporary
 health failure keeps setup hidden and offers a same-origin Retry connection.
 Going online or returning to the foreground retries failed discovery, with at
 most three retries after the first attempt, delayed by 0.5, 1.5 and 3 seconds.
@@ -356,4 +396,12 @@ storage may be blocked or retained/restored differently by embedded-browser
 lifecycle; leave it unchecked on shared computers. Both modes still trust all
 JavaScript on the serving origin.
 
-A deployed HTTPS website is not a universal frontend for a plain-HTTP local bridge. Depending on the browser, mixed-content rules, local-network permissions/private-network policies, OS access and CORS preflight can block the request. An origin allowlist alone does not override these policies. Prefer a page served by the local bridge, or a deliberately configured trusted HTTPS bridge. `127.0.0.1` / `localhost` always refers to the device running the browser; a remote phone cannot reach the computer's loopback bridge that way. Cross-device bridge access requires an intentionally reachable, authenticated listener and appropriate TLS/origin configuration. Do not expose the bridge token or unauthenticated control publicly.
+For deployment, prefer a page served by the bridge, or a reachable private
+HTTPS bridge with the app's exact origin allowlisted. A same-origin app proxy
+is another option when it can reach that bridge. A public HTTPS site cannot
+automatically control arbitrary laptop hardware: mixed-content and browser
+local-network policies may block access, and an origin allowlist alone does
+not override them. `127.0.0.1` / `localhost` refers to the browser's own device,
+so a remote phone needs the bridge computer's private URL. Authentication is
+an optional deployment setting, not part of the default local setup. See
+[website architecture](integrating-sites.md#choose-where-the-site-runs).

@@ -1,4 +1,4 @@
-"""Authenticated local HTTP/SSE bridge shared by websites and OBS."""
+"""Local HTTP/SSE bridge shared by websites and OBS, with optional authentication."""
 
 import asyncio
 import importlib
@@ -31,6 +31,7 @@ _OPERATION_DRAIN_TIMEOUT = 11.0  # Cancellation can traverse two five-second BLE
 _FINAL_CLEANUP_TIMEOUT = 6.0  # Transport cleanup has its own five-second deadline.
 _POLL_INTERVAL = 2.0  # SSE subscribers otherwise receive a fresh two-query read this often.
 _READBACK_FRESHNESS = 2.0  # A newer verified readback makes the ordinary poll redundant.
+_AUTO_CONNECT_TIMEOUT = 55.0  # Includes discovery, identity and verified initial readback.
 _DEVICE_PATHS = frozenset(
     {
         "/v1/devices",
@@ -113,16 +114,22 @@ class Bridge:
         self,
         token: str = "",
         *,
-        auth_required: bool = True,
+        auth_required: bool | None = None,
+        auto_connect: bool | None = None,
         allow_origins=(),
         allow_mock=False,
         web_root: Path | None = None,
         usb_writes: str | None = None,
     ):
+        if auth_required is None:
+            auth_required = bool(token)
         if auth_required and not token:
             raise ValueError("An authenticated bridge requires a token")
         self.token = token
         self.auth_required = auth_required
+        # None preserves programmatic startup with an explicitly configured address.
+        # The CLI opts into one automatic attempt, including discovery if needed.
+        self.auto_connect = auto_connect
         self.allow_origins = set(allow_origins)
         self.allow_mock = allow_mock
         # Optional serial port for hybrid output: BLE stays the identity/readback
@@ -136,6 +143,9 @@ class Bridge:
         self.subscribers: set[asyncio.Queue] = set()
         self.poll_task: asyncio.Task | None = None
         self.connection_task: asyncio.Task | None = None
+        self._auto_connection_task: asyncio.Task | None = None
+        self._connection_generation = 0
+        self._auto_connection_generation: int | None = None
         self._stopping = False
         self._device_tasks: set[asyncio.Task] = set()
         self._stop_waiter: asyncio.Future[None] | None = None
@@ -156,6 +166,7 @@ class Bridge:
                 web.post("/v1/effects/start", self.start_effect),
                 web.post("/v1/effects/stop", self.stop_effect),
                 web.get("/v1/events", self.events),
+                web.get("/lighttime.js", self.sdk_module),
                 web.options("/{tail:.*}", self.options),
                 web.get("/", self.index),
                 web.get("/ui", self.index),
@@ -232,7 +243,9 @@ class Bridge:
             response = api_error(503, "device_unavailable", str(exc))
         except web.HTTPException:
             raise
-        if request.path.startswith("/ui/") and not response.prepared:
+        if (
+            request.path.startswith("/ui/") or request.path == "/lighttime.js"
+        ) and not response.prepared:
             # Revalidate the personal controller after deployments; API fetch
             # cache settings do not affect a browser's HTML/module cache.
             response.headers["Cache-Control"] = "no-store"
@@ -316,10 +329,92 @@ class Bridge:
             async with self.lock:
                 return await self.connect_device(address, kind)
 
-    async def connect_device(self, address: str, kind: str):
+    def _require_auto_connection(self, generation: int):
+        self.require_running()
+        if generation != self._connection_generation:
+            raise TransportError("Automatic connection superseded by disconnect. Retry Connect.")
+
+    async def _connect_automatically(self, generation: int | None = None):
+        if generation is None:
+            generation = self._connection_generation
+        self._require_auto_connection(generation)
+        task = self._auto_connection_task
+        if task is None or task.done() or self._auto_connection_generation != generation:
+            task = self.own_device_task(
+                self._auto_connect(generation), "Bridge automatic connection"
+            )
+            self._auto_connection_task = task
+            self._auto_connection_generation = generation
+        # A dropped HTTP request or cancelled startup waiter must not abandon the
+        # shared scanner/connection. Shutdown cancels and drains its explicit owner.
+        try:
+            return await asyncio.shield(task)
+        except asyncio.CancelledError:
+            # Disconnect may cancel the owner before its coroutine starts. Report
+            # that supersession through the API; ordinary caller cancellation
+            # still propagates without cancelling the accepted shared work.
+            if task.cancelled():
+                self._require_auto_connection(generation)
+            raise
+
+    async def _auto_connect(self, generation: int):
+        def guard():
+            self._require_auto_connection(generation)
+
+        try:
+            async with asyncio.timeout(_AUTO_CONNECT_TIMEOUT):
+                async with self.effects.control_lock:
+                    guard()
+                    async with self.lock:
+                        guard()
+                        if self.client is not None and self.client.state.connected:
+                            await self.client.refresh(_guard=guard)
+                            guard()
+                            self.publish()
+                            return self.state()
+                        address = self.initial_address
+                        if address is None:
+                            try:
+                                devices = await discover()
+                            except Exception as exc:
+                                raise TransportError(f"Device discovery failed: {exc}") from exc
+                            guard()
+                            candidates = [
+                                device
+                                for device in devices
+                                if device.get("transport") == "ble"
+                                and device.get("name", "").upper().startswith("PL103")
+                            ]
+                            if not candidates:
+                                raise TransportError(
+                                    "No MOLUS G60 (PL103) found over Bluetooth. Turn on the light, "
+                                    "close other controllers, and retry Connect; or select a BLE "
+                                    "address explicitly. USB is not used for automatic control."
+                                )
+                            if len(candidates) > 1:
+                                addresses = ", ".join(device["address"] for device in candidates)
+                                raise TransportError(
+                                    f"Multiple MOLUS G60 (PL103) lights found ({addresses}). "
+                                    "Select an explicit BLE address via /v1/connect or --address."
+                                )
+                            address = candidates[0]["address"]
+                            self.initial_address = address
+                    # Stopping an effect can wait for Bridge.lock. Release it
+                    # first, while control_lock still serializes all replacements.
+                    await self.effects.stop_locked(restore=False)
+                    guard()
+                    async with self.lock:
+                        return await self.connect_device(address, "ble", _guard=guard)
+        except TimeoutError as exc:
+            raise TransportError(
+                "Automatic Bluetooth connection timed out. Retry Connect or select an explicit BLE address."
+            ) from exc
+
+    async def connect_device(self, address: str, kind: str, *, _guard=None):
         # Existing callers may already hold Bridge.lock. Invalidate synchronously
         # here; HTTP/autoconnect drain the runner first in _replace_device.
-        self.require_running()
+        guard = _guard or self.require_running
+        guard()
         if kind == "serial":
             raise ValueError(
                 "USB identity works, but runtime light control is unverified. Use BLE; CLI usb-info supports USB identification."
@@ -330,12 +425,13 @@ class Bridge:
         if self._connecting_client:
             await self._connecting_client.close()
             self._connecting_client = None
+            guard()
         if self.client:
             await self.client.close()
             self.client = None
         # Cleanup above may have completed after shutdown began. Never allocate a
         # replacement backend after that await, even if cancellation was swallowed.
-        self.require_running()
+        guard()
         transport: Transport
         if kind == "mock":
             transport = MockTransport(address)
@@ -349,28 +445,38 @@ class Bridge:
         client = LightClient(transport=transport)
         self._connecting_client = client
         try:
-            await client.connect()
+            await client.connect(_guard=guard)
         except Exception as exc:
             # Keep ownership of failed cleanup; the next connect/disconnect retries it.
             raise TransportError(f"Connection failed: {exc}") from exc
-        self.require_running()  # A late connect remains owned as the cleanup candidate.
+        guard()  # A late connect remains owned as the cleanup candidate.
         self.client = client
         self._connecting_client = None
         self.publish()
         return self.state()
 
     async def connect(self, request):
+        generation = self._connection_generation
         data = await self.body(request)
         if set(data) - {"transport", "address", "deviceId"}:
             raise ValueError("Unknown connect property")
         address = data.get("address")
-        if not isinstance(address, str) or not 1 <= len(address) <= 512:
+        kind = data.get("transport", "ble")
+        if "address" not in data and kind == "ble":
+            return web.json_response(await self._connect_automatically(generation))
+        if not isinstance(address, str) or not 1 <= len(address) <= 512 or not address.strip():
             raise ValueError("A device address is required")
         # Always query the hardware ID; a guessed ID must never override it.
-        state = await self._replace_device(address, data.get("transport", "ble"))
+        state = await self._replace_device(address, kind)
         return web.json_response(state)
 
     async def disconnect(self, request):
+        # Invalidate before waiting for either lock: an older owner can still be
+        # queued behind this disconnect, or ignore cancellation during cleanup.
+        self._connection_generation += 1
+        task = self._auto_connection_task
+        if task is not None and not task.done() and not task.cancelling():
+            task.cancel()
         async with self.effects.control_lock:
             await self.effects.stop_locked(restore=False)
             async with self.lock:
@@ -463,16 +569,24 @@ class Bridge:
             text="Lighttime bridge is running. Build examples/browser for the controller UI."
         )
 
+    async def sdk_module(self, request):
+        path = Path(__file__).with_name("static") / "sdk.js"
+        try:
+            source = path.read_bytes()
+        except FileNotFoundError:
+            return web.Response(status=404, text="Lighttime SDK module is not installed")
+        return web.Response(body=source, content_type="application/javascript")
+
     async def startup(self, app):
         self.poll_task = asyncio.create_task(self.poll())
-        if self.initial_address:
-            self.connection_task = asyncio.create_task(self.initial_connect())
+        if self.auto_connect is True or (self.auto_connect is None and self.initial_address):
+            self.connection_task = asyncio.create_task(
+                self.initial_connect(self._connection_generation)
+            )
 
-    async def initial_connect(self):
-        if self.initial_address is None:
-            return
+    async def initial_connect(self, generation: int | None = None):
         try:
-            await asyncio.wait_for(self._replace_device(self.initial_address, "ble"), 55)
+            await self._connect_automatically(generation)
         except (TransportError, OSError, TimeoutError) as exc:
             print(
                 f"Initial Bluetooth connection failed: {exc}. Connect from the controller to retry.",

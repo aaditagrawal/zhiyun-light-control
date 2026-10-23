@@ -1,7 +1,7 @@
 [project]
 name = "lighttime"
 version = "0.1.0"
-description = "Verified ZHIYUN MOLUS G60 Bluetooth controller and authenticated bridge"
+description = "Verified ZHIYUN MOLUS G60 controller, local web UI and SDK"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

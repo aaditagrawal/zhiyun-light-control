@@ -142,11 +142,11 @@ class LightClient:
             fields[1].upper(), fields[0], struct.unpack("<H", id_frame.payload)[0]
         )
 
-    async def connect(self) -> LightState:
+    async def connect(self, *, _guard: Callable[[], None] | None = None) -> LightState:
         async with self._lock:
-            await self._connect_identified()
+            await self._connect_identified(_guard=_guard)
             try:
-                return await self._refresh()
+                return await self._refresh(_guard=_guard)
             except _CleanupError:
                 self._invalidate()
                 raise
@@ -222,9 +222,9 @@ class LightClient:
                 _check_guard(_guard)
                 return
 
-    async def refresh(self) -> LightState:
+    async def refresh(self, *, _guard: Callable[[], None] | None = None) -> LightState:
         async with self._lock:
-            return await self._refresh()
+            return await self._refresh(_guard=_guard)
 
     async def set(
         self,
@@ -295,10 +295,11 @@ class BridgeClient:
     async def devices(self, timeout: float = 5):
         return (await self.request("GET", f"/v1/devices?timeout={timeout}"))["devices"]
 
-    async def connect(self, address: str, transport: str = "ble"):
-        return await self.request(
-            "POST", "/v1/connect", {"address": address, "transport": transport}
-        )
+    async def connect(self, address: str | None = None, transport: str = "ble"):
+        data = {"transport": transport}
+        if address is not None:
+            data["address"] = address
+        return await self.request("POST", "/v1/connect", data)
 
     async def disconnect(self):
         return await self.request("POST", "/v1/disconnect", {})

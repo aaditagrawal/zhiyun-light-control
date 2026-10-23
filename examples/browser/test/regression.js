@@ -470,12 +470,15 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
     a.healthReply.resolve({ name: 'lighttime', version: 'offline', authRequired: true }); await sleep(30);
     assert(a.$('connection-settings').hidden && a.$('actual-brightness').textContent === '5%' && !a.$('brightness').disabled, 'Late health changed active personal session');
   }, { pageLocation: personalPage, health: noAuthHealth, holdHealth: true });
-  await test('Personal bridge without a default address offers readback retry without setup or MAC input', async a => {
+  await test('Personal bridge without a default address discovers a light without setup or MAC input', async a => {
     await wait(() => !a.$('brightness').disabled && a.streams.length > 0, 'automatic attach');
     a.emit(disconnected()); await wait(() => !a.$('reconnect-actions').hidden, 'simple retry offered');
-    assert(a.$('reconnect-light').textContent === 'Retry connection', 'Missing retry label');
-    a.state = snapshot(6); a.click('reconnect-light'); await wait(() => !a.$('brightness').disabled, 'readback retry attached');
-    assert(!a.requests.some(r => r.path === '/v1/connect' || r.path === '/v1/devices') && a.$('connection-settings').hidden, 'Retry requested address setup or guessed a device');
+    assert(a.$('reconnect-light').textContent === 'Find my light', 'Missing discovery action');
+    a.state = snapshot(6); a.click('reconnect-light'); await wait(() => !a.$('brightness').disabled, 'automatic discovery attached');
+    const connects = a.requests.filter(r => r.path === '/v1/connect');
+    assert(connects.length === 1 && JSON.stringify(JSON.parse(connects[0].body)) === JSON.stringify({ transport: 'ble' }), 'Discovery required or guessed an address');
+    assert(!a.requests.some(r => r.path === '/v1/devices') && a.$('connection-settings').hidden, 'Discovery exposed setup');
+    assert(a.requests.every(r => !r.authorization), 'Discovery required authentication');
   }, { pageLocation: personalPage, health: { ...noAuthHealth, defaultAddress: null } });
   await test('Personal startup retry delay is cancelled on pagehide before a fresh automatic session', async a => {
     await wait(() => a.requests.some(r => r.path === '/v1/state'), 'initial disconnected read');
@@ -759,6 +762,29 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
     old.resolve(snapshot(99, 50)); await sleep(30);
     assert(a.$('actual-brightness').textContent === '6%', 'Late observation replaced fresh readback');
   }, { pageLocation: personalPage, health: noAuthHealth });
+  await test('Personal multi-light picker uses the selected G60 without exposing tokens or guessing', async a => {
+    await wait(() => !a.$('brightness').disabled && a.streams.length > 0, 'personal attach');
+    a.emit(disconnected()); await wait(() => !a.$('choose-light').hidden, 'personal choice action');
+    a.devices = [{ transport: 'serial', address: '/fake/usb', name: 'USB identity' },
+      { transport: 'ble', address: 'FIRST', name: 'PL103_first' }, { transport: 'ble', address: 'SECOND', name: 'PL103_second' }];
+    a.click('choose-light'); await wait(() => !a.$('personal-picker').hidden && !a.$('personal-connect').disabled, 'nearby picker');
+    assert(a.$('personal-devices').options.length === 2, 'Picker included a USB identity device');
+    assert(!a.requests.some(r => r.path === '/v1/connect'), 'Scan selected a light before user choice');
+    a.$('personal-devices').value = '1'; a.state = snapshot(8, 5); a.click('personal-connect');
+    await wait(() => !a.$('brightness').disabled && a.$('actual-brightness').textContent === '8%', 'selected light attached');
+    const connects = a.requests.filter(r => r.path === '/v1/connect');
+    assert(connects.length === 1 && JSON.parse(connects[0].body).address === 'SECOND', 'Wrong light selected');
+    assert(a.$('connection-settings').hidden && a.$('personal-picker').hidden && a.requests.every(r => !r.authorization), 'Choice exposed setup or credentials');
+  }, { pageLocation: personalPage, health: { ...noAuthHealth, defaultAddress: null } });
+  await test('Late personal picker results cannot replace a restored connection', async a => {
+    await wait(() => !a.$('brightness').disabled && a.streams.length > 0, 'personal attach');
+    a.emit(disconnected()); await wait(() => !a.$('choose-light').hidden, 'choice action');
+    const scan = a.hold('/v1/devices'); a.click('choose-light'); await wait(() => scan.started, 'held scan');
+    a.hide(); a.state = snapshot(6, 1); a.show(); await wait(() => !a.$('brightness').disabled, 'fresh personal session');
+    scan.resolve({ devices: [{ transport: 'ble', address: 'OLD', name: 'PL103_old' }] }); await sleep(30);
+    assert(a.$('personal-picker').hidden && a.$('actual-brightness').textContent === '6%', 'Old picker results replaced fresh session');
+    assert(!a.requests.some(r => r.path === '/v1/connect'), 'Late scan connected an old light');
+  }, { pageLocation: personalPage, health: { ...noAuthHealth, defaultAddress: null } });
   return { browser: navigator.userAgent, lifecycle: 'Synthetic PageTransitionEvent persisted=true, real JS heap and browser APIs; no claim of actual BFcache eligibility',
     network: 'Every fetch and Bluetooth chooser replaced before evaluating app; dummy token only',
     passed: results.filter(r => r.passed).length, failed: results.filter(r => !r.passed).length, results };

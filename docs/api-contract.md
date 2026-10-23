@@ -9,19 +9,30 @@ nonzero brightness for the lifetime of the controller. This is not mains power.
 
 ## Local HTTP bridge
 
-Default `http://127.0.0.1:8877`. By default all `/v1/*` routes except `/v1/health`
-require `Authorization: Bearer <token>`. JSON request/response bodies. The token
-is generated locally in a mode-0600 config file; never commit it or embed it
-in a public website. Explicit origin allowlist for CORS, loopback binding by
-default. Errors: `{ "error": { "code": "...", "message": "..." } }`.
+Run `uv run --frozen lighttime`: no arguments means `serve`, bound to loopback
+at `http://127.0.0.1:8877`. The default bridge needs no token and discovers a
+single nearby PL103/G60 once at startup. `serve --address IDENTIFIER` selects
+one explicitly; `--no-auto-connect` defers startup discovery/connection.
+Multiple candidates require explicit selection, never an arbitrary first match.
+
+JSON request/response bodies. Errors:
+`{ "error": { "code": "...", "message": "..." } }`.
+Same-origin requests need no CORS configuration; separately served browser
+apps need exact `--allow-origin` values. Use a reachable private HTTPS bridge
+URL or same-origin proxy for remote apps; a browser's localhost refers to its
+own device. See [website integration](integrating-sites.md).
 
 - GET `/v1/health`: `{ "name": "lighttime", "version": "0.1.0",
-  "authRequired": boolean }`. In personal `--no-auth` mode additionally returns
-  `"defaultAddress": string | null` from the configured startup BLE address.
+  "authRequired": boolean }`. In default no-auth mode additionally returns
+  `"defaultAddress": string | null` as startup/reconnect address metadata.
   Authenticated health omits that address.
 - GET `/v1/devices?timeout=5`: `{ "devices": [ Device ] }`.
-- POST `/v1/connect`: `{ "transport": "ble" | "mock",
-  "address": "BLE address/id (or mock identifier)", "deviceId"?: 0 }`. Returns State.
+- POST `/v1/connect`: `{ "transport"?: "ble" | "mock",
+  "address"?: "BLE address/id (or mock identifier)", "deviceId"?: 0 }`. Returns State.
+  `{}` reuses the existing connection and performs fresh readback. Otherwise it
+  discovers and connects a single PL103/G60. No candidate or multiple candidates
+  returns an actionable error; clients can list devices and send an explicit
+  selected address. Reusing the current connection does not replace its BLE owner.
   Mock is only enabled by an explicit bridge startup flag. BLE is the default.
   Serial runtime connections return HTTP 400 `invalid_request`; serial devices
   remain in discovery results for USB identification with `lighttime usb-info`.
@@ -36,18 +47,27 @@ default. Errors: `{ "error": { "code": "...", "message": "..." } }`.
   "power"?: boolean }`. Returns verified State. On transport failure returns an
   error and never reports successful hardware control. Brightness and power in
   one request must agree (off with positive brightness is rejected).
-- GET `/v1/events`: authenticated SSE, each event `event: state` followed by a
-  JSON State. SDKs use fetch streaming so the token stays in the header.
+- GET `/v1/events`: SSE, each event `event: state` followed by a JSON State.
+  SDKs use fetch streaming, carrying a header when optional auth is configured.
 
-This personal testing site explicitly uses `lighttime serve --no-auth`
-(`Bridge(auth_required=False)`), with loopback binding behind the existing
-Tailscale Serve HTTPS route and its exact HTTPS origin allowlist. In that mode
-device/effect/SSE routes accept requests without a bearer token; origin checks
-remain active. The CLI creates no token file and prints no token path. The UI
-opens directly to light controls and uses health metadata for reconnect, with
-no token, connector or setup flow. Normal bridge construction still defaults
-to `auth_required=True`. Python `BridgeClient` accepts an absent/empty token
-and omits Authorization in that case; existing token callers are unchanged.
+The browser controller attaches automatically to the default bridge without a
+token or address form. Python `BridgeClient().connect()` and TypeScript
+`new BridgeClient()` followed by `connect()` use addressless connect. The SDK
+default URL stays `http://127.0.0.1:8877`; a bridge-served site uses
+`{ baseUrl: location.origin }`. The bridge also serves a self-contained SDK
+ES module at `GET /lighttime.js`; `serve --web-root PATH` serves custom site
+assets under `/ui/` with a root entry point. This allows static HTML to import
+`{ BridgeClient, EFFECT_PRESETS }` from `/lighttime.js` with no package install.
+
+Authentication is opt-in with `serve --auth` (`Bridge(auth_required=True)`).
+Then all `/v1/*` routes except `/v1/health` require
+`Authorization: Bearer <token>`. The CLI creates a mode-0600 token file on POSIX;
+`--token-file PATH` optionally selects its location. It prints the path, not
+the token. Default construction uses `auth_required=False`, creates no token
+file and prints no token path. `--no-auth` remains compatible. Clients omit
+Authorization when their token is absent/empty. Origin checks apply in both
+modes; static assets contain no embedded token. See
+[optional authentication](python.md#optional-authentication).
 
 Up to three BLE connection attempts share a 40-second lifecycle budget for scanning,
 connection and notification setup, followed by at most 5 seconds of cleanup.

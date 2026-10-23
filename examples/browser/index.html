@@ -13,7 +13,8 @@
   <main>
     <header><div class="wordmark">lighttime<span class="accent">.</span></div><span class="model">MOLUS G60</span></header>
     <div class="connection-status"><span id="indicator" data-state="idle" aria-hidden="true"></span><p id="status" role="status" aria-live="polite">Disconnected. Choose a connection below.</p></div>
-    <div id="reconnect-actions" class="secondary-actions" hidden><button id="reconnect-light">Reconnect light</button></div>
+    <div id="reconnect-actions" class="secondary-actions" hidden><button id="reconnect-light">Reconnect light</button><button id="choose-light" hidden>Choose a light</button></div>
+    <div id="personal-picker" class="secondary-actions" hidden><label for="personal-devices">Nearby G60 lights</label><select id="personal-devices"></select><button id="personal-connect">Connect this light</button></div>
     <section aria-labelledby="controls-heading" class="controls">
       <div class="section-line"><h1 id="controls-heading">Light controls</h1><button id="power" disabled>Turn output off</button></div>
       <div class="slider-block">

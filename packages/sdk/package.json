@@ -1,7 +1,7 @@
 {
   "name": "@lighttime/sdk",
   "version": "0.1.0",
-  "description": "Independent ZHIYUN MOLUS G60 BLE and authenticated local bridge client",
+  "description": "Independent ZHIYUN MOLUS G60 BLE and local bridge client",
   "type": "module",
   "packageManager": "bun@1.4.3",
   "sideEffects": false,

@@ -5,6 +5,21 @@ const fakeFetch = (handler: (url: string, init: RequestInit) => Response | Promi
   ((input: string | URL | Request, init?: RequestInit) => Promise.resolve(handler(String(input), init ?? {}))) as typeof fetch;
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
 describe('authenticated bridge', () => {
+  test('zero-configuration client connects through localhost without a token or device address', async () => {
+    const original = globalThis.fetch;
+    const calls: { url: string; init: RequestInit }[] = [];
+    try {
+      globalThis.fetch = fakeFetch((url, init) => { calls.push({ url, init }); return json(state); });
+      const client = new BridgeClient();
+      expect(await client.connect()).toEqual(state);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toBe('http://127.0.0.1:8877/v1/connect');
+      expect(calls[0]!.init.method).toBe('POST');
+      expect(JSON.parse(calls[0]!.init.body as string)).toEqual({});
+      expect(new Headers(calls[0]!.init.headers).has('Authorization')).toBe(false);
+      client.dispose();
+    } finally { globalThis.fetch = original; }
+  });
   test('optional/empty tokens omit Authorization for no-auth JSON and SSE; health validates discovery metadata', async () => {
     const calls: RequestInit[] = [];
     for (const token of [undefined, '', '   ']) {

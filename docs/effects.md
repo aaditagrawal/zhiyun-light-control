@@ -2,16 +2,16 @@
 
 The bridge runs one effect independently of the browser, using the G60's
 verified brightness/CCT setters. It does not invoke vendor firmware effects.
-The same bridge routes work through an already configured Tailscale connection.
-This personal testing site uses explicit `--no-auth` mode and opens directly to
-controls without tokens, connectors or setup. The normal SDK bridge still
-requires authentication by default.
+Run `uv run --frozen lighttime` and open `http://localhost:8877/`: the default
+bridge discovers one nearby PL103/G60 and opens controls without an address or
+token setup. The same routes work through a configured private HTTPS bridge.
 See [the canonical shared contract](effects-contract.md) for the exact wire API.
 
 ```python
 from lighttime import BridgeClient
 
-async with BridgeClient("https://your-personal-tailnet-host") as light:
+async with BridgeClient() as light:
+    await light.connect()
     await light.start_effect(
         "breathe", duration=None, period=4,
         minBrightness=0, maxBrightness=10, cct=4300,
@@ -20,15 +20,14 @@ async with BridgeClient("https://your-personal-tailnet-host") as light:
     await light.stop_effect()  # Cancel, then verify original brightness/CCT.
 ```
 
-Run personal mode with `lighttime serve --no-auth`; it skips token-file creation
-and token-path output. Origin checks still apply. The deployment uses loopback
-binding behind the existing Tailscale Serve HTTPS route and its exact HTTPS
-origin allowlist; the parent owns deployment. `GET /v1/health` always includes
-`authRequired`. In personal mode it also includes `defaultAddress`, the
-configured startup BLE address or null, so controls can reconnect directly.
-Authenticated health omits that address. Python clients may omit `token` or
-pass an empty token; neither sends Authorization. Existing authenticated
-clients continue to pass `token=token`.
+The default skips token-file creation and token-path output. Origin checks
+still apply. `serve --auth` opts into bearer authentication; existing
+`serve --no-auth` commands remain compatible. Python clients omit Authorization
+when `token` is absent or empty. `GET /v1/health` includes `authRequired` and,
+in no-auth mode, `defaultAddress` startup/reconnect metadata. Authenticated
+health omits that address. For remote clients, pass a reachable private bridge
+URL to `BridgeClient`; see [website architecture](integrating-sites.md#choose-where-the-site-runs)
+and [Python deployment](python.md).
 
 Fourteen patterns are available: `blink`, `breathe`, `fade-in`, `fade-out`,
 `cct-sweep`, `pulse`, `flicker`, `sunrise`, `lightning`, `emergency`,

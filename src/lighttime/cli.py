@@ -61,13 +61,22 @@ def main():
     )
     serial.add_argument("--port", default="/dev/ttyACM0")
     commands.add_parser("token-path", help="Print the local bridge credential file path")
-    serve = commands.add_parser("serve", help="Run the authenticated HTTP/SSE bridge")
+    serve = commands.add_parser("serve", help="Run the local HTTP/SSE bridge")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8877)
     serve.add_argument("--address", help="Automatically connect to this BLE address at startup")
-    serve.add_argument("--token-file", type=Path, default=default_token_path())
     serve.add_argument(
-        "--no-auth", action="store_true", help="Personal local mode: do not require a bearer token"
+        "--no-auto-connect",
+        action="store_true",
+        help="Start without connecting or scanning for a light",
+    )
+    serve.add_argument("--token-file", type=Path, default=default_token_path())
+    auth = serve.add_mutually_exclusive_group()
+    auth.add_argument(
+        "--auth", action="store_true", help="Require a bearer token from --token-file"
+    )
+    auth.add_argument(
+        "--no-auth", action="store_true", help="Compatibility option: do not require a bearer token"
     )
     serve.add_argument("--allow-origin", action="append", default=[])
     serve.add_argument(
@@ -81,13 +90,14 @@ def main():
         if Path(__file__).with_name("static").is_dir()
         else Path(__file__).resolve().parents[2] / "examples" / "browser",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(sys.argv[1:] or ["serve"])
     try:
         if args.command == "serve":
-            token = "" if args.no_auth else ensure_token(args.token_file)
+            token = ensure_token(args.token_file) if args.auth else ""
             bridge = Bridge(
                 token,
-                auth_required=not args.no_auth,
+                auth_required=args.auth,
+                auto_connect=not args.no_auto_connect,
                 allow_origins=args.allow_origin,
                 allow_mock=args.allow_mock,
                 web_root=args.web_root,
@@ -95,7 +105,7 @@ def main():
             )
             if args.address:
                 bridge.initial_address = args.address
-            if not args.no_auth:
+            if args.auth:
                 print(f"Bridge token file: {args.token_file}", flush=True)
             # Bridge.on_shutdown cancels device work and wakes SSE; on_cleanup
             # drains owned operations and closes clients after this HTTP drain.
