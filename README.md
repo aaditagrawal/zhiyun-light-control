@@ -21,10 +21,6 @@ macOS, along with the laptop webcam to verify changes to the physical light.
 Analysis, captured replies, automated regressions and real-device
 readback inform the implementation.
 
-Subsequent effect exploration, USB analysis and Android enhancements also use
-parallel **Claude Opus 5.5** agents, coordinated and physically tested by the
-GPT‑6.1 Sol parent.
-
 The repository remains **Zhiyun Light Control**. Python's package, import and
 CLI are `lighttime`; the TypeScript package is `@lighttime/sdk`. This replaces
 the previous `zhiyun_light_control` / `zlight` implementation; see
