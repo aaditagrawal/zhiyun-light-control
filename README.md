@@ -2,424 +2,167 @@
 
 [![CI](https://github.com/aaditagrawal/zhiyun-light-control/actions/workflows/ci.yml/badge.svg)](https://github.com/aaditagrawal/zhiyun-light-control/actions/workflows/ci.yml)
 
-Python SDK and bridge tooling for controlling Zhiyun MOLUS lights over USB CDC
-and BLE. The package is aimed at local media-production automation: scripts,
-show controllers, OSC/DMX bridges, and custom control surfaces.
+**Lighttime** is the current implementation in this repository: a ZHIYUN MOLUS
+G60 controller, Python and TypeScript SDKs, and a local bridge for browser
+controls, OBS Studio and production scripts. Authentication is enabled by
+default. An Expo Android app provides a separate direct Bluetooth client.
+
+The GitHub repository remains **Zhiyun Light Control**. Python's package,
+import and CLI are now `lighttime`; the TypeScript package is `@lighttime/sdk`.
+This is a breaking replacement of the previous `zhiyun_light_control` /
+`zlight` implementation. See [the overhaul and migration notes](docs/overhaul.md).
 
 ## Why
-This project exists as a showcase of the capabilities of GPT 5.5 xHigh using the Codex app through `/goal` over a long period in reverse engineering firmware/interaction SDKs for unsupported devices with end to end testing. This code base is entirely autonomous; it is maintained by an agent that does all of the feature work in here based on its own internal feedback loop. The only input given to the model for this scenario was the name of the device, and the device was connected over USB to my Mac.
 
-## Status
+The original project explored unsupported-device reverse engineering with
+GPT‑5.5 xHigh in Codex. This overhaul continues that experiment with
+**GPT‑6.1 Sol in T3 Code through Codex**, using parallel research,
+implementation and review to turn protocol findings into reusable control
+tools. The user provided access to the G60 and requested the SDK, browser,
+OBS and Android stack. Vendor-app analysis, captured replies, automated
+regressions and real-device readback inform the implementation.
 
-This project is alpha hardware-control software.
+The result is an early-stage control toolkit validated on one G60:
+**Linux BLE brightness/CCT control is verified; USB is identity-only.** Other
+MOLUS models have not been validated.
 
-- Verified target: Zhiyun MOLUS G60 on firmware `1.6.4`.
-- Verified path: USB probe, firmware/status/device-id reads, registration, and
-  updater identity reads.
-- Experimental path: object-scoped control writes and BLE command routing. The
-  SDK exposes these primitives, but callers should validate them on their own
-  light before using them in a live rig.
-- Firmware flashing is intentionally not implemented. Use Zhiyun's official
-  updater for firmware writes.
+## Start on Linux
 
-The API reports command evidence instead of pretending every write succeeded.
-Unacknowledged writes return `applied: false` or raise when the caller requests
-confirmed control.
-
-## Features
-
-- Synchronous and asynchronous Python clients.
-- Transport-neutral connection configs for USB and BLE.
-- Discovery, readiness, validation, setup profiles, and state events.
-- Direct SDK controllers for scenes, presets, cues, transitions, plans, and
-  named multi-fixture rigs.
-- Local HTTP JSON bridge and stdlib HTTP client.
-- OSC, Art-Net, and sACN bridge servers for media tools.
-- JSON-serializable plans and rig/project files.
-
-## Requirements
-
-- Python `3.10` or newer.
-- [`uv`](https://docs.astral.sh/uv/) for environment and package management.
-- USB control uses `pyserial`.
-- BLE support is optional and uses `bleak`.
-
-On macOS, the light should usually stay on its PD power supply while the Mac is
-connected with USB-C for data. The G60 presents as a USB CDC serial device.
-
-## Install
-
-From a published package, after the first PyPI release:
+Install [uv](https://docs.astral.sh/uv/), then clone this repository. Python
+3.13+ is required; `.python-version` pins the checkout's validation environment.
+BlueZ must be running with a powered Bluetooth adapter. Release any other
+controller's connection to the light before connecting. The tested G60 needed
+no Bluetooth pairing or mesh reset.
 
 ```sh
-uv tool install zhiyun-light-control
+git clone https://github.com/aaditagrawal/zhiyun-light-control.git
+cd zhiyun-light-control
+uv sync --frozen
+uv run lighttime scan
+uv run lighttime state --address YOUR_BLE_ADDRESS
+uv run lighttime set --address YOUR_BLE_ADDRESS --brightness 10 --cct 4500
+uv run lighttime serve --host 127.0.0.1 --address YOUR_BLE_ADDRESS --no-auth
 ```
 
-For runtime use in an existing project:
+This personal-testing mode connects to the light at startup. Open
+`http://127.0.0.1:8877/` to go straight to its controls; the page attaches to
+the bridge automatically. The browser, OBS and Python/TypeScript bridge clients
+share one bridge-owned BLE connection. Stop the bridge before using a direct
+Python, Web Bluetooth or Android connection.
 
-```sh
-pip install zhiyun-light-control
-uv add zhiyun-light-control
-```
+Brightness is **0–100% in whole percentages**; CCT is **2700–6500 K in 100 K
+steps**. Setters verify actual device readback after BLE writes. Off means
+brightness zero; on restores the controller session's last nonzero brightness,
+or 5% if none has been observed. It does not switch mains power.
 
-BLE support is optional:
-
-```sh
-pip install "zhiyun-light-control[ble]"
-uv add "zhiyun-light-control[ble]"
-```
-
-This package is not published to PyPI yet. Until a release is published, install
-from a checkout.
-
-For development from a checkout:
-
-```sh
-uv sync --extra ble --extra dev
-```
-
-For runtime-only USB use:
-
-```sh
-uv sync
-```
-
-The package installs a `zlight` command in the uv environment:
-
-```sh
-uv run zlight --help
-```
-
-## Quick Hardware Check
-
-List local transport state:
-
-```sh
-uv run zlight devices --include-ble-status --json
-```
-
-Probe the first detected USB CDC light:
-
-```sh
-uv run zlight probe --transport usb --json
-```
-
-Read ACK-backed status:
-
-```sh
-uv run zlight status --transport usb --json
-```
-
-If auto-selection picks the wrong port, pass the serial path explicitly:
-
-```sh
-uv run zlight status --transport usb --port /dev/cu.usbmodem1101 --json
-```
-
-Run a structured validation report:
-
-```sh
-uv run zlight validate --transport usb --include-object-reads --json
-```
-
-Control probes are opt-in:
-
-```sh
-uv run zlight validate --transport usb --allow-control --include-object-reads --json
-```
-
-Use `--strict` in automation when every attempted command must be ACK-confirmed.
+For a personal page on another device, use the optional
+[private Tailscale HTTPS setup](docs/python.md#private-https-access). For SDK
+deployments, omit `--no-auth` to use the default bearer-token authentication;
+`uv run lighttime token-path` prints the token file's location. See
+[Python deployment](docs/python.md) and [browser deployment](docs/typescript.md)
+for authenticated access and exact origin configuration.
 
 ## Python SDK
 
-Read-only direct USB probe:
-
 ```python
-from zhiyun_light_control import LightConnectionConfig, LightController
+import asyncio
+from lighttime import LightClient
 
-config = LightConnectionConfig.usb()
+async def main():
+    async with LightClient("YOUR_BLE_ADDRESS") as light:
+        state = await light.set(brightness=10, cct=4500)
+        print(state.brightness, state.cct)  # actual device readback
 
-with LightController(config) as light:
-    probe = light.probe()
-    print(probe.to_dict())
+asyncio.run(main())
 ```
 
-Apply a scene only after you have validated that control writes work for your
-transport and firmware:
+Use asynchronous `BridgeClient` when another process owns the BLE connection.
+[Python setup and deployment](docs/python.md) covers wheel installation,
+authentication and a Linux user-service template.
 
-```python
-from zhiyun_light_control import LightConnectionConfig, LightController, Scene
+## Clients and effects
 
-config = LightConnectionConfig.usb(port="/dev/cu.usbmodem1101")
+- [TypeScript SDK and browser controller](docs/typescript.md): `@lighttime/sdk`
+  includes bridge and direct BLE transports; compatible secure-context browsers
+  can use Web Bluetooth. The bridge-served browser path has been tested on G60.
+- [OBS integration](docs/obs.md): Python script, hotkeys, program-scene presets
+  and a browser dock. The HTTP worker was tested against the real bridge;
+  an installed OBS UI session remains untested.
+- [Expo Android app](docs/android.md): direct BLE using `react-native-ble-plx`.
+  An arm64 standalone preview APK was built and inspected with **debug/test
+  signing**. Physical installation, permission flow and BLE testing are deferred
+  until the user connects a phone. Expo Go cannot load the native BLE module.
+- [Shared effect contract](docs/effects-contract.md): bridge-generated blink,
+  breathe, fades and CCT sweep use ordinary brightness/CCT commands. The bridge
+  owns effect timing and cancellation across clients. All five patterns,
+  stop/restore and manual override have been tested on the G60; see the
+  [effect guide](docs/effects.md) and validation record.
 
-with LightController(config, require_acknowledged=True) as light:
-    light.register(device_id=0, group_id=0)
-    result = light.apply_scene(Scene(obj=1, brightness=35, kelvin=5600))
-    print(result["applied"])
-```
+## Validation and USB limits
 
-Use the higher-level integration layer when an application needs setup evidence
-before exposing controls:
+On the tested Linux G60 (`PL103`, manufacturer `0x0905`), BLE queries confirmed
+2%, 12%, off, 2700 K warm and 6500 K cool. Camera observations supported the
+relative brightness/color changes; they are not calibrated output or Kelvin
+measurements. Python, TypeScript, browser and OBS-worker bridge paths also
+received real-device readback. The initial 5% / 5000 K was restored. See the
+[validation record](docs/validation.md) for evidence and remaining targets.
 
-```python
-from zhiyun_light_control import LightConnectionConfig, LightIntegration
-
-integration = LightIntegration(LightConnectionConfig.usb())
-setup = integration.setup_report(include_ble_status=True)
-
-if setup["ready"]:
-    print(setup["summary"])
-```
-
-See [examples/sdk_quickstart.py](examples/sdk_quickstart.py) for a fuller
-discover, persist, validate, and control flow.
-
-## CLI Control
-
-Low-level primitives:
+The USB device enumerates as `fff8:0180`, `Zhiyun Virtual ComPort`, and Linux
+binds `cdc_acm` automatically:
 
 ```sh
-uv run zlight register --transport usb --device-id 0 --group-id 0 --yes
-uv run zlight read brightness --transport usb --obj 1
-uv run zlight set brightness --transport usb --obj 1 --value 35 --yes
-uv run zlight set brightness-with-mode --transport usb --obj 1 --value 35 --mode 1 --yes
-uv run zlight set hsi --transport usb --obj 1 --hue 20 --saturation 80 --intensity 35 --yes
-uv run zlight apply --transport usb --brightness 35 --kelvin 5600 --yes
+uv run lighttime usb-info --port /dev/ttyACM0
 ```
 
-For the locally observed G60 echo route, make the frame first word explicit:
+Identity queries work; brightness/CCT reads did not answer. The bridge rejects
+serial runtime control. If access is denied, review
+[`scripts/install-usb-access.sh`](scripts/install-usb-access.sh) and its
+device-specific `uaccess` rule before installing it with sudo. No firmware
+flasher is included. Windows/macOS hardware and direct Web Bluetooth remain
+unverified.
+
+## Build and check
+
+No PyPI, npm or app-store publication has been performed. Build Python
+distributions with `uv build --out-dir artifacts/distributions`. For the SDK
+and browser, install the manifest-pinned Bun and run:
 
 ```sh
-uv run zlight apply --transport usb --first-word 0x0301 --accept-echo --sleep 0 --brightness 50 --kelvin 3200 --yes
-uv run zlight set brightness-with-mode --transport usb --first-word 0x0301 --obj 1 --value 50 --mode 1 --yes
+cd packages/sdk
+bun install --frozen-lockfile
+bun test
+bun run typecheck
+bun run build
+bun run build:browser
 ```
 
-This route may report `echoed_write`, not an ACK. The CLI keeps that distinction
-visible even when `--accept-echo` lets shell automation treat the local
-echo route as an accepted transport result. Physical testing showed that a
-broad `0x0301` candidate pass reached `2700K` at `20%`; exact brightness/CCT
-control routing is still being narrowed down.
-
-For the local post-provisioning BLE path, native `FEE9` scene writes are
-write-only: the light changes state but does not ACK the control frames.
+From the repository root:
 
 ```sh
-uv run zlight apply --transport ble --ble-backend macos-app --ble-profile legacy --obj 1 --sleep 0 --brightness 50 --kelvin 3200 --accept-no-response --yes
+uv run --frozen pytest -q
+uv run --frozen ruff check src tests scripts integrations/obs
+uv run --frozen ty check
+uv audit --frozen
 ```
 
-The JSON still reports each command as `sent_no_response`; the flag only lets
-shell automation accept the expected write-only transport result.
+[CI](.github/workflows/ci.yml) checks frozen Python 3.13/3.14 environments,
+the SDK tests/build/types, and Android tests/types. It performs no physical
+hardware or native Android build. Android has a documented unresolved high
+Expo CLI dependency advisory; see [Android validation](docs/android.md).
+[`scripts/hardware_verify.py`](scripts/hardware_verify.py) is an explicit
+physical test that changes the light and can capture camera images. Normal
+tests use mocks and local test servers.
 
-For macOS BLE authorization diagnostics, the helper can use a fresh bundle
-identity:
+## Protocol research
 
-```sh
-uv run zlight ble-helper --ensure --authorize \
-  --bundle-name ZhiyunBleScanFresh \
-  --bundle-id local.zhiyun-light-control.ble-scan-fresh \
-  --timeout 60 --json
-```
+The official Android AAB and macOS updater were analyzed for UUIDs, framing,
+CRC and command formats, then compared with captured G60 replies. The SDK is
+independently implemented from those protocol facts:
 
-Build a plan without opening hardware:
+- [Device and HTTP API contract](docs/api-contract.md)
+- [Official app analysis and download hashes](docs/research/official-apps.md)
+- [Existing implementations and license notes](docs/research/existing-protocols.md)
+- [USB/updater research](docs/research/rea-usb.md)
 
-```sh
-uv run zlight plan --brightness 35 --kelvin 5600 --output scene-plan.json
-```
-
-Execute the plan later over USB/BLE or through the HTTP bridge:
-
-```sh
-uv run zlight execute-plan scene-plan.json --transport usb --yes
-```
-
-BLE discovery and endpoint checks:
-
-```sh
-uv run zlight scan-ble --name-contains MOLUS
-uv run zlight inspect-ble --name-contains MOLUS --json
-uv run zlight test-ble-endpoints --name-contains MOLUS --json
-uv run zlight mesh-probe --backend macos-app --name-contains PL103 --json
-uv run --extra mesh zlight mesh-handshake --name-contains PL103 --json
-uv run --extra mesh zlight mesh-session --name-contains PL103 --json
-uv run --extra mesh zlight mesh-provision-plan --session-json session.json --json
-uv run zlight mesh-setup-plan --json
-```
-
-`mesh-probe` sends a Bluetooth Mesh provisioning invite on `1827/2ADB` and
-decodes capabilities from `2ADC`. On the local G60 this confirms the light is
-reachable as an unprovisioned mesh node; it is a setup-discovery primitive, not
-finished brightness/CCT control.
-
-`mesh-handshake` keeps one CoreBluetooth connection open and sends the invite,
-no-OOB provisioning start, and provisioner public key. It requires the `mesh`
-extra for P-256 key generation. A complete response should include the
-provisionee public key and derived ECDH secret; this is still pre-control setup,
-not a finished light-output command.
-
-`mesh-session` extends that flow with per-session confirmation and random
-frames, computed after the G60 returns its public key and sent on the same BLE
-connection. It intentionally stops before provisioning data, so it does not
-persistently add the light to a generated mesh network.
-
-To persistently provision in the same live BLE session, opt in explicitly:
-
-```sh
-uv run --extra mesh zlight mesh-session --name-contains PL103 \
-  --provision --network-key-hex "$NETWORK_KEY_HEX" --yes --json
-```
-
-This sends the encrypted Provisioning Data PDU and expects Provisioning Complete
-`0308`. Save the returned `network_key_hex` and `device_key_hex` for the Mesh
-Proxy config step.
-
-`mesh-provision-plan` is the next offline builder: it consumes a complete
-`mesh-session` JSON transcript and derives the encrypted provisioning-data PDU,
-network key metadata, session nonce/key, and device key. It does not send
-anything to the light; send that PDU through the explicit
-`mesh-session --provision --yes` path when you are ready to persistently attach
-the light to the generated mesh.
-
-`mesh-setup-plan` builds the official Zhiyun mesh network defaults and the
-post-provisioning access-message sequence observed in Vega: composition data
-get, default TTL get, network transmit set, and app key add. It is also
-non-mutating; it proves the SDK can construct the next control-plane
-instructions before a sender for `1828/2ADD/2ADE` is added.
-
-After a real provisioning session has produced a light `device_key_hex`,
-`mesh-setup-plan --device-key-hex ...` also emits encrypted Mesh Proxy Network
-PDUs for `1828/2ADD`. Use `mesh-config-send --yes` to transmit those artifacts
-over an authorized BLE Mesh Proxy connection.
-
-To transmit those config PDUs after the light is provisioned and advertising
-Mesh Proxy:
-
-```sh
-uv run zlight mesh-config-send \
-  --network-key-hex "$NETWORK_KEY_HEX" \
-  --app-key-hex "$APP_KEY_HEX" \
-  --device-key-hex "$DEVICE_KEY_HEX" \
-  --ble-backend macos-app \
-  --yes --json
-```
-
-This is a mutating setup command; it writes the composition/default-TTL/network
-transmit/app-key-add sequence to `1828/2ADD`.
-
-When BLE discovery unexpectedly returns no Zhiyun devices on macOS, widen the
-scan before changing protocol code:
-
-```sh
-uv run zlight scan-ble --backend macos-app --include-all --timeout 10
-```
-
-For lower-level provisioning work, import from `zhiyun_light_control.mesh`.
-The module includes confirmation/random helpers and encrypted provisioning-data
-builders that match the Nordic Mesh flow used by Zhiyun Vega.
-
-## Local Bridges
-
-Run a JSON HTTP bridge:
-
-```sh
-uv run zlight serve --transport usb --host 127.0.0.1 --port 8765 --allow-control
-```
-
-Use the Python HTTP client from another process:
-
-```python
-from zhiyun_light_control import LightBridgeClient, Scene
-
-bridge = LightBridgeClient(
-    "http://127.0.0.1:8765",
-    require_acknowledged_controls=True,
-)
-
-status = bridge.status()
-result = bridge.apply_scene(Scene(brightness=20, kelvin=5600))
-print(status["ok"], result["applied"])
-```
-
-Start media-control bridge servers:
-
-```sh
-uv run zlight osc-serve --transport usb --port 9000 --allow-control
-uv run zlight artnet-serve --transport usb --universe 0 --allow-control
-uv run zlight sacn-serve --transport usb --universe 1 --allow-control
-```
-
-## Multi-Fixture Rigs
-
-Rig files are JSON and can mix USB and BLE fixtures:
-
-```json
-{
-  "fixtures": {
-    "key": {"transport": "usb", "obj": 1, "tags": ["set"]},
-    "rim": {"transport": "ble", "name_contains": "MOLUS", "obj": 1}
-  },
-  "presets": {
-    "scenes": {
-      "interview": {"brightness": 35, "kelvin": 5600},
-      "blackout": {"sleep": 1}
-    }
-  },
-  "require_acknowledged": true
-}
-```
-
-Programmatic use:
-
-```python
-from zhiyun_light_control import LightRig
-
-rig = LightRig.load("examples/rig.json")
-print(rig.setup_report_all())
-```
-
-## Documentation
-
-- [docs/index.md](docs/index.md): task-oriented docs for setup, CLI, SDK,
-  bridges, BLE, rigs, hardware notes, and protocol reference.
-- [design.md](design.md): SDK architecture and design choices.
-- [CHANGELOG.md](CHANGELOG.md): release history.
-- [examples/](examples): sample scene, cue, rig, project, and SDK files.
-
-## Development
-
-Run the same local checks as CI:
-
-```sh
-uv sync --extra ble --extra dev
-uv run ruff check .
-uv run pytest -q
-uv run python -m compileall -q src tests examples/sdk_quickstart.py
-rg -n "\bAny\b|typing\.Any|from typing import .*Any" src tests
-uv build
-```
-
-The `rg` command should exit with no matches.
-
-## Release Readiness
-
-Before publishing a release:
-
-```sh
-uv sync --extra ble --extra dev
-uv run ruff check .
-uv run pytest -q
-uv run python -m compileall -q src tests examples/sdk_quickstart.py
-uv build
-```
-
-Manual release steps still required:
-
-- Confirm `CHANGELOG.md` has the release notes.
-- Confirm the version in `pyproject.toml`.
-- Check the built files in `dist/`.
-- Publish to PyPI.
-- Create and push the matching git tag.
-- Create the GitHub release.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
+Vendor binaries, decompiled trees, camera photos, build artifacts and private
+tokens are excluded from the source distribution. Licensed under [MIT](LICENSE).

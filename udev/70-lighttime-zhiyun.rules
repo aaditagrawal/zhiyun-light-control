@@ -1,0 +1,2 @@
+# ZHIYUN virtual serial port. Give the active local desktop user access.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="fff8", ATTRS{idProduct}=="0180", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"

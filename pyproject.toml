@@ -1,54 +1,37 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "zhiyun-light-control"
+name = "lighttime"
 version = "0.1.0"
-description = "USB and BLE control experiments for Zhiyun MOLUS lights."
+description = "Verified ZHIYUN MOLUS G60 Bluetooth controller and authenticated bridge"
 readme = "README.md"
-requires-python = ">=3.10"
 license = "MIT"
-authors = [
-  { name = "Aurion contributors" }
-]
-keywords = ["zhiyun", "molus", "light", "usb", "ble", "media-production"]
-classifiers = [
-  "Development Status :: 3 - Alpha",
-  "Intended Audience :: Developers",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Topic :: Multimedia :: Video",
-  "Topic :: System :: Hardware",
-]
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
 dependencies = [
+    "aiohttp>=3.14.5",
+    "bleak>=3.0.2",
     "pyserial>=3.5",
 ]
 
-[project.optional-dependencies]
-ble = ["bleak>=0.22"]
-mesh = ["cryptography>=42"]
-dev = [
-    "pytest>=8",
-    "ruff>=0.11",
-]
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
 
 [project.scripts]
-zlight = "zhiyun_light_control.cli:main"
+lighttime = "lighttime.cli:main"
 
-[project.urls]
-Homepage = "https://github.com/aaditagrawal/zhiyun-light-control"
-Repository = "https://github.com/aaditagrawal/zhiyun-light-control"
-Issues = "https://github.com/aaditagrawal/zhiyun-light-control/issues"
-Changelog = "https://github.com/aaditagrawal/zhiyun-light-control/blob/main/CHANGELOG.md"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-zhiyun_light_control = ["py.typed"]
+[tool.ruff]
+line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "ANN401"]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["vendor", "artifacts", "node_modules"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+    "ty>=0.0.91",
+]

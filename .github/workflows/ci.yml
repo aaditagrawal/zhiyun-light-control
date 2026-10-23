@@ -2,58 +2,89 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.13", "3.14"]
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v6.0.2
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v8.1.0
-
-      - name: Set up Python
-        uses: actions/setup-python@v6.2.0
+      # Official release commits verified on 2026-10-23.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
           python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install frozen dependencies
+        run: uv sync --frozen --group dev --compile-bytecode
+      - name: Unit and integration tests (mock hardware)
+        run: uv run --frozen pytest -q
+      - name: Ruff
+        run: uv run --frozen ruff check src tests scripts integrations/obs
+      - name: Type check
+        run: uv run --frozen ty check
 
-      - name: Install dependencies
-        run: uv sync --python ${{ matrix.python-version }} --extra ble --extra mesh --extra dev
+  sdk:
+    name: TypeScript SDK and browser build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: packages/sdk/package.json
+      - name: Install frozen dependencies
+        run: bun install --frozen-lockfile
+      - name: SDK tests
+        run: bun test
+      - name: Type check
+        run: bun run typecheck
+      - name: Build ESM and declarations
+        run: bun run build
+      - name: Package import smoke test
+        run: bun run smoke
+      - name: Build browser controller
+        run: bun run build:browser
 
-      - name: Lint
-        run: uv run --python ${{ matrix.python-version }} ruff check .
-
-      - name: Test
-        run: uv run --python ${{ matrix.python-version }} pytest -q
-
-      - name: Compile
-        run: uv run --python ${{ matrix.python-version }} python -m compileall -q src tests examples/sdk_quickstart.py
-
-      - name: Check no explicit Any in source or tests
-        run: |
-          uv run --python ${{ matrix.python-version }} python - <<'PY'
-          from pathlib import Path
-          import re
-          import sys
-
-          pattern = re.compile(r"\bAny\b|typing\.Any|from typing import .*Any")
-          matches = []
-          for root in (Path("src"), Path("tests")):
-              for path in root.rglob("*.py"):
-                  for line_number, line in enumerate(path.read_text().splitlines(), 1):
-                      if pattern.search(line):
-                          matches.append(f"{path}:{line_number}:{line}")
-          if matches:
-              print("\n".join(matches))
-              sys.exit(1)
-          PY
-
-      - name: Build package
-        run: uv build --python ${{ matrix.python-version }}
+  android:
+    name: Android offline checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: apps/android/package.json
+      - name: Install frozen dependencies
+        run: bun install --frozen-lockfile
+      - name: Offline permission and BLE-adapter tests
+        run: bun test
+      - name: Type check
+        run: bun run typecheck

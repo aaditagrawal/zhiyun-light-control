@@ -1,0 +1,15 @@
+[Unit]
+Description=Lighttime ZHIYUN MOLUS G60 bridge
+After=bluetooth.target
+
+[Service]
+Type=simple
+# Replace PROJECT_PATH and DEVICE_ADDRESS before installing this user unit.
+WorkingDirectory=PROJECT_PATH
+ExecStart=PROJECT_PATH/.venv/bin/lighttime serve --address DEVICE_ADDRESS
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

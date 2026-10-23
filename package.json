@@ -1,0 +1,14 @@
+{
+  "name": "lighttime-clients",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.4.3",
+  "scripts": {
+    "build:sdk": "bun run --cwd packages/sdk build",
+    "build:browser": "bun run --cwd packages/sdk build:browser",
+    "package:web": "bun scripts/package-web.ts",
+    "android": "bun run --cwd apps/android android",
+    "test:sdk": "bun run --cwd packages/sdk test",
+    "typecheck:sdk": "bun run --cwd packages/sdk typecheck"
+  }
+}
