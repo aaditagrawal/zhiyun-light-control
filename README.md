@@ -3,8 +3,36 @@
 [![CI](https://github.com/aaditagrawal/zhiyun-light-control/actions/workflows/ci.yml/badge.svg)](https://github.com/aaditagrawal/zhiyun-light-control/actions/workflows/ci.yml)
 
 **Lighttime** controls a ZHIYUN MOLUS G60 from your browser, website, Python,
-TypeScript or OBS. Turn on the G60, install [uv](https://docs.astral.sh/uv/),
-then run:
+TypeScript or OBS.
+
+## Why
+
+This project exists as a showcase of long-running autonomous AI engineering:
+reverse-engineering an unsupported device, building its SDKs and applications,
+and testing the result end to end against real hardware. Agents carry out the
+research, implementation, debugging, testing and review; the user supplies the
+goals and access to the device.
+
+The original experiment used **GPT‑5.5 xHigh in the Codex app through `/goal`**.
+Its starting input was the device's name and a G60 connected over USB to a Mac.
+This overhaul uses **GPT‑6.1 Sol through Codex**, with parallel research,
+implementation and review. This time the agent had access to Linux instead of
+macOS, along with the laptop webcam to verify changes to the physical light.
+Vendor-app analysis, captured replies, automated regressions and real-device
+readback inform the implementation.
+
+Subsequent effect exploration, USB analysis and Android enhancements also use
+parallel **Claude Opus 5.5** agents, coordinated and physically tested by the
+GPT‑6.1 Sol parent.
+
+The repository remains **Zhiyun Light Control**. Python's package, import and
+CLI are `lighttime`; the TypeScript package is `@lighttime/sdk`. This replaces
+the previous `zhiyun_light_control` / `zlight` implementation; see
+[the overhaul and migration notes](docs/overhaul.md).
+
+## Quick start
+
+Turn on the G60, install [uv](https://docs.astral.sh/uv/), then run:
 
 ```sh
 git clone https://github.com/aaditagrawal/zhiyun-light-control.git
@@ -60,26 +88,6 @@ models, Windows/macOS hardware, direct Web Bluetooth, a physical Android run
 and an installed OBS UI remain unverified. Camera checks show relative changes,
 not calibrated brightness or Kelvin measurements. See
 [the validation record](docs/validation.md) and [USB guide](docs/usb.md).
-
-## Why
-
-The original project explored unsupported-device reverse engineering with
-GPT‑5.5 xHigh in Codex. This overhaul continues that experiment with
-**GPT‑6.1 Sol through Codex**, using parallel research, implementation and
-review to turn protocol findings into reusable control tools. This time the
-agent had access to Linux instead of macOS, along with the laptop webcam to
-verify changes to the physical light. The user provided the G60 and requested
-the SDK, browser, OBS and Android stack. Vendor-app analysis, captured replies,
-automated regressions and real-device readback inform the implementation.
-
-Subsequent effect exploration, USB analysis and Android enhancements also use
-parallel **Claude Opus 5.5** agents, coordinated and physically tested by the
-GPT‑6.1 Sol parent.
-
-The repository remains **Zhiyun Light Control**. Python's package, import and
-CLI are `lighttime`; the TypeScript package is `@lighttime/sdk`. This replaces
-the previous `zhiyun_light_control` / `zlight` implementation; see
-[the overhaul and migration notes](docs/overhaul.md).
 
 ## More ways to run
 
