@@ -16,15 +16,14 @@ This is a breaking replacement of the previous `zhiyun_light_control` /
 
 The original project explored unsupported-device reverse engineering with
 GPT‑5.5 xHigh in Codex. This overhaul continues that experiment with
-**GPT‑6.1 Sol in T3 Code through Codex**, using parallel research,
-implementation and review to turn protocol findings into reusable control
-tools. The user provided access to the G60 and requested the SDK, browser,
-OBS and Android stack. Vendor-app analysis, captured replies, automated
-regressions and real-device readback inform the implementation.
+**GPT‑6.1 Sol through Codex**, using parallel research,
+implementation and review (using a laptop webcam) to turn protocol findings into reusable control
+tools. 
+
+ this time, apart from just giving the light, the agent also had access to Linux instead of MacOS, as well as the webcam which helped with verification.
 
 The result is an early-stage control toolkit validated on one G60:
-**Linux BLE brightness/CCT control is verified; USB is identity-only.** Other
-MOLUS models have not been validated.
+**Linux BLE brightness/CCT control is verified.** 
 
 ## Start on Linux
 
