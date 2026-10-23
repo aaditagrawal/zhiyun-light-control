@@ -18,7 +18,7 @@ Its starting input was the device's name and a G60 connected over USB to a Mac.
 This overhaul uses **GPT‑6.1 Sol through Codex**, with parallel research,
 implementation and review. This time the agent had access to Linux instead of
 macOS, along with the laptop webcam to verify changes to the physical light.
-Vendor-app analysis, captured replies, automated regressions and real-device
+Analysis, captured replies, automated regressions and real-device
 readback inform the implementation.
 
 Subsequent effect exploration, USB analysis and Android enhancements also use
