@@ -11,7 +11,15 @@ panel offers the shared presets: Candle, Fireplace, Storm, Heartbeat, Sunrise,
 Sunset, Emergency, Paparazzi, Television, SOS / Morse and Scene sequence. Blink,
 Breathe, Fade in, Fade out and CCT sweep remain available too.
 
-Selecting a pattern or editing **Tune this pattern** only changes the requested
+Scenes are grouped into Atmosphere, Rhythm, Transitions, Signals and Sequence.
+Each choice has a waveform thumbnail. The larger **Preview** uses 64 samples
+from the same SDK program that drives the light: height indicates brightness
+and color indicates warmth. Finite fades and sunrise show their whole
+transition; random patterns show a short, bounded window. Preview colors are
+indicative, and any assumed starting values are labeled. They are never
+presented as physical measurements.
+
+Selecting a pattern or editing **Tune pattern** only changes the requested
 form. Press **Start pattern** to send output. Starting another pattern replaces
 the previous run without restoring it first, and captures a fresh verified
 baseline for the new run.
@@ -28,18 +36,20 @@ The native panel exposes:
 
 - Minimum/maximum brightness and relevant start/end temperatures.
 - Finite duration from 1–3600 seconds, or **Until stopped** for cyclic patterns.
-- Period for Blink, Breathe and CCT sweep. Blink accepts 0.2–60 seconds with
-  equal on/off phases; each phase must last at least 0.1 seconds. Breathe and
+- Period for Blink, Breathe and CCT sweep. Blink accepts 0.2–60 seconds and an
+  adjustable on-time percentage; each phase must last at least 0.1 seconds. Breathe and
   CCT sweep accept 1–60 seconds.
 - Heartbeat speed from 20–120 BPM, Morse text and dot length, and a repeatable
   unsigned 32-bit seed for stochastic patterns.
 - **Restore when finished** for finite runs, initialized from shared defaults.
   Fades and Sunrise hold their endpoints by default; cycles restore by default.
+- Linear/perceptual brightness curves for fades, breathe and sunrise.
 
-The Scene sequence demonstration uses the SDK's five fixed keyframes in a
-six-second loop. Its brightness and CCT come from those frames, so the panel
-shows the sequence rather than ineffective common output controls. Use the
-browser controller for advanced keyframe JSON editing.
+Scene sequence starts with the SDK's five-frame, six-second loop and can be
+edited directly on the phone. Add/remove frames, edit time, brightness and
+temperature, and choose hold, linear, smooth or perceptual arrival easing.
+Blank output fields carry the previous value; the first frame starts at zero.
+Shared validation enforces 2–256 frames, timing and output resolution.
 
 Invalid settings appear beside the form and disable Start. Validation uses
 `parseEffectConfig`, including whole-percent/100 K resolution, brightness
@@ -48,7 +58,7 @@ There is no extra consent or authentication flow.
 
 ## Requested settings and actual light
 
-The form is explicitly labeled **Requested**. The readback panel above it
+The preview and requested range are labeled separately. The readback above them
 continues to show values read from the physical light, with their read time.
 The runner publishes its own seven-field `EffectStatus`; the panel displays
 that run's pattern, running/stopped state, supplied progress and any error.
@@ -92,9 +102,10 @@ defaults, immutable preset copying, blink boundaries, invalid inputs, synchronou
 cancellation, drain ordering and failed-cleanup recovery. Existing permission,
 captured-frame native adapter, readback and operation-gate tests remain in place.
 TypeScript and Android bundle export are separate integration checks.
-The final Android suite passed 24 tests / 204 assertions, including actual
+The 2026-10-24 Android UI suite passed 40 tests / 1394 assertions, including actual
 hook-body cancellation cases that release busy state after background or
-explicit disconnect. TypeScript and Hermes export also passed.
+explicit disconnect, slider draft/commit/readback behavior, all scene previews
+and keyframe editing helpers. TypeScript and Hermes export also passed.
 
 The app's ownership tests use a controlled drain promise to verify cleanup
 ordering and recovery. The SDK separately tracks actual controller and native
@@ -117,10 +128,10 @@ setter to verify live-connection manual/Stop/replacement handoffs, spacing and
 readback, plus cancellation/disposal of I/O owned by a superseded command.
 
 These tests do not validate Android runtime permissions, app lifecycle on a
-physical phone, BLE reliability or the emitted optical effect. No physical
-Android device was available for this implementation. The parent task owns
-hardware testing and release APK rebuilds; a successful source check or bundle
-export must not be described as physical Android validation.
+physical phone, BLE reliability or the emitted optical effect. See the
+[build record](android-build.md) for native APK and emulator evidence. A
+successful source check, UI fixture or bundle export is not physical Android
+validation.
 
 See [Android setup](android.md), [shared effect behavior](effects.md) and
 [the expanded configuration contract](effects-programs-contract.md).

@@ -1,6 +1,6 @@
 {
   "name": "@lighttime/android",
-  "version": "0.1.0",
+  "version": "0.2.0-preview.1",
   "private": true,
   "main": "index.ts",
   "packageManager": "bun@1.4.3",

@@ -11,7 +11,7 @@ module.exports = function withLighttimeArt(config) {
       await mkdir(path.dirname(target), { recursive: true });
       await writeFile(target, contents);
     };
-    const legacy = mark.replace(/<path /, '<path android:fillColor="#101713" android:pathData="M0,0 H108 V108 H0 Z" /><path ');
+    const legacy = mark.replace(/<path /, '<path android:fillColor="#101214" android:pathData="M0,0 H108 V108 H0 Z" /><path ');
     const adaptive = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
   <background android:drawable="@color/lighttime_launcher_background" />
@@ -19,7 +19,7 @@ module.exports = function withLighttimeArt(config) {
   <monochrome android:drawable="@drawable/lighttime_mark" />
 </adaptive-icon>`;
     await Promise.all([
-      save('values/lighttime.xml', '<resources><color name="lighttime_launcher_background">#101713</color></resources>'),
+      save('values/lighttime.xml', '<resources><color name="lighttime_launcher_background">#101214</color></resources>'),
       save('drawable-anydpi/lighttime_mark.xml', mark),
       save('mipmap-anydpi/ic_launcher.xml', legacy),
       save('mipmap-anydpi/ic_launcher_round.xml', legacy),

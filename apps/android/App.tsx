@@ -1,69 +1,33 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
-  ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Switch, Text,
+  useWindowDimensions, View,
 } from 'react-native';
-import Slider from '@react-native-community/slider';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useLight } from './src/useLight';
 import { PatternPanel } from './src/PatternPanel';
+import { Button } from './src/ui/Button';
+import { IndicativeSlider } from './src/ui/IndicativeSlider';
+import { color, minimumTouchTarget, temperatureSwatch } from './src/ui/theme';
 
-const color = {
-  background: '#101713', surface: '#1b251e', raised: '#253229', line: '#334237',
-  text: '#f0f0dc', muted: '#a5b0a1', accent: '#d4ed92', ink: '#1a2614', error: '#ffbd9f',
-};
+type Destination = 'controls' | 'patterns';
 
-function Button({ label, onPress, disabled = false, secondary = false }: {
-  label: string; onPress: () => void; disabled?: boolean; secondary?: boolean;
-}) {
-  return (
-    <Pressable accessibilityRole="button" accessibilityState={{ disabled }} onPress={onPress}
-      disabled={disabled} style={({ pressed }) => [s.button, secondary && s.secondaryButton,
-        disabled && s.disabled, pressed && s.pressed]}>
-      <Text style={[s.buttonLabel, secondary && s.secondaryLabel]}>{label}</Text>
-    </Pressable>
-  );
+function deviceLabel(name: string | undefined): string {
+  const suffix = name?.replace(/^PL103[\s_-]*/i, '').trim();
+  return suffix ? `MOLUS G60 · ${suffix}` : 'MOLUS G60';
 }
 
-function ValueControl({ title, value, min, max, unit, disabled, onCommit, marks }: {
-  title: string; value: number; min: number; max: number; unit: string; disabled: boolean;
-  onCommit: (value: number) => Promise<void>; marks: number[];
-}) {
-  const [draft, setDraft] = useState(value);
-  const [dragging, setDragging] = useState(false);
-  const actual = useRef(value);
-  actual.current = value;
-  useEffect(() => { if (!dragging) setDraft(value); }, [value, dragging]);
-  const commit = async (target: number) => {
-    setDragging(false);
-    try { await onCommit(Math.round(target)); }
-    finally { setDraft(actual.current); }
-  };
+function signalLabel(rssi: number | null): string {
+  if (rssi === null) return 'Signal unavailable';
+  return rssi >= -60 ? 'Strong signal' : rssi >= -75 ? 'Good signal' : 'Weak signal · move closer';
+}
+
+function Signal({ rssi }: { rssi: number | null }) {
+  const bars = rssi === null ? 0 : rssi >= -60 ? 3 : rssi >= -75 ? 2 : 1;
   return (
-    <View style={s.control}>
-      <View style={s.rowBetween}>
-        <Text style={s.controlTitle}>{title}</Text>
-        <Text style={s.controlValue}>{Math.round(draft)}<Text style={s.unit}> {unit}</Text></Text>
-      </View>
-      <Slider accessibilityLabel={title} accessibilityValue={{ min, max, now: draft, text: `${draft} ${unit}` }}
-        minimumValue={min} maximumValue={max} step={unit === 'K' ? 100 : 1} value={draft} disabled={disabled}
-        onSlidingStart={() => setDragging(true)} onValueChange={setDraft}
-        onSlidingComplete={(target) => { void commit(target); }}
-        minimumTrackTintColor={color.accent} maximumTrackTintColor={color.line}
-        thumbTintColor={disabled ? color.muted : color.accent} style={s.slider} />
-      <View style={s.rowBetween}>
-        <Text style={s.small}>{min} {unit}</Text>
-        <Text style={s.small}>{max} {unit}</Text>
-      </View>
-      <View style={s.presets}>
-        {marks.map((target) => (
-          <Pressable key={target} accessibilityRole="button" accessibilityLabel={`Set ${title.toLowerCase()} to ${target} ${unit}`}
-            disabled={disabled} onPress={() => { setDraft(target); void commit(target); }}
-            style={({ pressed }) => [s.preset, disabled && s.disabled, pressed && s.pressed]}>
-            <Text style={s.presetLabel}>{target}{unit === '%' ? '%' : ' K'}</Text>
-          </Pressable>
-        ))}
-      </View>
+    <View accessible={false} style={s.signal}>
+      {[0, 1, 2].map(i => <View key={i} style={[s.signalBar, { height: 6 + i * 5, backgroundColor: i < bars ? color.accent : color.line }]} />)}
     </View>
   );
 }
@@ -71,128 +35,230 @@ function ValueControl({ title, value, min, max, unit, disabled, onCommit, marks 
 function LightScreen() {
   const light = useLight();
   const actual = light.state;
-  const connected = actual?.connected === true;
+  const connected = actual?.connected === true && !light.connecting;
   const ready = connected && light.verified && !light.working;
+  const hasValues = connected && actual.brightness !== null && actual.cct !== null;
   const [showDetails, setShowDetails] = useState(false);
+  const [destination, setDestination] = useState<Destination>('controls');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const { width, fontScale } = useWindowDimensions();
+  const stacked = width < 350 || fontScale > 1.25;
+  const busy = light.working || light.scanning;
+  const issue = actionError !== null || (!light.working && light.error) || (connected && !light.verified && !light.working);
+  const readTime = actual?.updatedAt ? new Date(actual.updatedAt).toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }) : null;
+
+  // Teardown remains owned by useLight. Catch UI-triggered failures without leaving a rejected promise.
+  const perform = (operation: () => Promise<unknown>) => {
+    setActionError(null);
+    void operation().catch(error => {
+      setActionError(error instanceof Error ? error.message : 'That did not finish. Try again.');
+    });
+  };
+  const openSettings = () => {
+    setActionError(null);
+    void Linking.openSettings().catch(() => {
+      setActionError('Open Android Settings, then Apps → Lighttime → Permissions to allow Bluetooth access.');
+    });
+  };
+
+  const heading = connected ? deviceLabel(light.selected?.name)
+    : light.connecting ? 'Connecting to your light'
+      : light.scanning ? 'Looking for your light'
+        : light.unsupported ? 'Bluetooth unavailable'
+          : light.permissionBlocked ? 'Allow Bluetooth access'
+            : issue ? light.status : 'Find your light';
+  const message = actionError ?? (light.unsupported
+    ? 'Use Lighttime on an Android device with Bluetooth Low Energy. See connection details for more information.'
+    : light.connecting ? 'Connecting and reading current settings. Keep your G60 nearby.'
+      : light.scanning ? 'Keep your G60 switched on and nearby. Search takes up to 10 seconds.'
+        : light.message.replace(/\bPL103\b/g, 'G60'));
 
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={s.page} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+      <ScrollView contentContainerStyle={s.page} keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag" showsVerticalScrollIndicator>
         <View style={s.header}>
-          <View style={s.wordmark}><View style={s.brandMark} /><Text style={s.brand}>lighttime</Text></View>
-          <Text style={s.headerTag}>LIGHT, ON YOUR TERMS</Text>
+          <Text accessibilityRole="header" style={s.brand}>Lighttime</Text>
+          <Text style={s.headerNote}>Bluetooth light control</Text>
         </View>
 
-        <Text style={s.eyebrow}>ZHIYUN · MOLUS G60</Text>
-        <Text style={s.title}>Set the scene.</Text>
-        <Text style={s.subtitle}>Your light. A little closer.</Text>
-
-        <View style={s.connection}>
-          <View style={s.rowBetween}>
-            <View style={s.statusLine}>
-              <View style={[s.dot, connected && light.verified ? s.dotLive : s.dotOffline]} />
-              <Text style={s.status}>{light.status}</Text>
+        <View style={[s.connection, issue && s.connectionIssue]}>
+          <View style={[s.connectionHeading, stacked && s.stacked]}>
+            <View style={s.deviceHeading}>
+              <View accessible={false} style={[s.lightFace, connected && light.verified && {
+                borderColor: color.accent,
+                backgroundColor: actual?.power && actual.cct !== null ? temperatureSwatch(actual.cct) : color.raised,
+              }]}>
+                <View style={[s.lightFaceCenter, connected && light.verified && actual?.power && s.lightFaceLit]} />
+              </View>
+              <View style={s.headingText}>
+                <Text accessibilityRole="header" style={s.connectionTitle}>{heading}</Text>
+                <Text style={s.caption}>{connected ? 'Connected via Bluetooth' : light.connecting ? 'Reading before control' : 'ZHIYUN · MOLUS G60'}</Text>
+              </View>
             </View>
-            {(light.working || light.scanning) && <ActivityIndicator color={color.accent} size="small" />}
+            {connected && hasValues && (
+              <View style={s.power}>
+                <Text style={s.powerLabel}>{actual.power === null ? 'Unknown' : actual.power ? 'On' : 'Off'}</Text>
+                <View style={s.switchTarget}>
+                  <Switch accessibilityLabel="Light output" accessibilityHint="Off sets brightness to zero. On restores the previous brightness."
+                    hitSlop={8}
+                    accessibilityState={{ disabled: !ready || actual.power === null }}
+                    disabled={!ready || actual.power === null} value={actual.power === true}
+                    onValueChange={power => perform(() => light.update({ power }))}
+                    trackColor={{ false: color.line, true: color.accent }} thumbColor={actual.power ? color.ink : color.muted} />
+                </View>
+              </View>
+            )}
           </View>
-          <Text accessibilityLiveRegion="polite" style={[s.connectionText, light.error && s.error]}>{light.message}</Text>
-          {connected && <Text selectable style={s.deviceId}>{light.selected?.name ?? 'PL103'} · {actual.address}</Text>}
+
+          {connected && (
+            <View style={[s.statusRow, stacked && s.statusStacked]}>
+              <View style={s.statusLine}>
+                {light.working ? <ActivityIndicator color={color.accent} size="small" />
+                  : <View accessible={false} style={[s.statusDot, { backgroundColor: light.verified ? color.success : color.error }]} />}
+                <Text accessibilityLiveRegion="polite" style={[s.status, !light.verified && !light.working && s.error]}>
+                  {light.working ? 'Checking readback…' : light.verified ? 'Readback verified' : 'Readback unverified'}
+                </Text>
+              </View>
+              {readTime && <Text style={s.caption}>{light.verified ? 'Read' : 'Last read'} {readTime}</Text>}
+            </View>
+          )}
+
+          {(!connected || issue || light.working) && (
+            <View style={s.messageRow}>
+              {!connected && busy && <ActivityIndicator color={color.accent} size="small" />}
+              <Text accessibilityLiveRegion="polite" style={[s.message, issue && s.error]}>{message}</Text>
+            </View>
+          )}
+          {connected && !light.verified && !light.working && <Text style={s.caption}>Read the light again to unlock controls. Displayed values are the last read.</Text>}
 
           <View style={s.actions}>
-            {connected ? (
+            {light.connecting ? (
+              <Button label="Cancel connection" secondary onPress={() => perform(light.disconnect)} />
+            ) : connected ? (
               <>
-                <Button label="Read light" onPress={() => { void light.refresh(); }} disabled={light.working} />
-                <Button label="Disconnect" secondary onPress={() => { void light.disconnect(); }} />
+                <Button label={light.working ? 'Reading…' : 'Read light'} secondary={light.verified || light.working}
+                  disabled={light.working} onPress={() => perform(light.refresh)} />
+                <Button label="Disconnect" secondary onPress={() => perform(light.disconnect)} />
               </>
-            ) : light.connecting ? (
-              <Button label="Cancel connection" secondary onPress={() => { void light.disconnect(); }} />
             ) : light.scanning ? (
-              <Button label="Stop search" secondary onPress={() => { void light.stopScan(); }} />
-            ) : (
-              <Button label={light.hasScanned ? 'Search again' : 'Find my light'}
-                onPress={() => { void light.scan(); }} disabled={light.working || light.unsupported} />
-            )}
-            {light.permissionBlocked && <Button label="Open app settings" secondary onPress={() => { void Linking.openSettings(); }} />}
+              <Button label="Cancel search" secondary onPress={() => perform(light.stopScan)} />
+            ) : light.permissionBlocked ? (
+              <>
+                <Button label="Open app settings" onPress={openSettings} />
+                <Button label="Try again" secondary disabled={light.working || light.unsupported}
+                  onPress={() => perform(light.scan)} />
+              </>
+            ) : !light.unsupported ? (
+              <Button label={light.working ? 'Preparing Bluetooth…' : light.hasScanned ? 'Search again' : issue ? 'Try again' : 'Find my light'}
+                secondary={light.devices.length > 0 && !issue} disabled={light.working}
+                onPress={() => perform(light.scan)} />
+            ) : null}
           </View>
         </View>
 
-        {!connected && light.devices.length > 0 && (
-          <View style={s.deviceList}>
-            <Text style={s.sectionLabel}>NEARBY LIGHTS</Text>
-            {light.devices.map((device) => (
-              <Pressable key={device.id} accessibilityRole="button" accessibilityLabel={`Connect to ${device.name}`}
-                disabled={light.working} onPress={() => { void light.connect(device); }}
-                style={({ pressed }) => [s.deviceRow, light.working && s.disabled, pressed && s.pressed]}>
-                <View style={s.deviceText}>
-                  <Text style={s.deviceName}>{device.name}</Text>
-                  <Text selectable style={s.small}>{device.id}</Text>
-                </View>
-                <View style={s.alignEnd}>
-                  <Text style={s.connectLabel}>Connect ↗</Text>
-                  {device.rssi !== null && <Text style={s.small}>{device.rssi} dBm</Text>}
-                </View>
-              </Pressable>
-            ))}
+        {!connected && !light.connecting && light.devices.length > 0 && (
+          <View style={s.nearby}>
+            <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={s.sectionTitle}>Nearby lights · {light.devices.length}</Text>
+            <Text style={s.caption}>Choose the light you want to control.</Text>
+            {light.devices.map(device => {
+              const disabled = light.working || light.permissionBlocked || light.unsupported;
+              return (
+                <Pressable key={device.id} accessibilityRole="button"
+                  accessibilityLabel={`Connect to ${deviceLabel(device.name)}. ${signalLabel(device.rssi)}.`}
+                  accessibilityState={{ disabled }} disabled={disabled}
+                  onPress={() => perform(() => light.connect(device))}
+                  style={({ pressed }) => [s.nearbyLight, stacked && s.stacked, disabled && s.disabled, pressed && s.pressed]}>
+                  <View style={s.nearbyText}>
+                    <Text style={s.deviceName}>{deviceLabel(device.name)}</Text>
+                    <View style={s.signalRow}><Signal rssi={device.rssi} /><Text style={s.caption}>{signalLabel(device.rssi)}</Text></View>
+                  </View>
+                  <View style={s.connectPill}><Text style={s.connectLabel}>Connect</Text></View>
+                </Pressable>
+              );
+            })}
           </View>
         )}
 
-        {connected && actual.brightness !== null && actual.cct !== null ? (
+        {connected && (
           <>
-            <View style={s.readback}>
-              <View style={s.rowBetween}>
-                <Text style={s.sectionLabel}>{light.verified ? 'READ FROM YOUR LIGHT' : 'LAST READ · UNVERIFIED'}</Text>
-                <Text style={s.small}>{actual.updatedAt ? new Date(actual.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}</Text>
-              </View>
-              <View style={s.readbackValues}>
-                <View><Text style={s.largeValue}>{Number(actual.brightness.toFixed(1))}<Text style={s.largeUnit}>%</Text></Text><Text style={s.small}>Brightness</Text></View>
-                <View style={s.readbackDivider} />
-                <View><Text style={s.largeValue}>{actual.cct}<Text style={s.largeUnit}> K</Text></Text><Text style={s.small}>Color temperature</Text></View>
-              </View>
+            <View accessibilityRole="tablist" style={s.destinations}>
+              {(['controls', 'patterns'] as const).map(tab => (
+                <Pressable key={tab} accessibilityRole="tab" accessibilityState={{ selected: destination === tab }}
+                  onPress={() => setDestination(tab)} style={({ pressed }) => [s.destination, destination === tab && s.destinationSelected, pressed && s.pressed]}>
+                  <Text style={[s.destinationLabel, destination === tab && s.destinationLabelSelected]}>
+                    {tab === 'controls' ? 'Controls' : 'Patterns'}{tab === 'patterns' && light.effect.running ? ' · Running' : ''}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
-            <View style={s.controlPanel}>
-              <ValueControl title="Brightness" value={actual.brightness} min={0} max={100} unit="%"
-                disabled={!ready} onCommit={(brightness) => light.update({ brightness })} marks={[5, 25, 50, 100]} />
-              <View style={s.divider} />
-              <ValueControl title="Color temperature" value={actual.cct} min={2700} max={6500} unit="K"
-                disabled={!ready} onCommit={(cct) => light.update({ cct })} marks={[2700, 3200, 5600, 6500]} />
+
+            <View style={destination !== 'controls' && s.hidden} accessibilityElementsHidden={destination !== 'controls'}
+              importantForAccessibility={destination === 'controls' ? 'auto' : 'no-hide-descendants'}>
+              {hasValues ? (
+                <View style={s.controls}>
+                  {light.effect.running && (
+                    <View style={s.patternNotice}>
+                      <Text style={s.message}>A pattern is running. A manual adjustment stops it.</Text>
+                      <Button label="View pattern" secondary onPress={() => setDestination('patterns')} />
+                    </View>
+                  )}
+                  <IndicativeSlider kind="brightness" value={actual.brightness!} verified={light.verified}
+                    working={light.working} disabled={!ready} onCommit={brightness => light.update({ brightness })} />
+                  <IndicativeSlider kind="temperature" value={actual.cct!} verified={light.verified}
+                    working={light.working} disabled={!ready} onCommit={cct => light.update({ cct })} />
+                  <Text style={s.controlNote}>Off sets brightness to 0%. On restores the previous level. Disconnecting leaves the current output.</Text>
+                </View>
+              ) : (
+                <View style={s.noReadback}>
+                  <Text style={s.sectionTitle}>Waiting for actual values</Text>
+                  <Text style={s.message}>Brightness and temperature will appear after readback. Use Read light to try again.</Text>
+                </View>
+              )}
             </View>
-            <View style={s.powerCard}>
-              <View style={s.powerText}>
-                <Text style={s.controlTitle}>{actual.power ? 'The light is on' : 'The light is dimmed off'}</Text>
-                <Text style={s.small}>Off sets brightness to 0%. On restores the last level.</Text>
+
+            {/* Keep the panel mounted across destinations so a tuned form is never discarded. */}
+            <View style={destination !== 'patterns' && s.hidden} accessibilityElementsHidden={destination !== 'patterns'}
+              importantForAccessibility={destination === 'patterns' ? 'auto' : 'no-hide-descendants'}>
+              <View style={s.patternReadback}>
+                <Text style={s.caption}>{light.verified ? 'Actual output · verified' : 'Last read · unverified'}</Text>
+                <Text style={s.patternActual}>{actual.brightness === null ? '—' : `${Number(actual.brightness.toFixed(1))}%`}{'  ·  '}{actual.cct === null ? '—' : `${actual.cct} K`}</Text>
               </View>
-              <Button label={actual.power ? 'Turn off' : 'Turn on'} secondary disabled={!ready}
-                onPress={() => { void light.update({ power: !actual.power }); }} />
+              <PatternPanel status={light.effect} ready={ready} working={light.working} connected={connected}
+                onStart={light.startEffect} onStop={light.stopEffect} />
             </View>
-            <PatternPanel status={light.effect} ready={ready} working={light.working} connected={connected}
-              onStart={light.startEffect} onStop={light.stopEffect} />
           </>
-        ) : (
-          <View style={s.empty}>
-            <View style={s.lightDrawing}>
-              <View style={s.lampOuter}><View style={s.lampInner}><View style={s.lampCenter} /></View></View>
-              <View style={s.lampStem} /><View style={s.lampFoot} />
-            </View>
-            <Text style={s.emptyTitle}>A good scene starts with light.</Text>
-            <Text style={s.emptyText}>Switch on your G60, keep it nearby, then find your light to start shaping it.</Text>
+        )}
+
+        {!connected && !light.connecting && !light.scanning && light.devices.length === 0 && !light.unsupported && !light.permissionBlocked && (
+          <View style={s.discoveryHelp}>
+            <Text style={s.sectionTitle}>{light.hasScanned ? 'Still looking?' : 'Before you start'}</Text>
+            <Text style={s.message}>{light.hasScanned
+              ? 'Keep your G60 close and disconnect it from any other control app, then search again.'
+              : 'Switch on your G60 and keep it nearby. Allow Bluetooth access when Android asks.'}</Text>
+            <Text style={s.caption}>Connect here in Lighttime. No pairing code or account needed.</Text>
           </View>
         )}
 
         <Pressable accessibilityRole="button" accessibilityState={{ expanded: showDetails }}
           onPress={() => setShowDetails(!showDetails)} style={s.detailsToggle}>
-          <Text style={s.detailsLabel}>{showDetails ? '−' : '+'}  Connection details</Text>
+          <Text style={s.detailsLabel}>Connection details</Text>
+          <Text accessible={false} style={s.detailsSymbol}>{showDetails ? '−' : '+'}</Text>
         </Pressable>
         {showDetails && (
           <View style={s.details}>
-            <Text style={s.detailsText}>Direct Bluetooth · Android development build</Text>
-            <Text style={s.detailsText}>Search looks for PL103 lights. Internet and an account are not required.</Text>
-            {actual?.device && <Text selectable style={s.detailsText}>Model: {actual.device.model}{'\n'}Serial: {actual.device.serial}{'\n'}Device ID: {actual.device.id}</Text>}
-            <Text style={s.detailsText}>Brightness adjusts in whole percentages; color temperature adjusts in 100 K steps. Only completed readback is shown as verified. Disconnecting leaves the light at its current level. Backgrounding the app closes the connection.</Text>
-            <Text style={s.detailsText}>Power is brightness-based; it does not switch mains power. If connected at 0%, the initial restore level is 5%.</Text>
+            <Text style={s.message}>Direct Bluetooth · no internet required.</Text>
+            <Text style={s.caption}>Lighttime discovers the G60 under its Bluetooth name, PL103. If a search finds several lights, choose the one you want.</Text>
+            {light.selected && <Text selectable style={s.caption}>Bluetooth name: {light.selected.name}{'\n'}Signal at discovery: {light.selected.rssi === null ? 'unavailable' : `${light.selected.rssi} dBm`}</Text>}
+            {actual?.device && <Text selectable style={s.caption}>Model: {actual.device.model}{'\n'}Serial: {actual.device.serial}{'\n'}Device ID: {actual.device.id}</Text>}
+            {light.unsupported && <Text selectable style={s.error}>{light.message}</Text>}
+            <Text style={s.caption}>Brightness requests use whole percentages, and temperature uses 100 K steps. Actual values come from the light. A failed readback locks adjustments until Read light succeeds.</Text>
+            <Text style={s.caption}>Backgrounding or disconnecting closes Bluetooth and stops this phone’s pattern, leaving the current output. Off means 0% brightness; it does not switch mains power. If first connected at 0%, On restores 5%.</Text>
           </View>
         )}
-        <Text style={s.footer}>Made for the moment.</Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -204,49 +270,60 @@ export default function App() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: color.background },
-  page: { padding: 24, paddingTop: 22, paddingBottom: 30, maxWidth: 640, width: '100%', alignSelf: 'center' },
-  header: { marginBottom: 48, gap: 8 }, wordmark: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  brandMark: { width: 15, height: 15, borderRadius: 8, backgroundColor: color.accent },
-  brand: { fontSize: 26, fontWeight: '600', letterSpacing: -1.2, color: color.text },
-  headerTag: { fontSize: 9, letterSpacing: 2, color: color.muted, marginLeft: 24 },
-  eyebrow: { fontSize: 10, letterSpacing: 2.5, color: color.accent, marginBottom: 14, fontWeight: '600' },
-  title: { fontSize: 43, lineHeight: 49, letterSpacing: -2, color: color.text, fontWeight: '500' },
-  subtitle: { fontSize: 16, color: color.muted, marginTop: 10, marginBottom: 28 },
-  connection: { padding: 20, borderWidth: 1, borderColor: color.line, borderRadius: 18, gap: 13 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
-  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1 },
-  dot: { width: 7, height: 7, borderRadius: 4 }, dotLive: { backgroundColor: color.accent }, dotOffline: { backgroundColor: color.muted },
-  status: { color: color.text, fontWeight: '600', fontSize: 14, flexShrink: 1 },
-  connectionText: { color: color.muted, fontSize: 13, lineHeight: 20 },
-  deviceId: { color: color.muted, fontSize: 11, fontFamily: 'monospace' },
-  error: { color: color.error }, actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 3 },
-  button: { backgroundColor: color.accent, paddingHorizontal: 17, paddingVertical: 14, minHeight: 48, borderRadius: 10, justifyContent: 'center' },
-  buttonLabel: { fontSize: 13, fontWeight: '700', color: color.ink, textAlign: 'center' },
-  secondaryButton: { backgroundColor: color.raised }, secondaryLabel: { color: color.text },
-  disabled: { opacity: 0.4 }, pressed: { opacity: 0.65 },
-  deviceList: { marginTop: 25 }, sectionLabel: { fontSize: 9, letterSpacing: 1.6, color: color.muted, fontWeight: '600', flexShrink: 1 },
-  deviceRow: { borderBottomWidth: 1, borderBottomColor: color.line, paddingVertical: 20, flexDirection: 'row', justifyContent: 'space-between', gap: 14, minHeight: 78 },
-  deviceText: { flex: 1, gap: 6 }, deviceName: { color: color.text, fontSize: 16, fontWeight: '500' },
-  alignEnd: { alignItems: 'flex-end', gap: 6 }, connectLabel: { color: color.accent, fontSize: 13, fontWeight: '600' },
-  small: { fontSize: 11, color: color.muted, lineHeight: 17 },
-  readback: { marginTop: 32, marginBottom: 26 }, readbackValues: { flexDirection: 'row', alignItems: 'center', marginTop: 18, gap: 22, flexWrap: 'wrap' },
-  largeValue: { fontSize: 39, color: color.text, letterSpacing: -1.5, fontVariant: ['tabular-nums'] },
-  largeUnit: { fontSize: 17, color: color.muted, letterSpacing: 0 },
-  readbackDivider: { width: 1, height: 42, backgroundColor: color.line },
-  controlPanel: { backgroundColor: color.surface, borderRadius: 18, paddingHorizontal: 20 }, control: { paddingVertical: 24 },
-  controlTitle: { fontSize: 15, color: color.text, fontWeight: '500', flexShrink: 1 },
-  controlValue: { fontSize: 23, letterSpacing: -0.5, color: color.text, fontVariant: ['tabular-nums'] }, unit: { fontSize: 12, color: color.muted },
-  slider: { width: '100%', height: 50, marginTop: 15 }, presets: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 19 },
-  preset: { backgroundColor: color.raised, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 14, minHeight: 48, justifyContent: 'center' },
-  presetLabel: { color: color.text, fontSize: 11 }, divider: { height: 1, backgroundColor: color.line },
-  powerCard: { gap: 18, marginTop: 24, borderWidth: 1, borderColor: color.line, borderRadius: 18, padding: 20 }, powerText: { gap: 8 },
-  empty: { paddingVertical: 40, alignItems: 'center' }, lightDrawing: { alignItems: 'center', marginBottom: 28, opacity: 0.85 },
-  lampOuter: { width: 96, height: 96, borderRadius: 48, borderColor: color.line, borderWidth: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: color.surface },
-  lampInner: { width: 70, height: 70, borderRadius: 35, borderColor: color.muted, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-  lampCenter: { width: 39, height: 39, borderRadius: 20, backgroundColor: color.accent },
-  lampStem: { height: 25, width: 1, backgroundColor: color.line }, lampFoot: { height: 1, width: 54, backgroundColor: color.line },
-  emptyTitle: { color: color.text, fontSize: 16, marginBottom: 12, textAlign: 'center' }, emptyText: { color: color.muted, fontSize: 13, lineHeight: 21, maxWidth: 260, textAlign: 'center' },
-  detailsToggle: { borderTopWidth: 1, borderTopColor: color.line, paddingVertical: 19, minHeight: 48 }, detailsLabel: { color: color.muted, fontSize: 12 },
-  details: { gap: 13, paddingBottom: 22 }, detailsText: { color: color.muted, fontSize: 12, lineHeight: 19 },
-  footer: { textAlign: 'center', fontSize: 10, letterSpacing: 1, color: color.muted, marginTop: 24 },
+  page: { paddingHorizontal: 20, paddingTop: 14, paddingBottom: 28, maxWidth: 640, width: '100%', alignSelf: 'center' },
+  header: { gap: 3, paddingBottom: 22 },
+  brand: { color: color.text, fontSize: 25, fontWeight: '600', letterSpacing: -0.6 },
+  headerNote: { color: color.muted, fontSize: 13 },
+  connection: { backgroundColor: color.surface, borderRadius: 18, padding: 18, gap: 14, borderWidth: 1, borderColor: color.surface },
+  connectionIssue: { borderColor: color.error },
+  connectionHeading: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
+  stacked: { flexDirection: 'column', alignItems: 'flex-start' },
+  deviceHeading: { flexDirection: 'row', alignItems: 'center', gap: 12, flexShrink: 1, flexGrow: 1 },
+  headingText: { gap: 5, flex: 1 },
+  connectionTitle: { color: color.text, fontSize: 19, fontWeight: '600' },
+  lightFace: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: color.line, backgroundColor: color.raised, alignItems: 'center', justifyContent: 'center' },
+  lightFaceCenter: { width: 16, height: 16, borderRadius: 8, borderWidth: 1, borderColor: color.muted },
+  lightFaceLit: { backgroundColor: color.background, borderColor: color.background, opacity: 0.6 },
+  caption: { color: color.muted, fontSize: 13, flexShrink: 1 },
+  power: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
+  powerLabel: { color: color.text, fontSize: 14 },
+  switchTarget: { minHeight: minimumTouchTarget, minWidth: 56, alignItems: 'center', justifyContent: 'center' },
+  statusRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  statusStacked: { flexDirection: 'column', alignItems: 'flex-start' },
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  statusDot: { width: 7, height: 7, borderRadius: 4 },
+  status: { color: color.text, fontSize: 13, flexShrink: 1 },
+  messageRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  message: { color: color.muted, fontSize: 15, flexShrink: 1 },
+  error: { color: color.error, fontSize: 14 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  nearby: { marginTop: 24, gap: 10 },
+  sectionTitle: { fontSize: 16, fontWeight: '600', color: color.text },
+  nearbyLight: { backgroundColor: color.surface, borderRadius: 14, padding: 16, minHeight: 88, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14 },
+  nearbyText: { gap: 9, flexShrink: 1 },
+  deviceName: { fontSize: 17, fontWeight: '500', color: color.text },
+  signalRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  signal: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 16 },
+  signalBar: { width: 3, borderRadius: 1 },
+  connectPill: { minHeight: minimumTouchTarget, minWidth: minimumTouchTarget, borderRadius: 10, paddingHorizontal: 16, paddingVertical: 13, backgroundColor: color.accent, alignItems: 'center', justifyContent: 'center' },
+  connectLabel: { color: color.ink, fontSize: 15, fontWeight: '600' },
+  destinations: { flexDirection: 'row', backgroundColor: color.surface, borderRadius: 13, padding: 4, marginTop: 20, marginBottom: 16, gap: 4 },
+  destination: { minHeight: minimumTouchTarget, flex: 1, paddingVertical: 12, paddingHorizontal: 8, justifyContent: 'center', borderRadius: 10 },
+  destinationSelected: { backgroundColor: color.raised },
+  destinationLabel: { color: color.muted, fontSize: 15, textAlign: 'center' },
+  destinationLabelSelected: { color: color.text, fontWeight: '600' },
+  hidden: { display: 'none' },
+  controls: { gap: 14 },
+  controlNote: { color: color.muted, fontSize: 13, paddingHorizontal: 4, marginBottom: 4 },
+  patternNotice: { borderWidth: 1, borderColor: color.line, borderRadius: 14, padding: 14, gap: 10 },
+  patternReadback: { borderBottomWidth: 1, borderColor: color.line, paddingVertical: 10, gap: 7 },
+  patternActual: { color: color.text, fontSize: 21, fontVariant: ['tabular-nums'] },
+  noReadback: { padding: 18, gap: 10, backgroundColor: color.surface, borderRadius: 16 },
+  discoveryHelp: { paddingVertical: 24, gap: 10, paddingHorizontal: 2 },
+  detailsToggle: { marginTop: 20, borderTopWidth: 1, borderTopColor: color.line, minHeight: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, gap: 12 },
+  detailsLabel: { color: color.muted, fontSize: 14, flexShrink: 1 },
+  detailsSymbol: { color: color.muted, fontSize: 20 },
+  details: { gap: 15, paddingVertical: 8, paddingBottom: 16 },
+  disabled: { opacity: 0.45 },
+  pressed: { opacity: 0.7 },
 });

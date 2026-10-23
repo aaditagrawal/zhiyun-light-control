@@ -1,54 +1,23 @@
-import { useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import Slider from '@react-native-community/slider';
-import { parseEffectConfig } from '@lighttime/sdk';
+import { useMemo, useState } from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import type { EffectConfig, EffectStatus } from '@lighttime/sdk';
 import { createEffectForm, EFFECT_CHOICES, effectConfigFromForm, supportsUntilStopped } from './effectForm';
 import type { EffectForm } from './effectForm';
-
-const c = {
-  surface: '#1b251e', raised: '#253229', line: '#334237', text: '#f0f0dc',
-  muted: '#a5b0a1', accent: '#d4ed92', ink: '#1a2614', error: '#ffbd9f',
-};
-
-function Chip({ label, selected, onPress }: { label: string; selected?: boolean; onPress: () => void }) {
-  return <Pressable accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}
-    style={({ pressed }) => [s.chip, selected && s.chipSelected, pressed && s.pressed]}>
-    <Text style={[s.chipText, selected && s.chipTextSelected]}>{label}</Text>
-  </Pressable>;
-}
-
-function Field({ label, value, onChange, hint, text = false }: {
-  label: string; value: string; onChange: (value: string) => void; hint?: string; text?: boolean;
-}) {
-  return <View style={s.field}>
-    <Text style={s.fieldLabel}>{label}</Text>
-    <TextInput accessibilityLabel={label} value={value} onChangeText={onChange}
-      keyboardType={text ? 'default' : 'decimal-pad'} autoCorrect={false} autoCapitalize={text ? 'characters' : 'none'}
-      maxLength={text ? 64 : 12} selectTextOnFocus style={s.input} selectionColor={c.accent} />
-    {hint && <Text style={s.hint}>{hint}</Text>}
-  </View>;
-}
-
-function Range({ label, value, min, max, step, unit, onChange }: {
-  label: string; value: string; min: number; max: number; step: number; unit: string; onChange: (value: string) => void;
-}) {
-  const numeric = Number(value);
-  const current = Math.max(min, Math.min(max, Number.isFinite(numeric) && value !== '' ? numeric : min));
-  return <View style={s.range}>
-    <View style={s.between}><Text style={s.fieldLabel}>{label}</Text><Text style={s.rangeValue}>{value || 'Baseline'}{value && ` ${unit}`}</Text></View>
-    <Slider accessibilityLabel={`Requested ${label.toLowerCase()}`} minimumValue={min} maximumValue={max} step={step}
-      accessibilityValue={{ min, max, now: current, text: value ? `${value} ${unit}` : 'Verified baseline' }}
-      value={current} onValueChange={next => onChange(String(Math.round(next)))}
-      minimumTrackTintColor={c.accent} maximumTrackTintColor={c.line} thumbTintColor={c.accent} style={s.slider} />
-  </View>;
-}
+import { KeyframeEditor } from './pattern-ui/KeyframeEditor';
+import { PatternBrowser } from './pattern-ui/PatternBrowser';
+import { ScenePreview } from './pattern-ui/ScenePreview';
+import { Chip, Field, Range } from './pattern-ui/TuningControls';
+import { colors as c } from './pattern-ui/palette';
+import { previewEffect } from './pattern-ui/preview';
+import { draftsFromFrames, keyframesFromDrafts } from './pattern-ui/keyframes';
+import type { FrameDraft } from './pattern-ui/keyframes';
 
 export function PatternPanel({ status, ready, working, connected, onStart, onStop }: {
   status: EffectStatus; ready: boolean; working: boolean; connected: boolean;
   onStart: (config: EffectConfig) => Promise<void>; onStop: () => Promise<void>;
 }) {
   const [form, setForm] = useState(() => createEffectForm('candle'));
+  const [frameDrafts, setFrameDrafts] = useState<FrameDraft[]>([]);
   const [expanded, setExpanded] = useState(false);
   const change = <K extends keyof EffectForm>(key: K, value: EffectForm[K]) => setForm(previous => ({ ...previous, [key]: value }));
   const choice = EFFECT_CHOICES.find(item => item.id === form.id)!;
@@ -58,39 +27,49 @@ export function PatternPanel({ status, ready, working, connected, onStart, onSto
   const hasPeriod = ['blink', 'breathe', 'cct-sweep'].includes(pattern);
   const hasEnd = ['flicker', 'sunrise', 'emergency', 'tv', 'cct-sweep'].includes(pattern);
   const hasSeed = ['flicker', 'lightning', 'paparazzi', 'tv'].includes(pattern);
-  const hasBaselineCct = parseEffectConfig(form.base).cct === null;
-  let config: EffectConfig | null = null;
-  let validationError: string | null = null;
-  try { config = effectConfigFromForm(form); }
-  catch (error) { validationError = error instanceof Error ? error.message : 'Check the requested settings.'; }
+  const hasCurve = ['breathe', 'fade-in', 'fade-out', 'sunrise'].includes(pattern);
+  const hasBaselineCct = useMemo(() => createEffectForm(form.id).cct === '', [form.id]);
+  const requested = useMemo(() => {
+    try {
+      const config = effectConfigFromForm(form);
+      const result = previewEffect(config);
+      return { config: result.preview ? config : null, ...result };
+    } catch (error) {
+      return { config: null, preview: null, error: error instanceof Error ? error.message : 'Check the requested settings.' };
+    }
+  }, [form]);
   const progress = status.progress === null ? null : Math.round(status.progress * 100);
+  const startDisabled = !ready || !requested.config;
+  const stopDisabled = !connected || working || !status.running;
+  const note = pattern === 'keyframes' ? 'Your sequence of brightness and white temperature.'
+    : pattern === 'sunrise' && form.base.pattern === 'sunrise' && form.base.direction !== 'set'
+      ? 'A gradual journey from warm white to daylight.' : choice.note;
 
   return <View style={s.panel}>
-    <View style={s.between}>
-      <Text style={s.eyebrow}>PATTERNS</Text>
-      <Text style={s.badge}>RUNS ON THIS PHONE</Text>
+    <View style={s.intro}>
+      <View style={s.between}><Text accessibilityRole="header" style={s.title}>Patterns</Text><Text style={s.hint}>16 scenes</Text></View>
+      <Text style={s.description}>Preview a scene, then make it yours. The light changes when you press Start.</Text>
     </View>
-    <Text style={s.title}>A little atmosphere.</Text>
-    <Text style={s.description}>Choose a scene, make it yours, then press Start. Changing these settings leaves the light as it is.</Text>
+    <PatternBrowser selected={form.id} preview={requested.preview} onSelect={id => {
+      if (id !== form.id) {
+        const next = createEffectForm(id);
+        setForm(next);
+        setFrameDrafts(next.base.pattern === 'keyframes' ? draftsFromFrames(next.base.keyframes) : []);
+      }
+    }} />
+    <ScenePreview title={choice.title} note={note} preview={requested.preview} />
 
-    <ScrollChoices selected={form.id} onSelect={id => setForm(createEffectForm(id))} />
-    <View style={s.selection}>
-      <Text style={s.selectionTitle}>{choice.title}</Text>
-      <Text style={s.description}>{choice.note}</Text>
-      <Text style={s.hint}>REQUESTED · {keyframes ? `${keyframes.length} keyframes · ${keyframes[keyframes.length - 1]!.at} s loop` : `${form.minBrightness}–${form.maxBrightness}%`}{' · '}{form.untilStopped ? 'until stopped' : `${form.duration} s`}</Text>
-    </View>
-
-    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)} style={s.tuneToggle}>
-      <Text style={s.tuneLabel}>{expanded ? '−  Close tuning' : '+  Tune this pattern'}</Text>
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded }} onPress={() => setExpanded(!expanded)}
+      style={({ pressed }) => [s.tuneToggle, pressed && s.pressed]}>
+      <View style={s.tuneText}><Text style={s.tuneLabel}>Tune pattern</Text><Text style={s.hint}>{keyframes ? 'Frames, easing & run time' : 'Brightness, warmth & run time'}</Text></View>
+      <Text accessible={false} style={s.toggleIcon}>{expanded ? '−' : '+'}</Text>
     </Pressable>
     {expanded && <View style={s.tuning}>
-      {keyframes ? <View style={s.sequence}>
-        <Text style={s.fieldLabel}>Scene sequence</Text>
-        {keyframes.map((frame, i) => <Text key={frame.at} style={s.hint}>
-          {frame.at} s  ·  {frame.brightness === undefined ? 'carry brightness' : `${frame.brightness}%`}  ·  {frame.cct === undefined ? 'carry CCT' : `${frame.cct} K`}{i > 0 ? `  ·  ${frame.ease ?? 'linear'}` : ''}
-        </Text>)}
-        <Text style={s.hint}>This native demonstration uses fixed frames. Custom frame editing is available in the browser controller.</Text>
-      </View> : <>
+      {keyframes ? <KeyframeEditor drafts={frameDrafts} onChange={drafts => {
+        setFrameDrafts(drafts);
+        setForm(previous => previous.base.pattern === 'keyframes'
+          ? { ...previous, base: { ...previous.base, keyframes: keyframesFromDrafts(drafts) } } : previous);
+      }} /> : <>
         <Range label="Minimum brightness" value={form.minBrightness} min={0} max={100} step={1} unit="%" onChange={value => change('minBrightness', value)} />
         <Range label="Maximum brightness" value={form.maxBrightness} min={0} max={100} step={1} unit="%" onChange={value => change('maxBrightness', value)} />
         <Range label={hasEnd ? 'Start temperature' : 'Color temperature'} value={form.cct} min={2700} max={6500} step={100} unit="K" onChange={value => change('cct', value)} />
@@ -109,7 +88,17 @@ export function PatternPanel({ status, ready, working, connected, onStart, onSto
       </View>
       {!form.untilStopped && <Field label="Duration · seconds" value={form.duration} onChange={value => change('duration', value)} hint="1–3600 seconds" />}
       {hasPeriod && <Field label="Period · seconds" value={form.period} onChange={value => change('period', value)}
-        hint={pattern === 'blink' ? '0.2–60 s. Even on/off phases, each at least 0.1 s.' : '1–60 s for one full cycle.'} />}
+        hint={pattern === 'blink' ? '0.2–60 s for one on/off cycle. Each phase must last at least 0.1 s.' : '1–60 s for one full cycle.'} />}
+      {form.base.pattern === 'blink' && <Range label="On time" value={String(Math.round((form.base.duty ?? 0.5) * 100))}
+        min={0} max={100} step={1} unit="%" onChange={value => setForm(previous => previous.base.pattern === 'blink'
+          ? { ...previous, base: { ...previous.base, duty: Number(value) / 100 } } : previous)} />}
+      {hasCurve && <View style={s.optionGroup}>
+        <Text style={s.fieldLabel}>Brightness curve</Text>
+        <View style={s.chips}>{(['linear', 'perceptual'] as const).map(curve => <Chip key={curve}
+          label={curve === 'linear' ? 'Linear' : 'Perceptual'} selected={(form.base.curve ?? (pattern === 'sunrise' ? 'perceptual' : 'linear')) === curve}
+          onPress={() => setForm(previous => ({ ...previous, base: { ...previous.base, curve } }))} />)}</View>
+        <Text style={s.hint}>Linear changes evenly. Perceptual keeps more of the transition at softer levels.</Text>
+      </View>}
       {pattern === 'pulse' && <Field label="Pulse · beats per minute" value={form.bpm} onChange={value => change('bpm', value)} hint="Heartbeat: 20–120 BPM" />}
       {pattern === 'morse' && <>
         <Field label="Morse message" text value={form.text} onChange={value => change('text', value)} hint="Up to 64 letters, digits, spaces or . , ? / = + - @" />
@@ -119,65 +108,63 @@ export function PatternPanel({ status, ready, working, connected, onStart, onSto
       {!form.untilStopped && <View style={s.switchRow}>
         <View style={s.switchText}><Text style={s.fieldLabel}>Restore when finished</Text><Text style={s.hint}>Return to both settings captured at Start.</Text></View>
         <Switch accessibilityLabel="Restore baseline on completion" value={form.restoreOnComplete} onValueChange={value => change('restoreOnComplete', value)}
-          trackColor={{ false: c.line, true: c.accent }} thumbColor={form.restoreOnComplete ? c.ink : c.muted} />
+          hitSlop={8} trackColor={{ false: c.line, true: c.accent }} thumbColor={form.restoreOnComplete ? c.ink : c.muted} style={s.switch} />
       </View>}
     </View>}
 
-    {validationError && <Text accessibilityLiveRegion="polite" style={s.error}>{validationError}</Text>}
+    {requested.error && <View style={s.validation}>
+      <Text style={s.fieldLabel}>Check tuning</Text>
+      <Text accessibilityLiveRegion="polite" style={s.error}>{requested.error}</Text>
+    </View>}
     <View style={s.runner}>
       <View style={s.between}>
         <Text accessibilityLiveRegion="polite" style={s.runnerTitle}>{status.running ? `Running · ${status.pattern}` : status.id ? `${progress === 100 ? 'Finished' : 'Stopped'} · ${status.pattern}` : 'No pattern running'}</Text>
         {progress !== null && <Text style={s.progressText}>{progress}%</Text>}
       </View>
-      {progress !== null && <View accessibilityRole="progressbar" accessibilityValue={{ min: 0, max: 100, now: progress }} style={s.progressTrack}>
+      {progress !== null && <View accessibilityRole="progressbar" accessibilityLabel="Pattern progress" accessibilityValue={{ min: 0, max: 100, now: progress }} style={s.progressTrack}>
         <View style={[s.progressFill, { width: `${progress}%` }]} />
       </View>}
       {status.running && status.endsAt === null && <Text style={s.hint}>Until stopped</Text>}
       {status.lastError && <Text selectable accessibilityLiveRegion="polite" style={s.error}>{status.lastError}</Text>}
-      <Text style={s.hint}>Actual output appears in the readback above. Timing follows Bluetooth and readback speed.</Text>
+      <Text style={s.hint}>Actual output appears in the light’s readback. Timing follows Bluetooth and readback speed.</Text>
     </View>
     <View style={s.actions}>
-      <Pressable accessibilityRole="button" disabled={!ready || !config} accessibilityState={{ disabled: !ready || !config }}
-        onPress={() => { if (config) void onStart(config); }} style={({ pressed }) => [s.start, (!ready || !config) && s.disabled, pressed && s.pressed]}>
+      <Pressable accessibilityRole="button" disabled={startDisabled} accessibilityState={{ disabled: startDisabled }}
+        onPress={() => { if (requested.config) void onStart(requested.config); }}
+        style={({ pressed }) => [s.start, startDisabled && s.disabled, pressed && s.pressed]}>
         <Text style={s.startText}>{status.running ? 'Start new pattern' : 'Start pattern'}</Text>
       </Pressable>
-      <Pressable accessibilityRole="button" disabled={!connected || working || !status.running} accessibilityState={{ disabled: !connected || working || !status.running }}
-        onPress={() => { void onStop(); }} style={({ pressed }) => [s.stop, (!connected || working || !status.running) && s.disabled, pressed && s.pressed]}>
+      {status.running && <Pressable accessibilityRole="button" disabled={stopDisabled} accessibilityState={{ disabled: stopDisabled }}
+        onPress={() => { void onStop(); }} style={({ pressed }) => [s.stop, stopDisabled && s.disabled, pressed && s.pressed]}>
         <Text style={s.stopText}>Stop & restore</Text>
-      </Pressable>
+      </Pressable>}
     </View>
-    <Text style={s.ownership}>Keep Lighttime open. Backgrounding or disconnecting stops the pattern and leaves the current settings. Manual brightness, temperature or power changes also stop it.</Text>
+    <Text style={s.ownership}>Runs on this phone. Keep Lighttime open. Backgrounding or disconnecting stops the pattern and leaves the current settings. Manual brightness, temperature or power changes also stop it.</Text>
   </View>;
 }
 
-function ScrollChoices({ selected, onSelect }: { selected: EffectForm['id']; onSelect: (id: EffectForm['id']) => void }) {
-  return <View style={s.chips}>{EFFECT_CHOICES.map(choice => <Chip key={choice.id} label={choice.title} selected={choice.id === selected} onPress={() => onSelect(choice.id)} />)}</View>;
-}
-
 const s = StyleSheet.create({
-  panel: { marginTop: 32, marginBottom: 28, borderTopWidth: 1, borderColor: c.line, paddingTop: 28, gap: 18 },
+  panel: { paddingTop: 8, paddingBottom: 20, gap: 20 }, intro: { gap: 8 },
   between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  eyebrow: { color: c.accent, fontSize: 10, fontWeight: '600', letterSpacing: 2 },
-  badge: { color: c.muted, fontSize: 8, letterSpacing: 1 },
-  title: { color: c.text, fontSize: 29, letterSpacing: -0.8, fontWeight: '500' },
-  description: { color: c.muted, fontSize: 13, lineHeight: 20 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 13, paddingVertical: 11, borderRadius: 9, backgroundColor: c.raised, borderWidth: 1, borderColor: c.line, alignSelf: 'flex-start' },
-  chipSelected: { backgroundColor: c.accent, borderColor: c.accent }, chipText: { color: c.text, fontSize: 12 }, chipTextSelected: { color: c.ink, fontWeight: '600' },
-  selection: { borderLeftWidth: 2, borderColor: c.accent, paddingLeft: 15, gap: 6 }, selectionTitle: { color: c.text, fontSize: 18, fontWeight: '500' },
-  hint: { color: c.muted, fontSize: 11, lineHeight: 18 },
-  tuneToggle: { minHeight: 48, justifyContent: 'center', borderBottomWidth: 1, borderColor: c.line }, tuneLabel: { color: c.accent, fontSize: 13 },
-  tuning: { backgroundColor: c.surface, borderRadius: 16, padding: 18, gap: 18 },
-  range: { gap: 4 }, rangeValue: { color: c.text, fontSize: 15, fontVariant: ['tabular-nums'] }, slider: { width: '100%', height: 44 },
-  field: { gap: 8 }, fieldLabel: { color: c.text, fontSize: 12, fontWeight: '500' },
-  input: { color: c.text, backgroundColor: c.raised, borderWidth: 1, borderColor: c.line, borderRadius: 9, paddingHorizontal: 13, paddingVertical: 12, minHeight: 48, fontSize: 16, fontVariant: ['tabular-nums'] },
-  rule: { height: 1, backgroundColor: c.line }, sequence: { gap: 10 },
-  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 }, switchText: { flex: 1, gap: 6 },
-  runner: { padding: 16, borderWidth: 1, borderColor: c.line, borderRadius: 12, gap: 10 }, runnerTitle: { color: c.text, fontSize: 13, fontWeight: '500', flexShrink: 1 },
-  progressText: { color: c.accent, fontSize: 12, fontVariant: ['tabular-nums'] }, progressTrack: { backgroundColor: c.line, borderRadius: 3, height: 4, overflow: 'hidden' }, progressFill: { height: 4, backgroundColor: c.accent },
+  title: { color: c.text, fontSize: 24, letterSpacing: -0.5, fontWeight: '500', flexShrink: 1 },
+  description: { color: c.muted, fontSize: 14, lineHeight: 22 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, hint: { color: c.muted, fontSize: 12, lineHeight: 19 },
+  tuneToggle: { minHeight: 72, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 16,
+    borderRadius: 18, backgroundColor: c.raised, paddingVertical: 14, paddingHorizontal: 18 },
+  tuneText: { flex: 1, gap: 3 }, tuneLabel: { color: c.text, fontSize: 16, fontWeight: '500' }, toggleIcon: { color: c.accent, fontSize: 26 },
+  tuning: { backgroundColor: c.surface, borderRadius: 20, padding: 18, gap: 22 },
+  fieldLabel: { color: c.text, fontSize: 14, lineHeight: 21, fontWeight: '500' },
+  rule: { height: 1, backgroundColor: c.line }, optionGroup: { gap: 12 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 12 }, switchText: { flexGrow: 1, flexBasis: 180, gap: 6 },
+  switch: { minHeight: 48, minWidth: 48 },
+  runner: { paddingHorizontal: 2, paddingVertical: 4, gap: 10 }, runnerTitle: { color: c.text, fontSize: 14, fontWeight: '500', flexShrink: 1 },
+  progressText: { color: c.accent, fontSize: 13, fontVariant: ['tabular-nums'] },
+  progressTrack: { backgroundColor: c.line, borderRadius: 3, height: 4, overflow: 'hidden' }, progressFill: { height: 4, backgroundColor: c.accent },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  start: { flexGrow: 1, backgroundColor: c.accent, padding: 15, minHeight: 48, borderRadius: 10, justifyContent: 'center' }, startText: { color: c.ink, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  stop: { flexGrow: 1, backgroundColor: c.raised, padding: 15, minHeight: 48, borderRadius: 10, justifyContent: 'center' }, stopText: { color: c.text, fontSize: 13, fontWeight: '600', textAlign: 'center' },
-  ownership: { color: c.muted, fontSize: 11, lineHeight: 18 }, error: { color: c.error, fontSize: 12, lineHeight: 19 },
-  pressed: { opacity: 0.65 }, disabled: { opacity: 0.4 },
+  start: { flexGrow: 1, flexBasis: 150, backgroundColor: c.accent, padding: 16, minHeight: 54, borderRadius: 16, justifyContent: 'center' },
+  startText: { color: c.ink, fontSize: 15, fontWeight: '600', textAlign: 'center' },
+  stop: { flexGrow: 1, flexBasis: 130, backgroundColor: c.raised, padding: 16, minHeight: 54, borderRadius: 16, justifyContent: 'center' },
+  stopText: { color: c.text, fontSize: 15, fontWeight: '500', textAlign: 'center' },
+  ownership: { color: c.muted, fontSize: 12, lineHeight: 19 }, validation: { padding: 16, borderWidth: 1, borderColor: c.error, borderRadius: 14, gap: 6 },
+  error: { color: c.error, fontSize: 13, lineHeight: 20 }, pressed: { opacity: 0.65 }, disabled: { opacity: 0.4 },
 });

@@ -121,8 +121,9 @@ TMPDIR="$PWD/.cache/tmp" bun run export:android
    be switched on. The app does not derive or collect physical location. This
    follows [Android's BLE permission rules](https://developer.android.com/develop/connectivity/bluetooth/bt-permissions)
    using [React Native runtime permission APIs](https://reactnative.dev/docs/permissionsandroid).
-3. Select the discovered `PL103…` device. The list shows its name, address and
-   RSSI. Search lasts ten seconds; scan filtering uses the name, because FEE9
+3. Select the discovered **MOLUS G60**. The list shows its Bluetooth-name suffix
+   and signal strength; raw identity stays in Connection details. Search lasts
+   ten seconds; scan filtering uses the `PL103` name, because FEE9
    is not always advertised. Denied permissions, unavailable native modules,
    unsupported BLE hardware, Bluetooth off, empty scans and connection errors
    have separate messages. Permanently denied permissions have an app-settings
@@ -131,7 +132,9 @@ TMPDIR="$PWD/.cache/tmp" bun run export:android
    are enabled only after successful readback.
 5. Set brightness **0–100%, in whole percentages**, and CCT **2700–6500 K, in
    100 K steps**. Slider movement changes a draft; releasing it commits one
-   operation. Presets use the same path. Fractional brightness and non-100 K
+   operation. The brightness fader illustrates intensity; the warm-to-cool
+   white-balance strip and swatch illustrate temperature. Draft/requested values
+   remain separate from actual readback. Presets use the same path. Fractional brightness and non-100 K
    values are unsupported because the actual G60 quantizes them; the SDK
    rejects them before any write. Float32 remains the brightness wire format.
 6. A write is followed by separate queries. The readback panel shows actual
@@ -141,11 +144,13 @@ TMPDIR="$PWD/.cache/tmp" bun run export:android
 7. Open **Patterns** to choose one of eleven shared scene presets or the five
    original effects. Selection and tuning change requested settings only;
    **Start pattern** begins output. The panel supports brightness, CCT,
-   duration, cyclic period, seed, heartbeat BPM and Morse text. **Stop &
+   duration, cyclic period, blink duty, curves, seed, heartbeat BPM, Morse text
+   and an editable keyframe sequence. SDK-sampled previews change with tuning.
+   Switching between Controls and Patterns preserves the form. **Stop &
    restore** returns to both brightness and CCT captured at Start. See
    [Android light patterns](android-patterns.md) for controls and lifecycle.
 
-**Turn off** sets brightness to zero. **Turn on** restores the last nonzero
+The **Light output** switch sets brightness to zero when off, and restores the last nonzero
 brightness observed during this controller session; connecting to an already
 dark light starts with a 5% restore default. This does not switch mains
 power. Disconnecting leaves the current physical settings unchanged.
@@ -196,10 +201,9 @@ bridge fallback is included; the primary path is fully direct BLE.
 
 ## Validation and remaining prerequisites
 
-Offline verification on 2026-10-23 includes 21 passing Bun tests. Before the
-effect integration, the app also passed TypeScript checking, Expo dependency
-alignment, Android config/prebuild, and an Android Hermes bundle export. Bun
-tests exercise Android-version permission selection; PL103 discovery without
+Offline verification on 2026-10-24 passes **40 Bun tests / 1394 assertions**,
+TypeScript checking and Android Hermes export. Tests exercise Android-version
+permission selection; PL103 discovery without
 service advertisements; actual captured TX/RX frames through the SDK and fake
 native GATT; fragmented Base64 notifications; write-without-protocol-reply plus
 readback; unsupported-resolution rejection before writes; ignored write
@@ -209,15 +213,14 @@ suppression. Fixtures in `test/fixtures/g60-reads.json` copy the real captures
 from the shared contract. All these tests run without Bluetooth or camera
 access.
 
-The eight added pattern tests cover all sixteen requested forms, shared CCT
-defaults, frozen keyframe preset copying, 0.2-second blink validation, invalid
-configuration, synchronous runner cancellation, drain-before-disconnect and
-retained-owner recovery after failed cleanup. The effect integration's final
-TypeScript/bundle checks depend on the SDK runner export. The SDK must also
-drain underlying native work that can outlive a cancelled operation's public
-promise; the controlled app-side tests do not validate that lower-layer drain.
-This source work does not update the previously recorded APK or add
-physical-phone evidence.
+Pattern/UI coverage includes all sixteen requested forms, shared CCT defaults,
+immutable presets, bounded 64-sample previews, finite endpoints, editable
+keyframes, curves and blink duty. Slider tests exercise touch drafts, single
+commit on release, non-touch adjustments and failed-readback labeling.
+Lifecycle tests preserve synchronous cancellation, drain-before-disconnect,
+retained-owner retries and busy-state recovery after background/disconnect.
+The SDK separately tests underlying native work that outlives a caller's
+deadline. Controlled app-side tests alone do not establish native settlement.
 
 **The arm64 release APK was compiled and inspected; no physical Android/G60
 session was validated.** The build used a scoped, verified JDK 17 and Android
@@ -234,6 +237,7 @@ combination; the successful native build provides compile/package evidence.
 
 `bun audit` reports one high-severity transitive Expo CLI finding in
 `node-forge@1.4.0`: [GHSA-86w9-cpqp-85rv](https://github.com/advisories/GHSA-86w9-cpqp-85rv).
-`bun audit fix` was attempted and reports no published fixed version. No audit
+The unchanged lock was re-audited on 2026-10-24; the same finding remains.
+The earlier `bun audit fix` reported no published fixed version. No audit
 exception, TLS relaxation or unsupported override has been added. Recheck when
 the Expo/tooling dependency is updated.
