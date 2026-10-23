@@ -25,6 +25,10 @@ default. Errors: `{ "error": { "code": "...", "message": "..." } }`.
   Mock is only enabled by an explicit bridge startup flag. BLE is the default.
   Serial runtime connections return HTTP 400 `invalid_request`; serial devices
   remain in discovery results for USB identification with `lighttime usb-info`.
+  A bridge configured with `--usb-writes PORT` routes setters through USB and
+  retains BLE identity/readback. Clients still connect with `transport: "ble"`;
+  the verified State reports `transport: "usb+ble"`. The USB and BLE serial
+  numbers must match before output is permitted.
   The device ID is always queried; a supplied `deviceId` cannot override it.
 - POST `/v1/disconnect`: empty object. Returns State.
 - GET `/v1/state`: refreshes actual hardware readback, returns State.
@@ -70,7 +74,7 @@ automatically disconnect a connection it did not establish.
 Device: `{ "transport": "ble" | "serial", "address": string, "name": string,
 "rssi"?: number, "accessible"?: boolean }`.
 
-State: `{ "connected": boolean, "transport": "ble" | "serial" | "mock" | null,
+State: `{ "connected": boolean, "transport": "ble" | "usb+ble" | "serial" | "mock" | null,
 "address": string | null, "device": { "model": string, "serial": string,
 "id": number } | null, "brightness": number | null, "cct": number | null,
 "power": boolean | null, "updatedAt": string | null }`.
@@ -90,26 +94,28 @@ the existing device authentication and origin policy:
   An idle stop is idempotent.
 
 `EffectConfig` requires `pattern`: `blink`, `breathe`, `fade-in`, `fade-out`,
-or `cct-sweep`. Optional fields are `duration` (1–3600 seconds, default 10;
-null means until stopped for cycles only), `period` (1–60 seconds, default 4),
-`minBrightness` (whole 0–100, default 0), `maxBrightness` (whole 0–100,
-default verified nonzero baseline or 5, must be >= minimum), `cct` (default
-baseline), `cctEnd` (default 6500), and `restoreOnComplete` (boolean, default
-true for cycles and false for fades). CCT values use 2700–6500 K in 100 K
-steps. Unknown fields and invalid/non-finite values return HTTP 400
-`invalid_request` before output writes.
+`cct-sweep`, `pulse`, `flicker`, `sunrise`, `lightning`, `emergency`, `paparazzi`,
+`tv`, `morse`, or `keyframes`. Common fields and the per-pattern union are
+specified in [the effects contract](effects-contract.md) and its
+[expanded program contract](effects-programs-contract.md). Seeded programs
+produce the same quantized targets in Python and TypeScript. Brightness stays
+whole-percent and CCT uses 100 K steps. Unknown fields, foreign pattern fields
+and invalid/non-finite values return HTTP 400 `invalid_request` before output
+writes. `period` is a complete cycle; blink accepts 0.2–60 seconds with each
+phase at least 0.1 seconds. A requested cadence is not an optical timing promise.
 
 `EffectStatus`: `{ "running": boolean, "id": string | null,
-"pattern": "blink" | "breathe" | "fade-in" | "fade-out" | "cct-sweep" | null,
+"pattern": EffectPattern | null,
 "startedAt": string | null, "endsAt": string | null,
 "progress": number | null, "lastError": string | null }`.
 Timestamps use ISO 8601; progress is 0–1 for a finite run and null when
 idle/unbounded. Finished runs retain their metadata and frozen progress.
 Errors stop the runner and remain visible until an accepted new start.
 
-Output is monotonic, quantized, serialized with manual control, verified by
-readback and bounded to five updates per second, skipping identical confirmed
-frame targets. Restoration always writes/verifies both baseline fields, since
+Output uses monotonic-clock scheduling, quantization, serialization with manual
+control and full readback. Update starts are spaced at least 100 ms apart;
+missed and identical confirmed frame targets are skipped. Restoration always
+writes/verifies both baseline fields, since
 an interrupted setter can change hardware before its cached readback updates.
 Finite fades hold their exact endpoint unless restoration was requested.
 A replacement cancels the prior runner without restoration and captures its
@@ -136,8 +142,9 @@ The actual light was connected and GATT inspected on 2026-10-23:
 - No pairing, mesh provisioning or app/account key was required for readback.
 
 Frame: magic `24 3c`, body length u16 LE, body, CRC16-XMODEM u16 LE.
-CRC over body only, initial zero. Body: messageType u16 LE (request 0x0100,
-response observed 0x0001), sequence u16 LE, command u16 LE, payload.
+CRC over body only, initial zero. Body: destination byte, source byte, sequence
+u16 LE, command u16 LE, payload. The codec's legacy `messageType` u16 represents
+those first two bytes: request `00 01` (0x0100), reply `01 00` (0x0001).
 Notifications can be fragmented/coalesced: use a streaming parser, enforce a
 maximum length, check CRC, correlate both sequence and command.
 

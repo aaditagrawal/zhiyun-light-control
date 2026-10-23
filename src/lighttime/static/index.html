@@ -41,20 +41,26 @@
         <fieldset id="effect-settings" disabled>
           <legend>Requested pattern settings</legend>
           <div class="effect-fields">
-            <label for="effect-pattern">Pattern<select id="effect-pattern"><option value="blink">Blink</option><option value="breathe">Breathe</option><option value="fade-in">Fade in</option><option value="fade-out">Fade out</option><option value="cct-sweep">CCT sweep</option></select></label>
+            <label class="effect-wide" for="effect-preset">Starting look<select id="effect-preset"><option value="">Custom settings</option></select></label>
+            <label for="effect-pattern">Pattern<select id="effect-pattern"><option value="blink">Blink</option><option value="breathe">Breathe</option><option value="fade-in">Fade in</option><option value="fade-out">Fade out</option><option value="cct-sweep">CCT sweep</option><option value="pulse">Beat / heartbeat</option><option value="flicker">Candle / fire</option><option value="sunrise">Sunrise / sunset</option><option value="lightning">Lightning</option><option value="emergency">Alternating white bursts</option><option value="paparazzi">Camera flashes</option><option value="tv">Television glow</option><option value="morse">Morse message</option><option value="keyframes">Custom keyframes</option></select></label>
             <label for="effect-duration">Duration (seconds)<input id="effect-duration" type="number" min="1" max="3600" step="any" value="10" required></label>
             <label class="checkbox effect-wide"><input id="effect-until-stopped" type="checkbox"> Until stopped (cyclic patterns)</label>
-            <label for="effect-period">Cycle period (seconds)<input id="effect-period" type="number" min="1" max="60" step="any" value="4" required></label>
+            <label for="effect-period">Cycle period (seconds)<input id="effect-period" type="number" min="0.2" max="60" step="any" value="4" required></label>
             <label for="effect-min">Minimum brightness (%)<input id="effect-min" type="number" min="0" max="100" step="1" value="0" required></label>
             <label for="effect-max">Maximum brightness (%)<input id="effect-max" type="number" min="0" max="100" step="1" value="5" required></label>
             <label for="effect-cct">CCT / sweep start (K)<input id="effect-cct" type="number" min="2700" max="6500" step="100" value="5000" required></label>
             <label for="effect-cct-end">Sweep end (K)<input id="effect-cct-end" type="number" min="2700" max="6500" step="100" value="6500" required></label>
+            <label for="effect-seed">Variation seed<input id="effect-seed" type="number" min="0" max="4294967295" step="1" value="1" required></label>
+            <label for="effect-curve">Brightness curve<select id="effect-curve"><option value="linear">Linear</option><option value="perceptual">Perceptual</option></select></label>
+            <div id="effect-parameters" class="effect-fields effect-wide"></div>
+            <label for="effect-keyframes" id="effect-keyframes-field" class="effect-wide" hidden>Keyframe program (JSON)<textarea id="effect-keyframes" spellcheck="false" rows="6">[{"at":0,"brightness":0,"cct":2700},{"at":2,"brightness":12,"cct":4500,"ease":"smooth"},{"at":4,"brightness":0,"cct":2700,"ease":"smooth"}]</textarea></label>
             <label class="checkbox effect-wide"><input id="effect-restore" type="checkbox" checked> Restore starting brightness and CCT on completion</label>
           </div>
         </fieldset>
         <div class="button-row"><button id="effect-start" class="primary" type="submit" disabled>Start pattern</button><button id="effect-stop" type="button" disabled>Stop &amp; restore</button></div>
       </form>
       <p id="effect-action" class="hint" role="status">Patterns run on the bridge and continue if this page closes. Manual Apply cancels the pattern before setting the light.</p>
+      <p class="hint">Period is a complete blink cycle. A 0.2 s cycle requests 0.1 s on / 0.1 s off at 50% duty. Transport timing and visible contrast vary; current output is verified above.</p>
       <div class="effect-readback" aria-label="Actual bridge runner">
         <p id="effect-status" role="status" aria-live="polite">Runner status unavailable. Attach through the bridge.</p>
         <progress id="effect-progress" max="1" value="0" aria-label="Actual pattern progress" hidden></progress>

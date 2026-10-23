@@ -30,7 +30,7 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
       await sleep(5);
     }
   };
-  async function fixture({ pageLocation, savedSession, health, startupState, holdHealth = false } = {}) {
+  async function fixture({ pageLocation, savedSession, health, startupState, holdHealth = false, healthFailures = 0 } = {}) {
     const iframe = document.createElement('iframe');
     // Remove all resource loading, retaining the real application's DOM.
     iframe.srcdoc = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<link\b[^>]*>/gi, '');
@@ -39,7 +39,7 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
     const w = iframe.contentWindow; const doc = w.document;
     const $ = id => doc.getElementById(id);
     const api = { state: startupState ?? snapshot(), health: health ?? { name: 'lighttime', version: 'offline', authRequired: true }, effect: idleEffect(), requests: [], streams: [], handlers: [], devices: [],
-      choosers: [], gatt: [], errors: [], iframe, w, $ };
+      choosers: [], gatt: [], errors: [], healthFailures, eventFailures: 0, iframe, w, $ };
     api.healthReply = holdHealth ? deferred() : null;
     let healthHeld = holdHealth;
     const encoder = new w.TextEncoder();
@@ -50,10 +50,12 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
       const handler = api.handlers.find(item => item.path === path && item.method === method);
       if (handler) { api.handlers.splice(api.handlers.indexOf(handler), 1); return await handler.run(init); }
       if (path === '/v1/health') {
+        if (api.healthFailures > 0) { api.healthFailures--; throw new w.TypeError('Offline health fetch'); }
         if (healthHeld) { healthHeld = false; api.healthReply.started = true; return json(await api.healthReply.promise); }
         return json(api.health);
       }
       if (path === '/v1/events') {
+        if (api.eventFailures > 0) { api.eventFailures--; throw new w.TypeError('Offline event fetch'); }
         const entry = { cancelled: false };
         const body = new w.ReadableStream({
           start(controller) { entry.controller = controller; },
@@ -67,7 +69,8 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
       if (path === '/v1/state' && method === 'PATCH') {
         api.effect = idleEffect();
         const patch = JSON.parse(init.body);
-        api.state = snapshot(patch.brightness ?? (patch.power === false ? 0 : 5), 1, { cct: patch.cct ?? api.state.cct });
+        api.state = snapshot(patch.brightness ?? (patch.power === false ? 0 : patch.power === true ? 5 : api.state.brightness), 1,
+          { cct: patch.cct ?? api.state.cct, updatedAt: new Date(Date.parse(api.state.updatedAt) + 1000).toISOString() });
         return json(api.state);
       }
       if (path === '/v1/connect' && method === 'POST') return json(api.state);
@@ -92,13 +95,22 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
     w.addEventListener('unhandledrejection', event => { api.errors.push(String(event.reason)); event.preventDefault(); });
     api.hold = (path = '/v1/state', method = 'GET') => {
       const held = deferred(); held.started = false;
-      api.handlers.push({ path, method, run() { held.started = true; return held.promise.then(json); } });
+      api.handlers.push({ path, method, run(init) { held.started = true; held.signal = init.signal; return held.promise.then(json); } });
       return held;
     };
     api.emit = value => {
       const stream = api.streams.at(-1);
       assert(stream && !stream.cancelled, 'Expected active fake SSE stream');
       stream.controller.enqueue(encoder.encode(`event: state\ndata: ${JSON.stringify(value)}\n\n`));
+    };
+    api.failStream = () => {
+      const stream = api.streams.at(-1); stream.failed = true;
+      stream.controller.error(new w.TypeError('Offline event stream'));
+    };
+    api.online = () => w.dispatchEvent(new w.Event('online'));
+    api.foreground = () => {
+      Object.defineProperty(doc, 'hidden', { configurable: true, value: false });
+      doc.dispatchEvent(new w.Event('visibilitychange'));
     };
     api.view = () => Object.fromEntries(['status', 'actual-brightness', 'actual-cct', 'write-status', 'events-status', 'last-read', 'effect-status', 'effect-error', 'effect-action']
       .map(id => [id, $(id).textContent]));
@@ -391,6 +403,27 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
   });
   const personalPage = { protocol: 'https:', origin: 'https://personal.example.test:10000', pathname: '/ui/' };
   const noAuthHealth = { name: 'lighttime', version: 'offline', authRequired: false, defaultAddress: 'FAKE-G60' };
+  await test('Personal sliders apply immediately and coalesce dragging into one latest pending target', async a => {
+    await wait(() => !a.$('brightness').disabled, 'personal attach');
+    assert(a.$('live').checked, 'Personal sliders require an extra apply opt-in');
+    assert(!a.requests.some(r => r.method === 'PATCH'), 'Startup applied an unsent draft');
+    const first = a.hold('/v1/state', 'PATCH');
+    const last = a.hold('/v1/state', 'PATCH');
+    const before = performance.now();
+    a.input('brightness', 7);
+    await wait(() => first.started, 'first live write');
+    assert(performance.now() - before < 150, 'First slider write waited for a trailing debounce');
+    a.input('brightness', 8); a.input('brightness', 9);
+    await sleep(30);
+    assert(a.requests.filter(r => r.method === 'PATCH').length === 1, 'Slider writes overlapped');
+    first.resolve(snapshot(7, 1));
+    await wait(() => last.started, 'latest pending write');
+    const patches = a.requests.filter(r => r.method === 'PATCH');
+    assert(patches.length === 2 && JSON.parse(patches[1].body).brightness === 9, 'Intermediate drag target was replayed');
+    assert(patches.every(r => Object.keys(JSON.parse(r.body)).join() === 'brightness'), 'Brightness-only dragging resent unchanged CCT');
+    last.resolve(snapshot(9, 2));
+    await wait(() => a.$('actual-brightness').textContent === '9%' && a.$('apply').disabled, 'latest target verified');
+  }, { pageLocation: personalPage, health: noAuthHealth });
   await test('Personal /ui/ attaches automatically with no setup, auth header, or connect click', async a => {
     await wait(() => !a.$('brightness').disabled && !a.$('effect-start').disabled, 'automatic controller ready');
     await wait(() => a.requests.some(r => r.path === '/v1/effects'), 'automatic runner polling');
@@ -422,6 +455,15 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
     old.resolve(snapshot(88, 50)); await sleep(30);
     assert(a.$('actual-brightness').textContent === '5%' && a.$('connection-settings').hidden, 'Late automatic read changed fresh session');
   }, { pageLocation: personalPage, health: noAuthHealth });
+  await test('Explicit personal disconnect still offers an explicit hardware reconnect', async a => {
+    await wait(() => !a.$('brightness').disabled, 'personal attach');
+    a.click('disconnect');
+    await wait(() => !a.$('reconnect-light').disabled && a.$('status').textContent === 'Light disconnected.', 'explicit disconnect');
+    assert(a.$('reconnect-light').textContent === 'Reconnect light', 'Explicit disconnect lost hardware reconnect action');
+    assert(a.requests.filter(r => r.path === '/v1/connect').length === 0, 'Disconnect reconnected automatically');
+    a.click('reconnect-light'); await wait(() => !a.$('brightness').disabled, 'explicit reconnect');
+    assert(a.requests.filter(r => r.path === '/v1/connect' && r.method === 'POST').length === 1, 'Explicit reconnect was not sent once');
+  }, { pageLocation: personalPage, health: noAuthHealth });
   await test('Late health discovery cannot replace a newer personal session or reveal setup', async a => {
     await wait(() => a.healthReply.started, 'held initial health');
     a.hide(); a.show(); await wait(() => !a.$('brightness').disabled, 'fresh health and automatic attach');
@@ -442,10 +484,281 @@ globalThis.lighttimeBrowserRegression = async ({ html, bundle }) => {
     await sleep(1100);
     assert(a.$('actual-brightness').textContent === '7%' && a.requests.filter(r => r.path === '/v1/state').length === 2, 'Old startup delay fetched or changed fresh session');
   }, { pageLocation: personalPage, health: noAuthHealth, startupState: disconnected() });
-  await test('Invalid startup health returns to generic setup without unhandled promises or automatic writes', async a => {
-    await wait(() => !a.$('connection-settings').hidden, 'invalid health feedback');
+  await test('Invalid startup health offers same-origin retry without setup prompts or automatic writes', async a => {
+    await wait(() => !a.$('reconnect-actions').hidden && !a.$('reconnect-light').disabled, 'invalid health feedback');
+    assert(a.$('connection-settings').hidden, 'Invalid health exposed token/setup prompts');
     assert(a.$('status').textContent.includes('startup check failed') && a.requests.every(r => r.path === '/v1/health'), 'Invalid health caused automatic control');
   }, { pageLocation: personalPage, health: { name: 'lighttime', version: 'offline', authRequired: 'false' } });
+
+  await test('Transient health failure recovers once on online/foreground without saved endpoint or draft replay', async a => {
+    await wait(() => !a.$('reconnect-light').disabled && a.$('status').textContent.includes('startup check failed'), 'health failure');
+    assert(a.$('connection-settings').hidden && !a.$('reconnect-actions').hidden, 'Failure required token/setup');
+    a.$('brightness').value = '37';
+    a.online(); a.foreground(); a.online();
+    await wait(() => !a.$('brightness').disabled, 'network recovery');
+    assert(a.requests.filter(r => r.path === '/v1/health').length === 2, 'Recovery events created duplicate probes');
+    assert(a.requests.every(r => r.method === 'GET' && r.authorization === null && r.url.startsWith(personalPage.origin + '/')), 'Recovery replayed settings, auth, or another endpoint');
+    assert(a.$('brightness').value === '5' && a.$('live').checked && a.$('connection-settings').hidden, 'Recovery did not show verified personal output');
+  }, { pageLocation: personalPage, health: noAuthHealth, healthFailures: 1,
+    savedSession: { token: 'offline-old-token', url: 'http://old-bridge.example.test:8877' } });
+
+  await test('Failed health Retry connection uses only same-origin discovery without BLE connect', async a => {
+    await wait(() => !a.$('reconnect-light').disabled && a.$('status').textContent.includes('startup check failed'), 'retry available');
+    assert(a.$('reconnect-light').textContent === 'Retry connection', 'Health failure offered hardware reconnect');
+    a.click('reconnect-light'); await wait(() => !a.$('brightness').disabled, 'explicit HTTP retry');
+    assert(a.requests.every(r => r.method === 'GET' && r.url.startsWith(personalPage.origin + '/')), 'HTTP retry mutated hardware or used saved endpoint');
+  }, { pageLocation: personalPage, health: noAuthHealth, healthFailures: 1 });
+
+  await test('Foreground health retry burst is bounded and remains retryable after exhaustion', async a => {
+    await wait(() => a.$('status').textContent.includes('startup check failed'), 'initial failure');
+    a.foreground(); a.online();
+    await sleep(5400);
+    assert(a.requests.length === 5 && a.requests.every(r => r.path === '/v1/health'), 'Health retries exceeded one probe plus three recovery retries');
+    assert(!a.$('reconnect-light').disabled && a.$('connection-settings').hidden, 'Exhaustion stranded retry or exposed setup');
+    a.healthFailures = 0; a.click('reconnect-light');
+    await wait(() => !a.$('brightness').disabled, 'retry after exhausted burst');
+  }, { pageLocation: personalPage, health: noAuthHealth, healthFailures: Infinity });
+
+  await test('Pagehide cancels a delayed health retry and ignores connectivity events until restoration', async a => {
+    await wait(() => a.$('status').textContent.includes('startup check failed'), 'initial failure');
+    a.online(); await wait(() => a.requests.length === 2, 'recovery probe');
+    a.hide(); a.online(); a.foreground(); await sleep(650);
+    assert(a.requests.length === 2, 'Hidden page retried discovery');
+    a.healthFailures = 0; a.show();
+    await wait(() => !a.$('brightness').disabled, 'fresh discovery after restoration');
+    await sleep(600);
+    assert(a.requests.filter(r => r.path === '/v1/health').length === 3, 'Old health timer survived restoration');
+  }, { pageLocation: personalPage, health: noAuthHealth, healthFailures: Infinity });
+
+  await test('Explicit manual session supersedes health retries and preserves its remote credentials', async a => {
+    await wait(() => a.$('status').textContent.includes('startup check failed'), 'initial failure');
+    a.online(); await wait(() => a.requests.length === 2, 'retry probe');
+    await a.attach(); a.online(); a.foreground(); await sleep(650);
+    assert(a.requests.filter(r => r.path === '/v1/health').length === 2, 'Old health retry replaced manual session');
+    const requests = a.requests.filter(r => r.path !== '/v1/health');
+    assert(requests.every(r => r.url.startsWith('https://remote.example.test:9443/') && r.authorization === 'Bearer offline-manual-token'), 'Manual endpoint/token changed');
+    assert(requests.every(r => r.method === 'GET'), 'Recovery replayed manual writes');
+  }, { pageLocation: personalPage, healthFailures: Infinity,
+    savedSession: { token: 'offline-manual-token', url: 'https://remote.example.test:9443' } });
+
+  await test('Authenticated health after transient failure reveals saved setup without automatic attach', async a => {
+    await wait(() => a.$('status').textContent.includes('startup check failed'), 'initial failure');
+    a.online(); await wait(() => !a.$('connection-settings').hidden, 'secured setup');
+    a.foreground(); a.online(); await sleep(50);
+    assert(a.$('bridge-url').value === 'https://remote.example.test:9443' && a.$('token').value === 'offline-manual-token', 'Secured settings were lost');
+    assert(a.requests.length === 2 && a.requests.every(r => r.path === '/v1/health'), 'Secured deployment attached or retried without explicit action');
+  }, { pageLocation: personalPage, healthFailures: 1,
+    savedSession: { token: 'offline-manual-token', url: 'https://remote.example.test:9443' } });
+
+  await test('SSE loss makes one replacement subscription despite repeated connectivity events', async a => {
+    await wait(() => !a.$('brightness').disabled && a.streams.length === 1, 'personal session');
+    a.failStream(); await wait(() => a.$('events-status').textContent.includes('Retrying'), 'SSE backoff');
+    a.online(); a.foreground(); a.online();
+    await wait(() => a.streams.length === 2, 'replacement stream');
+    a.emit(snapshot(6, 1)); await wait(() => a.$('events-status').textContent.includes('active'), 'replacement readback');
+    a.online(); a.foreground(); await sleep(600);
+    assert(a.streams.length === 2 && a.streams.filter(s => !s.cancelled && !s.failed).length === 1, 'Duplicate live SSE subscription');
+    assert(a.requests.every(r => r.method === 'GET') && a.$('actual-brightness').textContent === '6%', 'Stream recovery mutated hardware or lost readback');
+  }, { pageLocation: personalPage, health: noAuthHealth });
+
+  await test('SSE retry exhaustion is bounded; foreground restarts only the attached stream', async a => {
+    await a.attach(); a.eventFailures = Infinity; a.failStream();
+    await sleep(5400);
+    assert(a.requests.filter(r => r.path === '/v1/events').length === 4, 'SSE retry count exceeded three replacements');
+    assert(a.$('events-status').textContent.includes('Live events stopped') && !a.$('reconnect-light').disabled, 'SSE exhaustion did not expose retry');
+    a.eventFailures = 0; a.foreground();
+    await wait(() => a.streams.length === 2, 'foreground subscription');
+    a.emit(snapshot(7, 1)); await wait(() => a.$('actual-brightness').textContent === '7%', 'foreground stream readback');
+    assert(a.requests.every(r => r.method === 'GET'), 'SSE foreground repair reattached hardware');
+  });
+
+  await test('Pagehide cancels SSE retry timers and late reads before a fresh manual session', async a => {
+    await a.attach(); a.failStream();
+    await wait(() => a.$('events-status').textContent.includes('Retrying'), 'SSE backoff');
+    a.hide(); a.show(); a.online(); a.foreground(); await sleep(650);
+    assert(a.requests.filter(r => r.path === '/v1/events').length === 1, 'Old stream retried after pagehide');
+    await a.attach(snapshot(6)); await sleep(600);
+    assert(a.streams.length === 2 && a.$('actual-brightness').textContent === '6%', 'Old recovery altered fresh session');
+  });
+
+  await test('Replacing the session cancels pending SSE recovery without altering the new session', async a => {
+    await a.attach(); a.failStream();
+    await wait(() => a.$('events-status').textContent.includes('Retrying'), 'old backoff');
+    await a.attach(snapshot(6)); await sleep(650);
+    assert(a.streams.length === 2 && a.requests.filter(r => r.path === '/v1/events').length === 2, 'Old retry survived a new session');
+    assert(a.$('actual-brightness').textContent === '6%' && !a.$('brightness').disabled, 'New session was cleared');
+  });
+
+  await test('Late replacement-stream response is aborted and cannot affect a newer session', async a => {
+    await a.attach();
+    const old = a.hold('/v1/events'); a.failStream();
+    await wait(() => old.started, 'held replacement fetch');
+    await a.attach(snapshot(6));
+    assert(old.signal.aborted, 'Replacing session did not abort its recovery fetch');
+    const fresh = a.view(); old.resolve(snapshot(88, 50)); await sleep(600);
+    assert(a.streams.length === 2 && a.$('actual-brightness').textContent === '6%', 'Late replacement created a stream or replaced readback');
+    assert(a.$('status').textContent === fresh.status && a.$('events-status').textContent === fresh['events-status'], 'Late recovery overwrote new session status');
+  });
+
+  await test('SSE recovery keeps attached credentials and unsent drafts without replaying manual settings', async a => {
+    await a.attach(); a.input('brightness', 9);
+    a.input('bridge-url', 'https://edited.example.test:9443'); a.input('token', 'offline-edited-token');
+    a.failStream(); await wait(() => a.streams.length === 2, 'manual replacement stream');
+    a.emit(snapshot(6, 1)); await wait(() => a.$('actual-brightness').textContent === '6%', 'replacement output');
+    assert(a.$('brightness').value === '9' && !a.$('apply').disabled, 'Recovery discarded unsent draft');
+    assert(a.requests.every(r => r.method === 'GET' && r.url.startsWith('https://remote.example.test:9443/') && r.authorization === 'Bearer offline-manual-token'), 'Recovery replayed a mutation or reread edited settings');
+  }, { savedSession: { token: 'offline-manual-token', url: 'https://remote.example.test:9443' } });
+
+  await test('Slider PATCHes contain only changed fields and retain full verified readback', async a => {
+    await a.attach(); a.input('brightness', 7); a.click('apply');
+    await wait(() => a.$('actual-brightness').textContent === '7%' && !a.$('refresh').disabled, 'brightness verified');
+    a.input('cct', 5100); a.click('apply');
+    await wait(() => a.$('actual-cct').textContent === '5100 K' && !a.$('refresh').disabled, 'CCT verified');
+    const patches = a.requests.filter(r => r.method === 'PATCH').map(r => JSON.parse(r.body));
+    assert(JSON.stringify(patches) === JSON.stringify([{ brightness: 7 }, { cct: 5100 }]), 'One-slider target resent unchanged fields');
+    assert(a.$('actual-brightness').textContent === '7%', 'CCT-only write lost brightness readback');
+    a.click('power'); await wait(() => a.$('actual-power').textContent === 'Off' && !a.$('refresh').disabled, 'absolute power off');
+    assert(a.requests.filter(r => r.method === 'PATCH').at(-1).body === '{"power":false}', 'Power stopped being an absolute command');
+  });
+
+  await test('A queued reversal to the old baseline is compared after the in-flight write', async a => {
+    await wait(() => !a.$('brightness').disabled, 'personal session');
+    const first = a.hold('/v1/state', 'PATCH'); const reversal = a.hold('/v1/state', 'PATCH');
+    a.input('brightness', 7); await wait(() => first.started, 'outgoing target');
+    a.input('brightness', 5); first.resolve(snapshot(7, 1));
+    await wait(() => reversal.started, 'baseline reversal');
+    const patches = a.requests.filter(r => r.method === 'PATCH');
+    assert(patches.length === 2 && patches[1].body === '{"brightness":5}', 'Baseline reversal was dropped or resent unchanged CCT');
+    reversal.resolve(snapshot(5, 2)); await wait(() => a.$('apply').disabled && a.$('actual-brightness').textContent === '5%', 'reversal verified');
+  }, { pageLocation: personalPage, health: noAuthHealth });
+
+  await test('Coalescing retains both latest desired fields until dispatch after the in-flight write', async a => {
+    await wait(() => !a.$('brightness').disabled, 'personal session');
+    const first = a.hold('/v1/state', 'PATCH'); const latest = a.hold('/v1/state', 'PATCH');
+    a.input('brightness', 7); await wait(() => first.started, 'first write');
+    a.input('brightness', 8); a.input('cct', 5100); a.input('brightness', 9);
+    assert(a.requests.filter(r => r.method === 'PATCH').length === 1, 'Combined targets overlapped first write');
+    first.resolve(snapshot(7, 1)); await wait(() => latest.started, 'combined latest target');
+    const patches = a.requests.filter(r => r.method === 'PATCH');
+    assert(patches.length === 2 && patches[1].body === '{"brightness":9,"cct":5100}', 'Combined pending target lost a field or replayed an intermediate value');
+    latest.resolve(snapshot(9, 2, { cct: 5100 }));
+    await wait(() => a.$('apply').disabled && a.$('actual-cct').textContent === '5100 K', 'combined target verified');
+  }, { pageLocation: personalPage, health: noAuthHealth });
+
+  await test('Coalesced target already confirmed by the in-flight write sends no empty PATCH', async a => {
+    await wait(() => !a.$('brightness').disabled, 'personal session');
+    const first = a.hold('/v1/state', 'PATCH');
+    a.input('brightness', 7); await wait(() => first.started, 'first target');
+    a.input('brightness', 9); a.input('brightness', 7); first.resolve(snapshot(7, 1));
+    await wait(() => a.$('apply').disabled && !a.$('refresh').disabled, 'matching pending target');
+    assert(a.requests.filter(r => r.method === 'PATCH').length === 1, 'Matching target sent an empty or redundant PATCH');
+    assert(a.$('write-status').textContent.includes('match the last verified readback'), 'No-op claimed fresh device verification');
+  }, { pageLocation: personalPage, health: noAuthHealth });
+
+  await test('Already confirmed slider target preserves read time and does not cancel a pattern', async a => {
+    await wait(() => !a.$('brightness').disabled, 'personal session');
+    const readTime = a.$('last-read').textContent; const action = a.$('effect-action').textContent;
+    a.input('brightness', 5); await sleep(30);
+    assert(!a.requests.some(r => r.method === 'PATCH'), 'Unchanged target sent a PATCH');
+    assert(a.$('last-read').textContent === readTime && a.$('write-status').textContent.includes('last verified readback'), 'No-op invented a new readback');
+    assert(a.$('effect-action').textContent === action && a.$('apply').disabled, 'No-op claimed pattern cancellation or remained dirty');
+  }, { pageLocation: personalPage, health: noAuthHealth });
+
+  await test('Pending target is compared with newer accepted SSE instead of an old write response', async a => {
+    await a.attach(); a.$('live').checked = true;
+    const first = a.hold('/v1/state', 'PATCH');
+    a.input('brightness', 7); await wait(() => first.started, 'first write');
+    a.input('cct', 5100); a.emit(snapshot(7, 2, { cct: 5100 }));
+    await wait(() => a.$('actual-cct').textContent === '5100 K', 'newer SSE');
+    first.resolve(snapshot(7, 1)); await wait(() => !a.$('refresh').disabled && a.$('apply').disabled, 'latest target confirmed');
+    assert(a.requests.filter(r => r.method === 'PATCH').length === 1, 'Dispatch ignored the newer accepted state');
+    assert(a.$('actual-cct').textContent === '5100 K', 'Old response rolled back readback');
+  });
+  await test('All presets only edit configuration until Start and leave verified output unchanged', async a => {
+    await a.attach();
+    const expected = ['candle', 'fireplace', 'storm', 'heartbeat', 'sunrise15', 'sunset', 'emergency', 'paparazzi', 'television', 'sos', 'keyframes'];
+    const picker = a.$('effect-preset');
+    assert(expected.every(id => [...picker.options].some(option => option.value === id)), 'Missing preset');
+    for (const id of expected) {
+      picker.value = id; picker.dispatchEvent(new a.w.Event('change'));
+      assert(a.$('effect-action').textContent.includes('selected'), 'Preset selection feedback missing');
+      assert(a.$('actual-brightness').textContent === '5%' && a.$('actual-cct').textContent === '5000 K', 'Preset changed actual output display');
+    }
+    assert(!a.requests.some(r => r.method === 'POST' || r.method === 'PATCH'), 'Preset selection wrote to the light');
+  });
+  await test('Every pattern can submit its own validated fields without stale parameters', async a => {
+    await a.attach();
+    const patterns = ['blink', 'breathe', 'fade-in', 'fade-out', 'cct-sweep', 'pulse', 'flicker', 'sunrise', 'lightning', 'emergency', 'paparazzi', 'tv', 'morse', 'keyframes'];
+    for (const pattern of patterns) {
+      a.$('effect-pattern').value = pattern; a.$('effect-pattern').dispatchEvent(new a.w.Event('change'));
+      const before = a.requests.filter(r => r.path === '/v1/effects/start').length;
+      a.click('effect-start');
+      await wait(() => a.requests.filter(r => r.path === '/v1/effects/start').length === before + 1 && !a.$('effect-start').disabled, `${pattern} accepted`);
+      const config = JSON.parse(a.requests.filter(r => r.path === '/v1/effects/start').at(-1).body);
+      assert(config.pattern === pattern, 'Pattern choice was lost');
+      if (!['blink', 'breathe', 'cct-sweep'].includes(pattern)) assert(!('period' in config), 'Irrelevant cycle period submitted');
+      if (pattern !== 'pulse') assert(!('bpm' in config), 'Pulse fields leaked into another pattern');
+      if (pattern !== 'morse') assert(!('text' in config), 'Morse fields leaked into another pattern');
+    }
+  });
+  await test('Fast blink sends a full-cycle period and duty, and rejects impossible phases before HTTP', async a => {
+    await a.attach(); a.input('effect-period', .2); a.click('effect-start');
+    await wait(() => a.requests.some(r => r.path === '/v1/effects/start') && !a.$('effect-start').disabled, 'fast blink');
+    const config = JSON.parse(a.requests.find(r => r.path === '/v1/effects/start').body);
+    assert(config.period === .2 && config.duty === .5, 'Fast blink timing differs');
+    a.input('effect-param-duty', .25); a.click('effect-start');
+    await wait(() => a.$('effect-action').textContent.includes('start failed'), 'invalid phase rejected');
+    assert(a.requests.filter(r => r.path === '/v1/effects/start').length === 1, 'Impossible blink phase reached bridge');
+  });
+  await test('Keyframe JSON errors do not dispatch and valid programs retain easing and loop', async a => {
+    await a.attach(); a.$('effect-pattern').value = 'keyframes'; a.$('effect-pattern').dispatchEvent(new a.w.Event('change'));
+    a.$('effect-keyframes').value = '{broken'; a.click('effect-start');
+    assert(a.$('effect-error').textContent.includes('Invalid program'), 'Malformed JSON error missing');
+    assert(!a.requests.some(r => r.path === '/v1/effects/start'), 'Malformed JSON was submitted');
+    a.$('effect-keyframes').value = '[{"at":0,"brightness":2},{"at":2,"brightness":12,"ease":"smooth"}]';
+    a.$('effect-param-loop').checked = false; a.$('effect-param-loop').dispatchEvent(new a.w.Event('change'));
+    a.click('effect-start'); await wait(() => a.requests.some(r => r.path === '/v1/effects/start'), 'keyframes accepted');
+    const config = JSON.parse(a.requests.find(r => r.path === '/v1/effects/start').body);
+    assert(config.loop === false && config.keyframes[1].ease === 'smooth', 'Keyframe program changed in submission');
+    assert(a.$('effect-until-stopped').disabled, 'Non-looping program allowed unbounded duration');
+  });
+  await test('Sunrise preset holds its endpoint and exposes perceptual curve without writing', async a => {
+    await a.attach(); a.$('effect-preset').value = 'sunrise15'; a.$('effect-preset').dispatchEvent(new a.w.Event('change'));
+    assert(a.$('effect-duration').value === '900' && a.$('effect-curve').value === 'perceptual', 'Sunrise defaults differ');
+    assert(a.$('effect-cct').value === '2700' && a.$('effect-cct-end').value === '6500', 'Sunrise temperature endpoints differ');
+    assert(!a.$('effect-restore').checked && a.$('effect-until-stopped').disabled, 'Sunrise endpoint holding differs');
+    assert(!a.requests.some(r => r.path === '/v1/effects/start'), 'Sunrise preset started immediately');
+  });
+  await test('Personal controller accepts verified hybrid USB/BLE readback with no setup', async a => {
+    await wait(() => !a.$('brightness').disabled, 'hybrid personal attach');
+    assert(a.$('actual-brightness').textContent === '5%' && a.$('connection-settings').hidden, 'Hybrid readback failed to attach');
+    a.input('brightness', 9); await wait(() => a.$('actual-brightness').textContent === '9%', 'hybrid manual write');
+  }, { pageLocation: personalPage, health: noAuthHealth, startupState: snapshot(5, 0, { transport: 'usb+ble' }) });
+  await test('Unexpected personal device disconnect observes a later bridge autoconnection without a connect mutation', async a => {
+    await wait(() => !a.$('brightness').disabled && a.streams.length > 0, 'personal attach');
+    a.state = disconnected(); a.emit(disconnected());
+    await wait(() => a.$('brightness').disabled && a.$('actual-brightness').textContent === '—', 'authoritative disconnect');
+    a.state = snapshot(8, 3, { transport: 'usb+ble' });
+    await sleep(2050);
+    await wait(() => !a.$('brightness').disabled && a.$('actual-brightness').textContent === '8%', 'bridge autoconnection observed');
+    assert(!a.requests.some(r => r.path === '/v1/connect' || r.path === '/v1/devices' || r.method === 'PATCH'), 'Observation submitted a device mutation');
+    assert(a.$('connection-settings').hidden, 'Recovery exposed setup');
+  }, { pageLocation: personalPage, health: noAuthHealth });
+  await test('Explicit personal disconnect does not start a device observation loop', async a => {
+    await wait(() => !a.$('brightness').disabled, 'personal attach');
+    a.click('disconnect'); await wait(() => a.$('status').textContent === 'Light disconnected.', 'disconnect finished');
+    const count = a.requests.length; await sleep(2100);
+    assert(a.requests.length === count && a.$('brightness').disabled, 'Explicit disconnect restarted observation');
+  }, { pageLocation: personalPage, health: noAuthHealth });
+  await test('Late device-observation read cannot replace a new session after page restoration', async a => {
+    await wait(() => !a.$('brightness').disabled && a.streams.length > 0, 'personal attach');
+    a.state = disconnected(); a.emit(disconnected());
+    const old = a.hold(); await sleep(2050); await wait(() => old.started, 'held observation read');
+    a.hide(); a.state = snapshot(6, 1); a.show();
+    await wait(() => !a.$('brightness').disabled, 'fresh restored session');
+    old.resolve(snapshot(99, 50)); await sleep(30);
+    assert(a.$('actual-brightness').textContent === '6%', 'Late observation replaced fresh readback');
+  }, { pageLocation: personalPage, health: noAuthHealth });
   return { browser: navigator.userAgent, lifecycle: 'Synthetic PageTransitionEvent persisted=true, real JS heap and browser APIs; no claim of actual BFcache eligibility',
     network: 'Every fetch and Bluetooth chooser replaced before evaluating app; dummy token only',
     passed: results.filter(r => r.passed).length, failed: results.filter(r => !r.passed).length, results };

@@ -4,19 +4,30 @@
 
 **Built and inspected locally:**
 `artifacts/android-build/lighttime-g60-arm64-preview.apk`
-— 22,695,025 bytes (about 21.64 MiB). The APK, generated native project,
+— 22,779,861 bytes (about 21.72 MiB). The APK, generated native project,
 toolchains and logs are ignored local artifacts, not checked-in downloads.
 
 ```text
-d81e6e443ad6458ad3c7650e4aaa0bfdd37e955b0ae3ff3ad40340fd81b9b62e
+b981eb0633ae7770e9f972a8314086f6d40b543a9e2d26609d2e74f6233ef3a0
 ```
 
-The SHA-256 matches on the build host and the copied validation artifact. The build
-finished with `BUILD SUCCESSFUL in 12m 50s`, 642 executed tasks, exit code 0.
+The SHA-256 matches on the build host and the copied validation artifact. The
+initial native build took 12m 50s. The final effects/lifecycle rebuild finished
+with `BUILD SUCCESSFUL in 24s`, 11 executed tasks and 631 up-to-date, exit code 0.
 The APK is `arm64-v8a` only, R8-minified `release`, package
 `dev.lighttime.android`, version `0.1.0` / version code 1, minimum API 24 and
-target API 36. It embeds a 1,414,828-byte Hermes bundle and needs **no Metro**.
-The embedded bundle contains the corrected 5% restore explanation.
+target API 36. It embeds a 1,499,664-byte Hermes bundle and needs **no Metro**.
+The embedded bundle contains the corrected 5% restore explanation, fourteen
+programs, eleven scene presets and the direct runner's lifecycle corrections.
+Pattern/control strings were checked in Hermes using its ASCII and UTF-16
+string encodings. The final bundle SHA-256 is
+`526787bdcb173ee6bc5da3add2992a90aecf4a17d82bbac61917e1bde1269aac`.
+
+All **44 final app/SDK input hashes** matched before transfer, on the build
+host and after compilation. Final software checks passed 123 SDK tests / 3151
+assertions and 24 Android tests / 204 assertions, TypeScript and Android Hermes
+export. The rebuild reused the existing isolated official toolchain, native
+project, signing key and caches; no dependency lock changed.
 
 Signing uses the generated public **debug/test key** (`androiddebugkey`), not
 a production key. `apksigner verify --verbose --print-certs` passed APK

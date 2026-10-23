@@ -1,6 +1,7 @@
 """Authenticated local HTTP/SSE bridge shared by websites and OBS."""
 
 import asyncio
+import importlib
 import json
 import math
 import os
@@ -28,6 +29,8 @@ from .transport import (
 
 _OPERATION_DRAIN_TIMEOUT = 11.0  # Cancellation can traverse two five-second BLE cleanups.
 _FINAL_CLEANUP_TIMEOUT = 6.0  # Transport cleanup has its own five-second deadline.
+_POLL_INTERVAL = 2.0  # SSE subscribers otherwise receive a fresh two-query read this often.
+_READBACK_FRESHNESS = 2.0  # A newer verified readback makes the ordinary poll redundant.
 _DEVICE_PATHS = frozenset(
     {
         "/v1/devices",
@@ -114,6 +117,7 @@ class Bridge:
         allow_origins=(),
         allow_mock=False,
         web_root: Path | None = None,
+        usb_writes: str | None = None,
     ):
         if auth_required and not token:
             raise ValueError("An authenticated bridge requires a token")
@@ -121,6 +125,11 @@ class Bridge:
         self.auth_required = auth_required
         self.allow_origins = set(allow_origins)
         self.allow_mock = allow_mock
+        # Optional serial port for hybrid output: BLE stays the identity/readback
+        # path while setters use USB. None keeps the ordinary BLE transport.
+        self.usb_writes = usb_writes
+        self._readback: tuple[LightClient, str] | None = None
+        self._readback_at = 0.0
         self.client: LightClient | None = None
         self.lock = asyncio.Lock()
         self.effects = EffectEngine(self)
@@ -163,9 +172,26 @@ class Bridge:
     def state(self):
         return self.client.state.to_dict() if self.client else LightState().to_dict()
 
+    def _observe_readback(self):
+        # Every verified operation publishes. A changed updatedAt is a new
+        # two-field hardware readback; record when it was first observed.
+        client = self.client
+        stamp = client.state.updatedAt if client is not None else None
+        if client is not None and stamp is not None and self._readback != (client, stamp):
+            self._readback = (client, stamp)
+            self._readback_at = asyncio.get_running_loop().time()
+
+    def readback_fresh(self) -> bool:
+        """Whether the current client's cached state is a readback under two seconds old."""
+        client = self.client
+        if client is None or self._readback != (client, client.state.updatedAt):
+            return False
+        return asyncio.get_running_loop().time() - self._readback_at < _READBACK_FRESHNESS
+
     def publish(self):
         if self._stopping:
             return
+        self._observe_readback()
         state = self.state()
         for queue in self.subscribers:
             if queue.full():
@@ -206,6 +232,10 @@ class Bridge:
             response = api_error(503, "device_unavailable", str(exc))
         except web.HTTPException:
             raise
+        if request.path.startswith("/ui/") and not response.prepared:
+            # Revalidate the personal controller after deployments; API fetch
+            # cache settings do not affect a browser's HTML/module cache.
+            response.headers["Cache-Control"] = "no-store"
         if origin and permitted and not response.prepared:
             self.cors(response, origin)
         return response
@@ -306,7 +336,16 @@ class Bridge:
         # Cleanup above may have completed after shutdown began. Never allocate a
         # replacement backend after that await, even if cancellation was swallowed.
         self.require_running()
-        transport = MockTransport(address) if kind == "mock" else BleTransport(address)
+        transport: Transport
+        if kind == "mock":
+            transport = MockTransport(address)
+        elif self.usb_writes is not None:
+            # The hybrid module is imported only when configured. Its transport
+            # matches BLE and USB identity before reporting kind "usb+ble".
+            hybrid = importlib.import_module(".usb_hybrid", __package__)
+            transport = hybrid.UsbBleTransport(address, self.usb_writes)
+        else:
+            transport = BleTransport(address)
         client = LightClient(transport=transport)
         self._connecting_client = client
         try:
@@ -443,13 +482,15 @@ class Bridge:
 
     async def poll(self):
         while not self._stopping:
-            await asyncio.sleep(2)
-            if self.subscribers:
+            await asyncio.sleep(_POLL_INTERVAL)
+            # Effect frames and manual writes already publish verified readback;
+            # skipping a redundant poll avoids ~60 ms of lock contention.
+            if self.subscribers and not self.readback_fresh():
                 async with self.lock:
                     if self._stopping:
                         return
                     client = self.client
-                    if client is None:
+                    if client is None or self.readback_fresh():
                         continue
                     with suppress(TransportError, OSError, ValueError):
                         await client.refresh()

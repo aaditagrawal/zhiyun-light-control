@@ -975,6 +975,10 @@ def test_bridge_connect_deadline_releases_lock_and_retains_failed_candidate(fake
 
 
 def test_poll_queued_behind_disconnect_survives_and_resumes_publishing(monkeypatch):
+    # Fake sleeps leave each connect's readback "fresh"; this regression needs
+    # every tick to perform the ordinary hardware poll.
+    monkeypatch.setattr("lighttime.bridge._READBACK_FRESHNESS", 0)
+
     async def scenario():
         bridge = Bridge("fake-token", allow_mock=True)
         await bridge.connect_device("first", "mock")

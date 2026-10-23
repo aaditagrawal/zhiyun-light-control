@@ -20,7 +20,13 @@ async def run_command(args):
         return await usb_info(args.port)
     if args.command == "token-path":
         return {"tokenFile": str(default_token_path())}
-    async with LightClient(args.address) as light:
+    transport = None
+    if args.usb_writes:
+        from .usb_hybrid import UsbBleTransport
+
+        # Hybrid mode: USB setters, Bluetooth identity and readback verification.
+        transport = UsbBleTransport(args.address, args.usb_writes)
+    async with LightClient(args.address, transport=transport) as light:
         if args.command == "state":
             return light.state.to_dict()
         return (
@@ -35,16 +41,24 @@ async def run_command(args):
 def main():
     parser = argparse.ArgumentParser(description="Control ZHIYUN MOLUS G60 over Bluetooth")
     commands = parser.add_subparsers(dest="command", required=True)
+    usb_writes_help = (
+        "Hybrid mode: send brightness/CCT setters to this G60 USB serial port while "
+        "Bluetooth keeps identity and readback verification (both links required)"
+    )
     scan = commands.add_parser("scan", help="Discover local BLE G60 and USB serial devices")
     scan.add_argument("--timeout", type=float, default=5)
     state = commands.add_parser("state", help="Read the actual G60 settings")
     state.add_argument("--address", required=True)
+    state.add_argument("--usb-writes", metavar="PORT", help=usb_writes_help)
     set_command = commands.add_parser("set", help="Set and verify settings")
     set_command.add_argument("--address", required=True)
     set_command.add_argument("--brightness", type=float)
     set_command.add_argument("--cct", type=int)
     set_command.add_argument("--power", choices=["on", "off"])
-    serial = commands.add_parser("usb-info", help="Read USB identity (not USB runtime control)")
+    set_command.add_argument("--usb-writes", metavar="PORT", help=usb_writes_help)
+    serial = commands.add_parser(
+        "usb-info", help="Read USB identity only (USB setters need --usb-writes with BLE)"
+    )
     serial.add_argument("--port", default="/dev/ttyACM0")
     commands.add_parser("token-path", help="Print the local bridge credential file path")
     serve = commands.add_parser("serve", help="Run the authenticated HTTP/SSE bridge")
@@ -59,6 +73,7 @@ def main():
     serve.add_argument(
         "--allow-mock", action="store_true", help="Explicitly enable the test-only backend"
     )
+    serve.add_argument("--usb-writes", metavar="PORT", help=usb_writes_help)
     serve.add_argument(
         "--web-root",
         type=Path,
@@ -76,6 +91,7 @@ def main():
                 allow_origins=args.allow_origin,
                 allow_mock=args.allow_mock,
                 web_root=args.web_root,
+                usb_writes=args.usb_writes,
             )
             if args.address:
                 bridge.initial_address = args.address

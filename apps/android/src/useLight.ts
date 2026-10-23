@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
-import { BleProtocolTransport, LightController } from '@lighttime/sdk';
-import type { State, StatePatch, Unsubscribe } from '@lighttime/sdk';
+import { BleProtocolTransport, DirectEffectRunner, LightController } from '@lighttime/sdk';
+import type { EffectConfig, EffectStatus, State, StatePatch, Unsubscribe } from '@lighttime/sdk';
 import type { BleManager, Subscription } from 'react-native-ble-plx';
 import { OperationGate } from './OperationGate';
+import { EffectOwnership, EffectRetirement } from './EffectOwnership';
 import { NativeBleAdapter } from './ble/NativeBleAdapter';
 import { advertisedLight } from './ble/constants';
 import type { DiscoveredLight } from './ble/constants';
@@ -18,6 +19,7 @@ const labels: Record<Phase, string> = {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Bluetooth operation failed. Try searching again.';
 }
+const idleEffect = (): EffectStatus => ({ running: false, id: null, pattern: null, startedAt: null, endsAt: null, progress: null, lastError: null });
 
 export function useLight() {
   const initialIssue = useRef(runtimeIssue()).current;
@@ -31,8 +33,13 @@ export function useLight() {
   const [working, setWorking] = useState(false);
   const [hasScanned, setHasScanned] = useState(false);
   const [permissionBlocked, setPermissionBlocked] = useState(false);
+  const [effect, setEffect] = useState<EffectStatus>(idleEffect);
   const manager = useRef<BleManager | null>(null);
   const controller = useRef<LightController | null>(null);
+  const runner = useRef<DirectEffectRunner | null>(null);
+  const ownership = useRef<EffectOwnership | null>(null);
+  const retired = useRef(new EffectRetirement()).current;
+  const uneffect = useRef<Unsubscribe | null>(null);
   const abort = useRef<AbortController | null>(null);
   const unstate = useRef<Unsubscribe | null>(null);
   const radio = useRef<Subscription | null>(null);
@@ -57,21 +64,41 @@ export function useLight() {
     ++epoch.current;
     abort.current?.abort();
     abort.current = null;
-    const previous = controller.current;
+    // cancel() invalidates the runner synchronously, before native teardown starts.
+    runner.current?.cancel();
+    const previous = ownership.current;
+    if (previous) retired.retain(previous);
+    ownership.current = null;
+    runner.current = null;
     controller.current = null;
+    uneffect.current?.(); uneffect.current = null;
     unstate.current?.();
     unstate.current = null;
     if (mounted.current) {
-      setVerified(false); setState(null); setSelected(null);
+      setVerified(false); setState(null); setSelected(null); setEffect(idleEffect());
       setPhase(nextPhase); setMessage(nextMessage);
     }
     // Keep reconnection behind native teardown, including background/disconnect races.
+    const prior = closing.current;
     const pending = (async () => {
+      // Retry a failed drain through the retained owners, rather than inheriting
+      // a permanently rejected barrier or permitting a replacement connection.
+      await prior?.catch(() => {});
       await stopNativeScan().catch(() => {});
-      if (previous) await previous.disconnect().catch(() => {});
+      await retired.drain();
     })();
-    closing.current = Promise.all([closing.current, pending]).then(() => {});
+    closing.current = pending;
+    // A failed drain must block reconnect/manager destruction, not release live I/O.
+    void closing.current.catch(error => {
+      if (mounted.current) { setPhase('error'); setMessage(`Bluetooth cleanup is still pending: ${errorMessage(error)}`); }
+    });
     return closing.current;
+  };
+
+  const finishCleanup = async () => {
+    await closing.current?.catch(() => {});
+    // Scan/connect are explicit retries. Failure still blocks replacement.
+    await retired.drain();
   };
 
   const ensureManager = async (): Promise<BleManager | null> => {
@@ -111,7 +138,7 @@ export function useLight() {
       setWorking(true);
       const run = ++epoch.current;
       try {
-        await closing.current;
+        await finishCleanup();
         if (!mounted.current || epoch.current !== run) return;
         setPhase('permission'); setMessage('Allow Bluetooth access to find and control your light.');
         const permission = await requestBlePermissions();
@@ -171,38 +198,48 @@ export function useLight() {
       const run = ++epoch.current;
       const signal = new AbortController(); abort.current = signal;
       let session: LightController | null = null;
+      let sessionOwner: EffectOwnership | null = null;
       try {
-        await closing.current;
+        await finishCleanup();
         await stopNativeScan();
         if (!mounted.current || epoch.current !== run) return;
         const native = await ensureManager();
         if (!native || !mounted.current || epoch.current !== run) return;
         const transport = new BleProtocolTransport(new NativeBleAdapter(native, device.id), { maxWriteSize: 20, timeoutMs: 5000 });
         session = new LightController(transport, { timeoutMs: 15_000, verificationAttempts: 3, verificationDelayMs: 150 });
+        const effects = new DirectEffectRunner(session);
+        const ownedController = session;
+        sessionOwner = new EffectOwnership(effects, () => ownedController.disconnect());
+        ownership.current = sessionOwner;
+        runner.current = effects;
         controller.current = session;
+        setEffect(effects.status);
+        uneffect.current = effects.subscribe((next: EffectStatus) => {
+          if (!mounted.current || epoch.current !== run || runner.current !== effects) return;
+          setEffect(next);
+          if (next.lastError) {
+            setVerified(false); setPhase('error');
+            setMessage(`Pattern stopped: ${next.lastError} Tap Read light to check the actual settings.`);
+          }
+        });
         unstate.current = session.subscribe((next) => {
           if (!mounted.current || epoch.current !== run) return;
           setState(next);
           if (!next.connected) {
-            setVerified(false); setPhase('error');
-            setMessage('The light disconnected. Search again to reconnect.');
-            controller.current = null;
-            unstate.current?.(); unstate.current = null;
-          }
+            void close('error', 'The light disconnected. Search again to reconnect.');
+          } else if (effects.status.running) setVerified(true);
         });
         setSelected(device); setPhase('connecting');
         setMessage(`Connecting to ${device.name} and reading its current settings…`);
         const actual = await session.connect({ signal: signal.signal, timeoutMs: 15_000 });
-        if (!mounted.current || epoch.current !== run) { await session.disconnect().catch(() => {}); return; }
+        if (!mounted.current || epoch.current !== run) { await sessionOwner.close(); return; }
         setState(actual); setVerified(true); setPhase('connected');
         setMessage('Brightness and color temperature were read from your G60.');
       } catch (error) {
-        if (session) await session.disconnect().catch(() => {});
+        if (sessionOwner) retired.retain(sessionOwner);
         if (mounted.current && epoch.current === run) {
-          controller.current = null;
-          unstate.current?.(); unstate.current = null;
-          setState(null); setSelected(null); setVerified(false); setPhase('error'); setMessage(errorMessage(error));
-        }
+          await close('error', errorMessage(error)).catch(() => {});
+        } else await finishCleanup().catch(() => {});
       } finally { if (abort.current === signal) abort.current = null; if (mounted.current) setWorking(false); }
     });
   };
@@ -210,14 +247,15 @@ export function useLight() {
   const operate = async (patch?: StatePatch) => {
     await gate.run(async () => {
       const session = controller.current;
-      if (!session) return;
+      const effects = runner.current;
+      if (!session || !effects) return;
       const run = epoch.current;
       const signal = new AbortController(); abort.current = signal;
       setWorking(true); setVerified(false); setPhase('busy');
       setMessage(patch ? 'Applying your setting, then checking the light’s actual values…' : 'Reading brightness and color temperature…');
       try {
         const actual = patch
-          ? await session.setState(patch, { signal: signal.signal, timeoutMs: 12_000 })
+          ? await effects.setState(patch)
           : await session.refresh({ signal: signal.signal, timeoutMs: 12_000 });
         if (!mounted.current || epoch.current !== run) return;
         setState(actual); setVerified(true); setPhase('connected');
@@ -230,6 +268,32 @@ export function useLight() {
     });
   };
 
+  const effectOperation = async (config?: EffectConfig) => {
+    await gate.run(async () => {
+      const session = controller.current;
+      const effects = runner.current;
+      if (!session || !effects) return;
+      if (!config && !effects.status.running) return;
+      const run = epoch.current;
+      setWorking(true);
+      setMessage(config ? 'Starting your pattern from the light’s verified settings…' : 'Stopping and restoring brightness and temperature captured at Start…');
+      try {
+        const next = config ? await effects.start(config) : await effects.stop({ restore: true });
+        if (!mounted.current || epoch.current !== run || runner.current !== effects) return;
+        setEffect(next); setState(session.state); setVerified(true); setPhase('connected');
+        setMessage(config ? 'Pattern running on this phone. Readback shows the actual light.' : 'Pattern stopped. Both baseline settings were restored and verified.');
+      } catch (error) {
+        if (!mounted.current || epoch.current !== run || runner.current !== effects) return;
+        setEffect(effects.status); setState(session.state); setVerified(false); setPhase('error');
+        setMessage(`${errorMessage(error)} Tap Read light to check the actual settings.`);
+      } finally {
+        // The gate still owns this operation after close() changes the epoch.
+        // Release its busy UI once it settles so the user can reconnect.
+        if (mounted.current) setWorking(false);
+      }
+    });
+  };
+
   useEffect(() => {
     mounted.current = true;
     const subscription = AppState.addEventListener('change', (next) => {
@@ -239,18 +303,19 @@ export function useLight() {
       mounted.current = false;
       subscription.remove(); radio.current?.remove(); radio.current = null;
       const native = manager.current;
-      void close().finally(() => {
+      void close().then(() => {
         if (manager.current === native) manager.current = null;
         if (native) void native.destroy().catch(() => {});
-      });
+      }).catch(() => { /* retain the manager while cleanup still owns work */ });
     };
     // Native resources are owned by this mount; callbacks use refs rather than render state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
-    status: labels[phase], connecting: phase === 'connecting', message, devices, selected, state, verified, scanning, working, hasScanned,
+    status: labels[phase], connecting: phase === 'connecting', message, devices, selected, state, verified, scanning, working, hasScanned, effect,
     permissionBlocked, unsupported: phase === 'unsupported', error: phase === 'error' || phase === 'permission' || phase === 'offline',
     scan, stopScan, connect, disconnect: () => close(), refresh: () => operate(), update: (patch: StatePatch) => operate(patch),
+    startEffect: (config: EffectConfig) => effectOperation(config), stopEffect: () => effectOperation(),
   };
 }

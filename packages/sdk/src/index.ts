@@ -5,3 +5,7 @@ export * from './transport';
 export * from './controller';
 export * from './web-bluetooth';
 export * from './bridge';
+export * from './effects';
+export * from './presets';
+export * from './pattern-engine';
+export * from './direct-effects';

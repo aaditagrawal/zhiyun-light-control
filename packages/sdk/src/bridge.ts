@@ -154,7 +154,7 @@ function validDevice(value: unknown): value is Device {
     (value.rssi === undefined || typeof value.rssi === 'number') && (value.accessible === undefined || typeof value.accessible === 'boolean');
 }
 export function parseState(value: unknown): State {
-  if (!record(value) || typeof value.connected !== 'boolean' || !['ble', 'serial', 'mock', null].includes(value.transport as State['transport']) ||
+  if (!record(value) || typeof value.connected !== 'boolean' || !['ble', 'serial', 'mock', 'usb+ble', null].includes(value.transport as State['transport']) ||
       !(value.address === null || typeof value.address === 'string') || !(value.updatedAt === null || typeof value.updatedAt === 'string') ||
       !(value.power === null || typeof value.power === 'boolean') ||
       !(value.brightness === null || typeof value.brightness === 'number' && Number.isFinite(value.brightness) && value.brightness >= 0 && value.brightness <= 100) ||

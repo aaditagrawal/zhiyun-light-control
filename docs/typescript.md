@@ -110,10 +110,11 @@ Abort from the UI to stop a blocked event read. Breaking from the loop also rele
 
 ### Bridge light patterns
 
-Patterns use the existing authenticated bridge connection. The bridge generates
-verified brightness/CCT commands; the SDK does not issue vendor firmware effect
-commands or run local BLE patterns. See [effects-contract.md](effects-contract.md)
-for the shared endpoint and runner contract.
+Bridge patterns use the existing connection, with an optional token according
+to bridge configuration. The bridge generates verified brightness/CCT commands.
+For a direct BLE connection, `DirectEffectRunner` runs the same programs locally.
+Neither path sends vendor firmware effect commands. See
+[effects-contract.md](effects-contract.md) for the shared endpoint contract.
 
 ```ts
 import type { EffectPattern, EffectConfig, EffectStatus } from '@lighttime/sdk';
@@ -133,14 +134,21 @@ const observed = await bridge.effect(); // GET /v1/effects; poll at most once/se
 await bridge.stopEffect({ restore: true }); // default true; verified baseline restore
 ```
 
-`EffectPattern` supports `blink`, `breathe`, `fade-in`, `fade-out`, and
-`cct-sweep`. Sweeps interpolate from `cct` to `cctEnd` (default 6500 K) and back,
-holding maximum brightness. Optional config defaults are duration 10 seconds,
-period 4 seconds, minimum 0%, maximum verified nonzero baseline brightness or
-5%, and baseline CCT. Restoration defaults to true for cyclic patterns and false
-for fades. Finite fades hold their exact endpoint unless restoration is requested.
-Only cyclic patterns allow `duration: null`. Unknown fields, non-finite numbers,
-invalid bounds/resolution and non-boolean restoration flags reject before sending.
+`EffectPattern` supports fourteen programs: `blink`, `breathe`, `fade-in`,
+`fade-out`, `cct-sweep`, `pulse`, `flicker`, `sunrise`, `lightning`, `emergency`,
+`paparazzi`, `tv`, `morse` and `keyframes`. `EffectConfig` is a discriminated
+union, so each pattern has its own options. `EFFECT_PRESETS` contains eleven
+deeply frozen scene presets; copy a preset before editing it. `parseEffectConfig`
+validates and applies defaults; `resolveEffect(config, baseline)` supplies a
+pure sampler for previews. Seeded output matches the Python implementation at
+all 691 shared fixture points, including skipped and reverse sampling.
+
+Blink permits a 0.2-second cycle when both phases last at least 0.1 seconds.
+Finite fades and sunrise hold their endpoints by default; cyclic patterns
+normally restore the captured baseline. Pattern-specific defaults, keyframe
+easing, Morse timing and bounded durations are documented in
+[the expanded configuration contract](effects-programs-contract.md). Unknown
+and foreign-pattern fields reject before sending.
 
 `EffectStatus` contains `running`, nullable `id`, `pattern`, `startedAt`, `endsAt`,
 `progress` (0–1 for a finite run; null for idle/unbounded), and `lastError`.
@@ -158,6 +166,29 @@ the SDK client or closing the page cancels local requests/subscriptions only;
 the server pattern continues. Stop polling on detach/pagehide and reject late
 results from prior sessions. A cancelled HTTP request cannot undo a start or
 stop already accepted by the bridge; reattach and query status when uncertain.
+
+### Direct BLE patterns
+
+```ts
+import { DirectEffectRunner, EFFECT_PRESETS } from '@lighttime/sdk';
+
+// `light` is an already connected LightController.
+const runner = new DirectEffectRunner(light);
+const unsubscribe = runner.subscribe(renderEffectStatus);
+await runner.start(EFFECT_PRESETS.candle!);
+await runner.stop({ restore: true });
+await runner.dispose();
+await light.disconnect();
+unsubscribe();
+```
+
+Start captures fresh verified output. Manual `runner.setState(patch)` cancels
+the pattern without restoration, then verifies its own request. `cancel()`
+invalidates synchronously; `dispose()` also drains controller and native work.
+If disposal rejects, retain the owner and retry before disconnecting or
+destroying native resources. Finite completion writes the exact endpoint;
+missed targets are skipped and write starts remain at least 100 ms apart.
+See [runner lifecycle details](android-patterns.md#direct-sdk-runner).
 
 ## Direct Web Bluetooth
 
@@ -213,11 +244,17 @@ await light.disconnect();
 
 This is an adapter outline, not a bundled BLE library. Use the full UUID exports `G60_SERVICE`, `G60_WRITE`, `G60_NOTIFY` in a real implementation. A 20-byte default chunk size works within the default ATT MTU; adapters may pass a larger supported payload size after negotiating it (maximum 512). Chunked frames never interleave. Use one controller/transport per connected light; do not share raw commands concurrently with controller mutations.
 
-The parser bounds body length to 1024 bytes by default and validates CRC16-XMODEM over the body. Replies require response type `0x0001` and both sequence and command. Pending requests are bounded to 64. Sequences are never reused within a connection; exhausting 65535 requests requires reconnecting. BLE request/write deadlines default to 5 seconds; a whole controller operation, including queueing, defaults to 10 seconds. Explicit abort, setup failure and disconnect clean pending work and notification/disconnect listeners. Native writes that time out close the session so late native completion cannot interleave with subsequent writes. Native adapters must still release their underlying resources. Transports and controllers are single-session objects: create new ones to reconnect.
+The parser bounds body length to 1024 bytes by default and validates CRC16-XMODEM over the body. Replies require response type `0x0001` and both sequence and command. Pending requests are bounded to 64. Sequences are never reused within a connection; exhausting 65535 requests requires reconnecting. BLE request/write deadlines default to 5 seconds; a whole controller operation, including queueing, defaults to 10 seconds. Explicit abort, setup failure and disconnect invalidate pending requests and release listeners. Transports and controllers are single-session objects: create new ones to reconnect after cleanup succeeds.
+
+`await light.drain()` waits for submitted controller work and the underlying native work owned by its transport, including manual writes whose callers already timed out or were cancelled. Cancellation stops later fields, reads, retries and queued dispatches; it cannot undo a native operation already submitted. An aborted or timed-out native write invalidates the BLE session, retains its queue slot until settlement, and prevents further writes. `disconnect()` invalidates the controller synchronously, then drains outstanding work before closing native GATT. Web Bluetooth notification shutdown is also awaited before GATT closes. Cancel local producers before draining, and await successful cleanup before replacing their controller or adapter.
+
+With `DirectEffectRunner`, await `runner.dispose()` before `light.disconnect()`. Disposal cancels local output and drains pending manual writes as well as effect work. If disposal rejects, retain the runner and retry its disposal before replacing the owner.
+
+Drain and disconnect waits use each instance's configured `timeoutMs`. An unresolved cleanup rejects with `TimeoutError` explaining that work remains owned; a failed native close or subscription cleanup rejects as well. Ownership is retained after rejection: retry `drain()` or `disconnect()` after the native operation settles or cleanup can succeed. A never-settling native promise cannot be force-drained by the SDK, and successful caller cancellation does not establish successful teardown. Adapter promises must represent actual native settlement; asynchronous subscription cleanup must be owned and awaited by adapter `disconnect()`. Third-party `CommandTransport` implementations remain compatible without a `drain` method; implementations that internally race native promises should provide optional `drain(): Promise<void>` and retain that work through actual settlement.
 
 ## Browser example and OBS dock
 
-The browser example allows 60 seconds per bridge request, including automatic
+Manual bridge and effect requests in the browser example allow 60 seconds, including automatic
 Bluetooth recovery during a refresh or write. The SDK's general default stays
 15 seconds for non-connect calls; use `timeoutMs: 60_000` when your application
 should wait for that recovery rather than time out first.
@@ -231,7 +268,17 @@ A bridge-served `/ui/` page checks same-origin health on load. For an explicit
 section and attaches to the existing bridge connection automatically, without
 using a saved token or endpoint. It briefly retries readback during bridge
 startup, then offers a simple Reconnect light action using `defaultAddress`
-when available. No MAC address, connector or token entry is needed. Sliders,
+when available and the bridge has reported the light disconnected. A temporary
+health failure keeps setup hidden and offers a same-origin Retry connection.
+Going online or returning to the foreground retries failed discovery, with at
+most three retries after the first attempt, delayed by 0.5, 1.5 and 3 seconds.
+After an unexpected device disconnect or exhausted startup readback, personal
+mode observes state every two seconds for up to one minute. Once the bridge's
+own connection becomes ready, the page attaches again without another connect
+command or a replay of drafts. Explicit disconnect cancels that observation.
+Each health request has a three-second deadline. Repeated restoration events
+share an in-flight recovery burst. Retry remains available after exhaustion.
+No MAC address, connector or token entry is needed. Sliders,
 readback and patterns become available as soon as verified output is received.
 
 Secured bridges retain the generic editable setup UI after the health check;
@@ -240,13 +287,34 @@ standalone static pages make no API request before an explicit action.
 “Connect selected light” explicitly invoke discovery/connect. The control picker
 offers BLE devices only: serial discovery is identity-only and does not establish
 G60 output-control support. Controls use whole-percent / 100 K steps, an Apply
-button, and optional 200 ms coalescing with at most one write transaction in
-flight. Requested settings and actual readback stay separate, failures remain
-visible, and the UI never displays a draft as verified state. Direct BLE is an
+button, and an Apply while sliding option enabled by default in personal mode.
+Slider changes dispatch immediately, with at most one write transaction in
+flight and one pending target replaced by the latest values. The full desired
+brightness/CCT target stays queued; each dispatch compares it with the latest
+accepted readback and sends only changed fields. This preserves reversals to an
+old baseline while another write is in flight. An already-confirmed target sends
+no PATCH and is labeled as matching the last readback, without advancing its read
+time or canceling a pattern. Power commands remain absolute. The backend still
+verifies both output fields after each write. Requested settings and actual
+readback stay separate, failures remain visible, and the UI never displays a
+draft as verified state. Direct BLE is an
 explicit button on the generic setup UI.
 
-The pattern section offers blink, breathe, fades and CCT sweep with duration,
-cycle period, brightness bounds, CCT endpoints and completion restoration.
+The browser UI reconnects an interrupted SSE stream on the same attached client,
+preserving its endpoint and credentials. It tries up to three replacements with
+0.5, 1.5 and 3 second backoff; a verified state event resets that outage budget.
+After exhaustion, Retry connection or a later online/foreground event starts a
+new bounded burst. Only one subscription or retry burst can run at a time.
+Recovery does not scan, call the BLE connect endpoint, replay manual settings,
+or apply unsent drafts. Editing setup fields does not retarget an attached
+client; use explicit attachment for that. Read back refreshes a snapshot while
+stream recovery remains separate. Pagehide and new sessions cancel old probes,
+subscriptions and retry delays. The SDK itself still reports stream errors;
+this recovery policy belongs to the example UI.
+
+The pattern section offers all fourteen programs and eleven scene presets,
+with per-pattern duration, timing, brightness/CCT, seed, curve, Morse text and
+keyframe JSON controls.
 Attach through the bridge to enable it; direct Bluetooth keeps manual controls.
 Actual runner progress/failure appears separately from requested settings and
 actual brightness/CCT readback. “Stop & restore” requests the original baseline;

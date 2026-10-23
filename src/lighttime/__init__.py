@@ -8,6 +8,7 @@ from .transport import (
     TransportError,
     discover,
 )
+from .usb_hybrid import UsbBleTransport
 
 __version__ = "0.1.0"
 __all__ = [
@@ -19,5 +20,6 @@ __all__ = [
     "RequestTimeout",
     "SerialTransport",
     "TransportError",
+    "UsbBleTransport",
     "discover",
 ]

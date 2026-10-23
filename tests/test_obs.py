@@ -226,7 +226,7 @@ class FakeBridge:
                 if bridge.hook:
                     bridge.hook(record)
                 status, body, headers = 200, None, {}
-                if record["auth"] != "Bearer " + bridge.token:
+                if record["auth"] != ("Bearer " + bridge.token if bridge.token else None):
                     status, body = 401, {"error": {"code": "unauthorized", "message": bridge.token}}
                 elif bridge.overrides:
                     status, body, headers = bridge.overrides.popleft()
@@ -513,12 +513,20 @@ class ObsTests(unittest.TestCase):
             self.assertFalse(result.ok)
             self.assertIn("token file", result.message)
 
-    def test_missing_token_and_header_injection_rejected_before_http(self):
-        for token in ("", "bad\r\nheader"):
+    def test_header_injection_rejected_before_http(self):
+        for token in ("bad\r\nheader", "bad\x00header"):
             with self.subTest(token_present=bool(token)):
                 worker = self.worker(ready=False, token=token)
                 self.assertFalse(wait_result(worker).ok)
         self.assertEqual(self.bridge.records, [])
+
+    def test_personal_bridge_omits_auth_and_accepts_verified_usb_ble_state(self):
+        self.bridge.token = ""
+        self.bridge.state["transport"] = "usb+ble"
+        worker = self.worker(token="")
+        worker.action("refresh")
+        self.assertTrue(wait_result(worker).ok)
+        self.assertTrue(all(record["auth"] is None for record in self.bridge.records))
 
     def test_urls_reject_nonlocal_hosts_credentials_and_query_secrets(self):
         for url in (

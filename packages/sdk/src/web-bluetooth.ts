@@ -26,6 +26,7 @@ export interface BluetoothChooser {
 class WebAdapter implements BleAdapter {
   private writeCharacteristic: Characteristic | undefined;
   private notifyCharacteristic: Characteristic | undefined;
+  private notificationsNeedStop = false;
   private disposed = false;
   constructor(private device: WebBluetoothDevice) {}
   get address(): string { return this.device.id; }
@@ -58,8 +59,10 @@ class WebAdapter implements BleAdapter {
     characteristic.addEventListener('characteristicvaluechanged', changed);
     const cleanup = () => {
       characteristic.removeEventListener('characteristicvaluechanged', changed);
-      void characteristic.stopNotifications().catch(() => {});
     };
+    // Stop notifications as part of the awaited adapter close, after native writes
+    // and setup have settled. The synchronous unsubscribe only removes callbacks.
+    this.notificationsNeedStop = true;
     try { await characteristic.startNotifications(); this.ensureOpen(); return cleanup; }
     catch (error) { cleanup(); throw error; }
   }
@@ -67,7 +70,19 @@ class WebAdapter implements BleAdapter {
     this.device.addEventListener('gattserverdisconnected', listener);
     return () => this.device.removeEventListener('gattserverdisconnected', listener);
   }
-  async disconnect(): Promise<void> { this.disposed = true; this.device.gatt?.disconnect(); }
+  async disconnect(): Promise<void> {
+    this.disposed = true;
+    if (this.notificationsNeedStop && this.notifyCharacteristic) {
+      try { await this.notifyCharacteristic.stopNotifications(); }
+      catch (error) {
+        // Link loss already ends notifications. Still await the submitted stop,
+        // but retain failures for retry whenever GATT remains live or unknown.
+        if (this.device.gatt?.connected !== false) throw error;
+      }
+      this.notificationsNeedStop = false;
+    }
+    this.device.gatt?.disconnect();
+  }
 }
 export class WebBluetoothTransport extends BleProtocolTransport {
   static available(): boolean {

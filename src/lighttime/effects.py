@@ -4,37 +4,38 @@ from __future__ import annotations
 
 import asyncio
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from . import programs
 from .client import LightClient, LightState
-from .protocol import validate_brightness, validate_cct
+from .protocol import validate_cct
 from .transport import TransportError
 
 if TYPE_CHECKING:
     from .bridge import Bridge
 
-_PATTERNS = ("blink", "breathe", "fade-in", "fade-out", "cct-sweep")
-_FRAME_INTERVAL = 0.2
+_PATTERNS = programs.PATTERNS
+_WRITE_SPACING = 0.1  # Minimum seconds between write STARTS (at most 10 per second).
+_IDLE_RESAMPLE = 1.0  # Longest wait between target checks, even for constant output.
+_WAKE_LATENESS = 0.001  # Wake just after a scheduled change rather than just before it.
 
 
-def _seconds(name: str, value: object, maximum: int) -> float:
+def _seconds(name: str, value: object, minimum: float, maximum: float) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{name} must be a number from 1 to {maximum} seconds")
+        raise ValueError(f"{name} must be a number from {minimum:g} to {maximum:g} seconds")
     # Check bounds before conversion, including arbitrarily large JSON integers.
-    if not 1 <= value <= maximum or not math.isfinite(value):
-        raise ValueError(f"{name} must be finite and from 1 to {maximum} seconds")
+    if not minimum <= value <= maximum or not math.isfinite(value):
+        raise ValueError(f"{name} must be finite and from {minimum:g} to {maximum:g} seconds")
     return float(value)
 
 
 def _brightness(value: object) -> float:
     # Avoid float conversion overflow on arbitrarily large JSON integers in
     # the protocol validator; invalid configuration must remain HTTP 400.
-    if isinstance(value, int) and not 0 <= value <= 100:
-        raise ValueError("Brightness must be a whole percent from 0 to 100")
-    return validate_brightness(value)
+    return programs.brightness_value("Brightness", value)
 
 
 @dataclass(frozen=True)
@@ -47,37 +48,57 @@ class EffectConfig:
     cct: int | None = None
     cctEnd: int = 6500
     restoreOnComplete: bool = True
+    seed: int = 1
+    curve: str = "linear"
+    options: programs.Options = field(default_factory=programs.NoOptions)
+    program: programs.Program | None = field(default=None, compare=False, repr=False)
 
     @classmethod
     def parse(cls, data: dict) -> EffectConfig:
-        if set(data) - set(cls.__dataclass_fields__):
-            raise ValueError("Unknown effect property")
         pattern = data.get("pattern")
         if not isinstance(pattern, str) or pattern not in _PATTERNS:
             raise ValueError(f"pattern must be one of {', '.join(_PATTERNS)}")
-        duration = data.get("duration", 10)
-        fade = pattern in ("fade-in", "fade-out")
-        if duration is None:
-            if fade:
-                raise ValueError("Fades require a finite duration")
+        programs.check_fields(pattern, data)
+        low, high = programs.period_range(pattern)
+        period = _seconds("period", data.get("period", 4), low, high)
+        options = programs.parse_options(pattern, data, period)
+        cyclic = programs.loops(pattern, options)
+        natural = programs.natural_duration(options)
+        if "duration" not in data:
+            duration = natural if natural is not None else programs.default_duration(pattern)
+        elif data["duration"] is None:
+            if not cyclic:
+                raise ValueError(f"{pattern} requires a finite duration unless it loops")
+            duration = None
         else:
-            duration = _seconds("duration", duration, 3600)
-        restore = data.get("restoreOnComplete", not fade)
+            duration = _seconds("duration", data["duration"], 1, 3600)
+            if natural is not None:
+                # A longer request still stops at the program's natural completion.
+                duration = min(duration, natural)
+        restore = data.get("restoreOnComplete", cyclic)
         if not isinstance(restore, bool):
             raise ValueError("restoreOnComplete must be a boolean")
         minimum = _brightness(data.get("minBrightness", 0))
         maximum = _brightness(data["maxBrightness"]) if "maxBrightness" in data else None
         if maximum is not None and minimum > maximum:
             raise ValueError("maxBrightness must be >= minBrightness")
+        default_cct, default_end = programs.cct_defaults(pattern)
+        seed = programs.integer("seed", data.get("seed", 1), 0, programs.SEED_MAX)
+        curve = programs.choice(
+            "curve", data.get("curve", programs.default_curve(pattern)), tuple(programs.CURVES)
+        )
         return cls(
             pattern=pattern,
             duration=duration,
-            period=_seconds("period", data.get("period", 4), 60),
+            period=period,
             minBrightness=minimum,
             maxBrightness=maximum,
-            cct=validate_cct(data["cct"]) if "cct" in data else None,
-            cctEnd=validate_cct(data.get("cctEnd", 6500)),
+            cct=validate_cct(data["cct"]) if "cct" in data else default_cct,
+            cctEnd=validate_cct(data["cctEnd"]) if "cctEnd" in data else default_end,
             restoreOnComplete=restore,
+            seed=seed,
+            curve=curve,
+            options=options,
         )
 
     def resolve(self, state: LightState) -> EffectConfig:
@@ -90,33 +111,35 @@ class EffectConfig:
             raise ValueError(
                 "maxBrightness must be >= minBrightness (including its baseline default)"
             )
-        return replace(
-            self, maxBrightness=maximum, cct=self.cct if self.cct is not None else state.cct
+        cct = self.cct if self.cct is not None else state.cct
+        levels = programs.Levels(
+            self.minBrightness,
+            maximum,
+            cct,
+            self.cctEnd,
+            self.seed,
+            programs.CURVES[self.curve],
         )
+        program = programs.build(
+            self.pattern,
+            self.options,
+            levels,
+            period=self.period,
+            duration=self.duration,
+            baseline=(state.brightness, state.cct),
+        )
+        return replace(self, maxBrightness=maximum, cct=cct, program=program)
 
     def target(self, elapsed: float) -> tuple[int, int]:
-        assert self.maxBrightness is not None and self.cct is not None
-        if self.duration is not None:
-            elapsed = min(elapsed, self.duration)
-        maximum, minimum = self.maxBrightness, self.minBrightness
-        phase = (elapsed / self.period) % 1
-        cct = self.cct
-        if self.pattern == "blink":
-            brightness = maximum if phase < 0.5 else minimum
-        elif self.pattern == "breathe":
-            brightness = minimum + (maximum - minimum) * (1 - math.cos(2 * math.pi * phase)) / 2
-        elif self.pattern == "cct-sweep":
-            brightness = maximum
-            cct = (
-                round((self.cct + (self.cctEnd - self.cct) * (1 - abs(2 * phase - 1))) / 100) * 100
-            )
-        else:
-            assert self.duration is not None
-            progress = min(1, max(0, elapsed / self.duration))
-            if self.pattern == "fade-out":
-                progress = 1 - progress
-            brightness = minimum + (maximum - minimum) * progress
-        return round(brightness), cct
+        assert self.program is not None, "resolve() before sampling"
+        final = self.duration is not None and elapsed >= self.duration
+        if self.duration is not None and final:
+            elapsed = self.duration
+        return self.program.sample(elapsed, final)
+
+    def next_change(self, elapsed: float) -> float | None:
+        assert self.program is not None, "resolve() before sampling"
+        return self.program.next_change(elapsed)
 
 
 @dataclass
@@ -272,21 +295,22 @@ class EffectEngine:
                     return elapsed
                 delay = self._next_output - now
                 if delay <= 0:
-                    # No cached target survives a lock wait or rate-limit sleep.
+                    # Spacing is measured between write starts. No cached target
+                    # survives a lock wait or rate-limit sleep: the target above was
+                    # sampled now, so missed targets are skipped rather than replayed.
                     # LightClient.set serializes its writes and verifies readback.
-                    try:
-                        await run.client.set(
-                            brightness=brightness,
-                            cct=cct,
-                            _guard=lambda: self._check_output(run, allow_cancelled=allow_cancelled),
-                        )
-                    finally:
-                        self._next_output = asyncio.get_running_loop().time() + _FRAME_INTERVAL
+                    self._next_output = now + _WRITE_SPACING
+                    await run.client.set(
+                        brightness=brightness,
+                        cct=cct,
+                        _guard=lambda: self._check_output(run, allow_cancelled=allow_cancelled),
+                    )
                     self.bridge.publish()
                     return elapsed
             await asyncio.sleep(delay)
 
     async def _runner(self, run: _Run):
+        loop = asyncio.get_running_loop()
         try:
             while not run.cancelled:
                 elapsed = await self._output(run)
@@ -295,10 +319,14 @@ class EffectEngine:
                     if run.config.restoreOnComplete:
                         await self._output(run, restore=True)
                     return
-                delay = _FRAME_INTERVAL
+                # Sleep until the program's next possible change. Constant output
+                # is still rechecked periodically, without writing identical targets.
+                wake = run.config.next_change(elapsed)
+                limit = elapsed + _IDLE_RESAMPLE
+                wake = limit if wake is None else min(max(wake, elapsed), limit)
                 if duration is not None:
-                    delay = min(delay, duration - elapsed)
-                await asyncio.sleep(delay)
+                    wake = min(wake, duration)
+                await asyncio.sleep(max(0.0, run.started + wake + _WAKE_LATENESS - loop.time()))
         except asyncio.CancelledError:
             raise
         except Exception as exc:

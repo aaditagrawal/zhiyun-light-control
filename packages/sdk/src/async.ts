@@ -42,6 +42,38 @@ export class SerialQueue {
     this.tail = next.catch(() => {});
     return next;
   }
+  /** Include tasks submitted while an earlier task is still settling. */
+  async drain(): Promise<void> {
+    while (true) {
+      const tail = this.tail;
+      await tail;
+      if (tail === this.tail) return;
+    }
+  }
+}
+/** Track actual work, never the deadline race returned to its caller. */
+export class OwnedWork {
+  private readonly pending = new Set<Promise<unknown>>();
+  track<T>(work: Promise<T>): Promise<T> {
+    this.pending.add(work);
+    void work.then(() => this.pending.delete(work), () => this.pending.delete(work));
+    return work;
+  }
+  async drain(): Promise<void> {
+    while (this.pending.size) await Promise.allSettled([...this.pending]);
+  }
+}
+/** A bounded wait does not release ownership of an unfinished cleanup promise. */
+export async function drainWithin(work: Promise<void>, timeoutMs: number, subject: string): Promise<void> {
+  const op = deadline({}, timeoutMs);
+  try { await op.run(work); }
+  catch (error) {
+    if (error instanceof TimeoutError) throw new TimeoutError(`${subject} timed out; unresolved work remains owned. Retry drain() or disconnect() before replacing the session.`);
+    throw error;
+  } finally { op.close(); }
+}
+export function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw new CancelledError();
 }
 export function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {

@@ -6,6 +6,7 @@ import Slider from '@react-native-community/slider';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useLight } from './src/useLight';
+import { PatternPanel } from './src/PatternPanel';
 
 const color = {
   background: '#101713', surface: '#1b251e', raised: '#253229', line: '#334237',
@@ -77,7 +78,7 @@ function LightScreen() {
   return (
     <SafeAreaView style={s.safe}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={s.page}>
+      <ScrollView contentContainerStyle={s.page} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={s.header}>
           <View style={s.wordmark}><View style={s.brandMark} /><Text style={s.brand}>lighttime</Text></View>
           <Text style={s.headerTag}>LIGHT, ON YOUR TERMS</Text>
@@ -164,6 +165,8 @@ function LightScreen() {
               <Button label={actual.power ? 'Turn off' : 'Turn on'} secondary disabled={!ready}
                 onPress={() => { void light.update({ power: !actual.power }); }} />
             </View>
+            <PatternPanel status={light.effect} ready={ready} working={light.working} connected={connected}
+              onStart={light.startEffect} onStop={light.stopEffect} />
           </>
         ) : (
           <View style={s.empty}>

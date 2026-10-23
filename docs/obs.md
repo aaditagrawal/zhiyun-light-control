@@ -22,7 +22,11 @@ uv sync --frozen
 uv run lighttime serve --host 127.0.0.1 --port 8877
 ```
 
-The bridge creates its token file and prints the **path**, without printing the
+For a personal bridge started with `--no-auth`, leave both token fields empty.
+The OBS worker omits Authorization. The same controls accept verified
+`usb+ble` state when the bridge uses USB writes and Bluetooth readback.
+
+The default authenticated bridge creates its token file and prints the **path**, without printing the
 token. `uv run lighttime token-path` also reports the default path. Normally it
 is `~/.config/lighttime/bridge.token` on Linux (honoring `XDG_CONFIG_HOME`),
 `~/Library/Application Support/lighttime/bridge.token` on macOS, and

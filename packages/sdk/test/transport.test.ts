@@ -72,7 +72,8 @@ describe('BLE lifecycle and correlation', () => {
     late.connect = () => new Promise<void>(resolve => { finish = resolve; });
     const transport = new BleProtocolTransport(late);
     await expect(transport.connect({ timeoutMs: 5 })).rejects.toBeInstanceOf(TimeoutError);
-    finish(); await tick(); expect(late.disconnects).toBeGreaterThanOrEqual(2); expect(late.subscriptions).toBe(0);
+    expect(late.disconnects).toBe(0);
+    finish(); await transport.drain(); expect(late.disconnects).toBe(1); expect(late.subscriptions).toBe(0);
   });
   test('Web Bluetooth picker uses PL103 namePrefix with optional FEE9', async () => {
     let options: unknown;

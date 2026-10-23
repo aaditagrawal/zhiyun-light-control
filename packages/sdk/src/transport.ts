@@ -1,10 +1,10 @@
-import { deadline, SerialQueue, validateTimeout } from './async';
-import { DisconnectedError, ProtocolError } from './errors';
+import { deadline, drainWithin, OwnedWork, SerialQueue, validateTimeout } from './async';
+import { CancelledError, DisconnectedError, ProtocolError } from './errors';
 import { encodeFrame, FrameParser, REQUEST_TYPE, RESPONSE_TYPE } from './protocol';
 import type { Frame } from './protocol';
 import type { OperationOptions, Unsubscribe } from './types';
 
-/** Native adapters must write with response, copy notification bytes, and release subscriptions. */
+/** Native promises must represent actual settlement. Await async subscription cleanup in disconnect. */
 export interface BleAdapter {
   readonly address: string;
   connect(): Promise<void>;
@@ -17,6 +17,8 @@ export interface CommandTransport {
   readonly connected: boolean;
   readonly address: string;
   connect(options?: OperationOptions): Promise<void>;
+  /** Await actual work hidden by caller cancellation/deadline races, when supported. */
+  drain?(): Promise<void>;
   disconnect(): Promise<void>;
   send(command: number, payload: Uint8Array, options?: OperationOptions): Promise<void>;
   request(command: number, payload?: Uint8Array, options?: OperationOptions): Promise<Frame>;
@@ -30,6 +32,7 @@ export class BleProtocolTransport implements CommandTransport {
   private status: 'new' | 'connecting' | 'connected' | 'closed' = 'new';
   private readonly parser: FrameParser;
   private readonly writes = new SerialQueue();
+  private readonly work = new OwnedWork();
   private readonly pending = new Map<number, Pending>();
   private readonly listeners = new Set<() => void>();
   private readonly lifecycle = new AbortController();
@@ -38,6 +41,8 @@ export class BleProtocolTransport implements CommandTransport {
   private sequence = 0;
   private readonly timeoutMs: number;
   private readonly maxWriteSize: number;
+  private closing: Promise<void> | undefined;
+  private needsClose = false;
   constructor(private readonly adapter: BleAdapter, options: BleTransportOptions = {}) {
     this.parser = new FrameParser(options.maxBodyLength);
     this.timeoutMs = options.timeoutMs ?? 5000;
@@ -55,35 +60,61 @@ export class BleProtocolTransport implements CommandTransport {
     try {
       op.check();
       this.undrop = this.adapter.onDisconnect(() => this.drop());
-      const setup = (async () => {
+      const setup = this.work.track((async () => {
         await this.adapter.connect();
-        if (this.status !== 'connecting') { void this.adapter.disconnect().catch(() => {}); throw new DisconnectedError(); }
+        op.check();
+        if (this.status !== 'connecting') throw new DisconnectedError();
         const unsubscribe = await this.adapter.subscribe(bytes => this.receive(bytes));
-        if (this.status !== 'connecting') { unsubscribe(); throw new DisconnectedError(); }
         this.unnotify = unsubscribe;
-      })();
+        if (this.status !== 'connecting') { this.releaseSubscriptions(); throw new DisconnectedError(); }
+        op.check();
+      })());
       await op.run(setup);
+      op.check();
       if (this.status !== 'connecting') throw new DisconnectedError();
       this.status = 'connected';
-    } catch (error) { this.drop(); void this.adapter.disconnect().catch(() => {}); throw error; }
+    } catch (error) { this.drop(); void this.closeAdapter().catch(() => {}); throw error; }
     finally { op.close(); }
   }
-  async disconnect(): Promise<void> {
+  disconnect(): Promise<void> {
     this.drop();
-    const op = deadline({}, this.timeoutMs);
-    try { await op.run(this.adapter.disconnect()); } finally { op.close(); }
+    return drainWithin(this.closeAdapter(), this.timeoutMs, 'BLE disconnect');
+  }
+  /** Keep unresolved native work owned even when this bounded wait rejects. */
+  drain(): Promise<void> {
+    return drainWithin((async () => {
+      await this.work.drain();
+      if (this.needsClose) await this.closeAdapter();
+      else await this.closing;
+    })(), this.timeoutMs, 'BLE drain');
+  }
+  private closeAdapter(): Promise<void> {
+    if (this.closing) return this.closing;
+    // Do not track this coordinator in `work`: it waits for that set itself.
+    const closing = (async () => {
+      await this.work.drain();
+      this.releaseSubscriptions();
+      await this.adapter.disconnect();
+      this.needsClose = false;
+    })();
+    this.closing = closing;
+    void closing.catch(() => { if (this.closing === closing) this.closing = undefined; });
+    return closing;
   }
   private drop(): void {
     if (this.status === 'closed') return;
-    this.status = 'closed'; this.lifecycle.abort(); this.parser.reset();
-    try { this.unnotify?.(); } catch { /* continue releasing the rest of the session */ }
-    this.unnotify = undefined;
-    try { this.undrop?.(); } catch { /* continue releasing the rest of the session */ }
-    this.undrop = undefined;
+    this.status = 'closed'; this.needsClose = true; this.lifecycle.abort(); this.parser.reset();
+    try { this.releaseSubscriptions(); } catch { /* retain failed cleanup for drain/disconnect to retry */ }
     for (const entry of this.pending.values()) entry.reject(new DisconnectedError());
     this.pending.clear();
     for (const listener of this.listeners) { try { listener(); } catch { /* isolate observers */ } }
     this.listeners.clear();
+  }
+  private releaseSubscriptions(): void {
+    let failure: unknown;
+    try { this.unnotify?.(); this.unnotify = undefined; } catch (error) { failure = error; }
+    try { this.undrop?.(); this.undrop = undefined; } catch (error) { failure ??= error; }
+    if (failure !== undefined) throw failure;
   }
   private receive(bytes: Uint8Array): void {
     if (this.status !== 'connected') return;
@@ -109,6 +140,7 @@ export class BleProtocolTransport implements CommandTransport {
   private async exchange(command: number, payload: Uint8Array, reply: boolean, options: OperationOptions): Promise<Frame | void> {
     const op = deadline(options, this.timeoutMs, this.lifecycle.signal);
     let sequence: number | undefined;
+    let nativeWritePending = false;
     try {
       op.check(); sequence = this.nextSequence();
       if (this.pending.size >= 64) throw new ProtocolError('Too many pending requests');
@@ -120,26 +152,44 @@ export class BleProtocolTransport implements CommandTransport {
         // Disconnect may reject while the GATT write itself is still pending.
         void response.catch(() => {});
       }
-      const writing = this.writes.run(async () => {
+      const writing = this.work.track(this.writes.run(async () => {
         op.check(); if (!this.connected) throw new DisconnectedError();
         for (let offset = 0; offset < frame.length; offset += this.maxWriteSize) {
           op.check(); if (!this.connected) throw new DisconnectedError();
-          try { await op.run(this.adapter.write(frame.slice(offset, offset + this.maxWriteSize))); }
+          try {
+            nativeWritePending = true;
+            // Retain the queue slot until the native promise actually settles.
+            await this.adapter.write(frame.slice(offset, offset + this.maxWriteSize));
+            nativeWritePending = false;
+            op.check();
+            if (!this.connected) throw new DisconnectedError();
+          }
           catch (error) {
-            // A timed-out native write may finish later. Close this session before any further write.
-            this.drop(); void this.adapter.disconnect().catch(() => {}); throw error;
+            nativeWritePending = false;
+            this.drop(); void this.closeAdapter().catch(() => {}); throw error;
           }
         }
-      });
+      }));
       if (response) {
-        const [, result] = await op.run(Promise.all([writing, response]));
+        const [, result] = await op.run(this.work.track(Promise.all([writing, response])));
+        op.check();
         if (!this.connected) throw new DisconnectedError();
         return result;
       }
       await op.run(writing);
+      op.check();
       if (!this.connected) throw new DisconnectedError();
+    } catch (error) {
+      if (nativeWritePending) {
+        // Invalidate immediately, but never close native GATT underneath the write.
+        this.drop(); void this.closeAdapter().catch(() => {});
+      }
+      throw error;
     } finally {
-      if (sequence !== undefined) this.pending.delete(sequence);
+      if (sequence !== undefined) {
+        this.pending.get(sequence)?.reject(new CancelledError());
+        this.pending.delete(sequence);
+      }
       op.close();
     }
   }

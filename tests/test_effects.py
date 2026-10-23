@@ -1,6 +1,8 @@
 """Effect contracts and lifecycle over real ephemeral HTTP with an in-memory lamp."""
 
 import asyncio
+import sys
+import types
 from contextlib import asynccontextmanager
 from datetime import datetime
 
@@ -105,9 +107,11 @@ def values(rig, command):
 
 
 def assert_rate(rig):
+    # Write STARTS are at least 0.1 s apart; a two-field write's later setter
+    # frame may trail its start slightly, hence the small tolerance.
     for command in (Command.BRIGHTNESS, Command.CCT):
         stamps = [stamp for stamp, field, _ in rig.writes if field == command]
-        assert all(b - a >= 0.195 for a, b in zip(stamps, stamps[1:], strict=False))
+        assert all(b - a >= 0.099 for a, b in zip(stamps, stamps[1:], strict=False))
 
 
 def test_idle_sdk_auth_origin_and_disconnected_start(monkeypatch):
@@ -226,7 +230,8 @@ def test_stop_validation_preserves_running_effect(monkeypatch, data):
             [0, 0.25, 0.5, 0.75, 1],
             [(0, 2700), (5, 2700), (10, 2700), (5, 2700), (0, 2700)],
         ),
-        ("fade-in", [0, 0.25, 1, 3], [(0, 2700), (2, 2700), (10, 2700), (10, 2700)]),
+        # Shared quantization is floor(x + 0.5): 2.5% rounds half up to 3%.
+        ("fade-in", [0, 0.25, 1, 3], [(0, 2700), (3, 2700), (10, 2700), (10, 2700)]),
         ("fade-out", [0, 0.5, 1, 3], [(10, 2700), (5, 2700), (0, 2700), (0, 2700)]),
         (
             "cct-sweep",
@@ -305,7 +310,7 @@ def test_cyclic_frames_quantized_skip_duplicates_and_finite_finish(monkeypatch, 
             elif pattern == "breathe":
                 assert bright[0] == bright[-1] == 0
                 assert any(0 < value < 9 for value in bright)
-                assert len(bright) < 7
+                assert len(bright) <= 11  # At most ten write starts per second plus the end.
                 assert all(a != b for a, b in zip(bright, bright[1:], strict=False))
             else:
                 temperatures = values(rig, Command.CCT)
@@ -943,5 +948,253 @@ def test_rejected_manual_patch_leaves_effect_and_output_intact(monkeypatch, patc
             assert (state["brightness"], state["cct"]) == (7, 3300)
             assert values(rig, Command.BRIGHTNESS) == [9, 7]
             assert values(rig, Command.CCT) == [2700, 3300]
+
+    asyncio.run(scenario())
+
+
+EVERY_PATTERN = {
+    "blink": {"period": 0.2},
+    "breathe": {"period": 1, "minBrightness": 9},
+    "fade-in": {"minBrightness": 9},
+    "fade-out": {},
+    "cct-sweep": {"period": 1},
+    "pulse": {"style": "beat", "bpm": 180},
+    "flicker": {"style": "fire"},
+    "sunrise": {"direction": "set"},
+    "lightning": {"interval": 2},
+    "emergency": {"flashes": 4},
+    "paparazzi": {"interval": 0.33, "burst": 1},
+    "tv": {"interval": 0.5, "motion": 1},
+    "morse": {"text": "E E", "unit": 0.1},
+    "keyframes": {
+        "keyframes": [{"at": 0, "brightness": 9}, {"at": 0.3, "brightness": 1, "ease": "smooth"}]
+    },
+}
+
+
+@pytest.mark.parametrize("pattern", sorted(EVERY_PATTERN))
+def test_every_pattern_runs_verified_and_restores_baseline(monkeypatch, pattern):
+    async def scenario():
+        async with server(monkeypatch) as (rig, bridge, _, _, sdk, _):
+            options = {"maxBrightness": 9, "cct": 2700, **EVERY_PATTERN[pattern]}
+            finite = pattern in ("fade-in", "fade-out", "sunrise")  # null is rejected.
+            started = await sdk.start_effect(pattern, duration=60 if finite else None, **options)
+            assert set(started) == STATUS_KEYS and started["pattern"] == pattern
+            await eventually(lambda: bool(rig.writes))
+            await asyncio.sleep(0.35)
+            assert (await sdk.effect())["running"] and bridge.effects.status()["lastError"] is None
+            assert all(0 <= value <= 9 for value in values(rig, Command.BRIGHTNESS))
+            assert all(value % 100 == 0 for value in values(rig, Command.CCT))
+            stopped = await sdk.stop_effect()
+            assert not stopped["running"] and stopped["lastError"] is None
+            state = await sdk.refresh()
+            assert (state["brightness"], state["cct"]) == (5, 5000)
+            assert_rate(rig)
+
+    asyncio.run(scenario())
+
+
+def test_fast_blink_alternates_at_write_start_ceiling(monkeypatch):
+    async def scenario():
+        async with server(monkeypatch) as (rig, bridge, _, _, sdk, _):
+            await sdk.start_effect(
+                "blink", duration=1, period=0.2, maxBrightness=9, cct=2700, restoreOnComplete=False
+            )
+            await eventually(lambda: not bridge.effects.status()["running"])
+            bright = values(rig, Command.BRIGHTNESS)
+            assert 6 <= len(bright) <= 11 and bright[0] == 9
+            assert all(value in (0, 9) for value in bright)
+            assert all(a != b for a, b in zip(bright, bright[1:], strict=False))
+            assert bright[-1] == 9  # Legacy blink endpoint at a whole period is phase 0.
+            assert_rate(rig)
+
+    asyncio.run(scenario())
+
+
+def test_runner_skips_missed_edges_after_lock_wait_without_catch_up(monkeypatch):
+    async def scenario():
+        async with server(monkeypatch) as (rig, bridge, _, _, sdk, _):
+            loop = asyncio.get_running_loop()
+            await sdk.start_effect("blink", duration=None, period=1, maxBrightness=9, cct=2700)
+            await eventually(lambda: values(rig, Command.BRIGHTNESS) == [9])
+            run = bridge.effects._run
+            assert run is not None
+            await bridge.lock.acquire()
+            try:
+                # Edges at 0.5, 1.0 and 1.5 s pass while the runner waits.
+                await asyncio.sleep(run.started + 1.65 - loop.time())
+                assert bridge.lock._waiters
+            finally:
+                bridge.lock.release()
+            await asyncio.sleep(0.25)  # The next edge is at 2.0 s.
+            assert values(rig, Command.BRIGHTNESS) == [9, 0]
+            await sdk.stop_effect(restore=False)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("pattern,limit", [("blink", 3), ("breathe", 8)])
+def test_constant_targets_neither_write_nor_busy_loop(monkeypatch, pattern, limit):
+    calls = []
+    original = EffectConfig.target
+
+    def counting(self, elapsed):
+        calls.append(elapsed)
+        return original(self, elapsed)
+
+    monkeypatch.setattr(EffectConfig, "target", counting)
+
+    async def scenario():
+        async with server(monkeypatch) as (rig, _, _, _, sdk, _):
+            await sdk.start_effect(pattern, duration=None, minBrightness=5, maxBrightness=5)
+            await asyncio.sleep(0.5)
+            assert not rig.writes
+            assert 1 <= len(calls) <= limit, calls
+            await sdk.stop_effect(restore=False)
+
+    asyncio.run(scenario())
+
+
+def test_finite_morse_and_keyframes_write_exact_natural_endpoint(monkeypatch):
+    async def scenario():
+        async with server(monkeypatch) as (rig, bridge, _, _, sdk, _):
+            started = await sdk.start_effect(
+                "morse", text="E", unit=0.1, loop=False, maxBrightness=9, cct=2700
+            )
+            assert started["endsAt"] is not None
+            ends = datetime.fromisoformat(started["endsAt"])
+            begins = datetime.fromisoformat(started["startedAt"])
+            assert abs((ends - begins).total_seconds() - 0.1) < 0.00001
+            await eventually(lambda: not bridge.effects.status()["running"])
+            assert values(rig, Command.BRIGHTNESS) == [9, 0]
+            state = await sdk.refresh()
+            assert (state["brightness"], state["cct"]) == (0, 2700)  # Held, not restored.
+            assert (await sdk.effect())["progress"] == 1
+            rig.writes.clear()
+            await sdk.start_effect(
+                "keyframes",
+                loop=False,
+                duration=3600,
+                keyframes=[
+                    {"at": 0, "brightness": 9, "cct": 3000},
+                    {"at": 0.5, "brightness": 3, "ease": "hold"},
+                ],
+            )
+            await eventually(lambda: not bridge.effects.status()["running"])
+            assert values(rig, Command.BRIGHTNESS) == [9, 3]
+            assert values(rig, Command.CCT) == [3000]
+            state = await sdk.refresh()
+            assert (state["brightness"], state["cct"]) == (3, 3000)
+            assert (await sdk.effect())["progress"] == 1
+
+    asyncio.run(scenario())
+
+
+def test_sunrise_default_duration_and_new_pattern_defaults_over_http(monkeypatch):
+    async def scenario():
+        async with server(monkeypatch) as (rig, _, _, _, sdk, _):
+            started = await sdk.start_effect("sunrise", maxBrightness=9)
+            ends = datetime.fromisoformat(started["endsAt"])
+            begins = datetime.fromisoformat(started["startedAt"])
+            assert abs((ends - begins).total_seconds() - 900) < 0.00001
+            await eventually(lambda: bool(rig.writes))
+            assert values(rig, Command.CCT) == [2700]  # Pattern default, not baseline.
+            assert values(rig, Command.BRIGHTNESS) == [0]
+            await sdk.stop_effect()
+            assert (rig.transports[0].brightness, rig.transports[0].cct) == (5, 5000)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"pattern": "blink", "bpm": 60},
+        {"pattern": "keyframes"},
+        {"pattern": "morse", "text": "SOS!"},
+        {"pattern": "sunrise", "duration": None},
+        {"pattern": "pulse", "seed": 2**32},
+        {"pattern": "blink", "period": 0.2, "duty": 0.4},
+        {"pattern": "flicker", "allowRapidFlash": True},
+    ],
+)
+def test_pattern_specific_rejections_have_no_output(monkeypatch, config):
+    async def scenario():
+        async with server(monkeypatch) as (rig, bridge, _, url, _, http):
+            response = await http.post(url + "/v1/effects/start", json=config)
+            assert response.status == 400
+            assert (await response.json())["error"]["code"] == "invalid_request"
+            assert not rig.writes and not bridge.effects.status()["running"]
+
+    asyncio.run(scenario())
+
+
+def test_sse_poll_skips_while_verified_readback_is_fresh(monkeypatch):
+    monkeypatch.setattr(bridge_module, "_POLL_INTERVAL", 0.05)
+
+    async def scenario():
+        async with server(monkeypatch) as (rig, bridge, _, url, sdk, http):
+            lamp = rig.transports[0]
+            original_write = lamp._write
+            reads = []
+
+            async def record_reads(data):
+                frame = Frame.decode(data)
+                if frame.command in (Command.BRIGHTNESS, Command.CCT) and not frame.payload[2]:
+                    reads.append(frame.command)
+                await original_write(data)
+
+            monkeypatch.setattr(lamp, "_write", record_reads)
+            response = await http.get(url + "/v1/events")
+            try:
+                await response.content.readuntil(b"\n\n")
+                await sdk.set(brightness=7)
+                reads.clear()
+                await asyncio.sleep(0.3)
+                assert bridge.subscribers and bridge.readback_fresh()
+                assert not reads  # Six poll ticks, no redundant hardware reads.
+                monkeypatch.setattr(bridge_module, "_READBACK_FRESHNESS", 0)
+                await eventually(lambda: len(reads) >= 2)
+                assert set(reads) == {Command.BRIGHTNESS, Command.CCT}
+            finally:
+                response.close()
+
+    asyncio.run(scenario())
+
+
+def test_usb_writes_selects_hybrid_transport_only_for_ble(monkeypatch):
+    created = []
+
+    class Hybrid(MockTransport):
+        kind = "usb+ble"
+
+        def __init__(self, address, port):
+            super().__init__(address)
+            created.append((address, port))
+
+    class Ble(MockTransport):
+        kind = "ble"
+
+    module = types.ModuleType("lighttime.usb_hybrid")
+    setattr(module, "UsbBleTransport", Hybrid)  # noqa: B010 - an offline stand-in module.
+    monkeypatch.setitem(sys.modules, "lighttime.usb_hybrid", module)
+    monkeypatch.setattr(bridge_module, "BleTransport", Ble)
+
+    async def scenario():
+        hybrid = Bridge(TOKEN, allow_mock=True, usb_writes="/dev/ttyACM-offline")
+        plain = Bridge(TOKEN, allow_mock=True)
+        try:
+            state = await hybrid.connect_device("AA:BB", "ble")
+            assert state["transport"] == "usb+ble" and state["connected"]
+            assert created == [("AA:BB", "/dev/ttyACM-offline")]
+            assert (await hybrid.connect_device("offline", "mock"))["transport"] == "mock"
+            for kind in ("usb+ble", "serial"):
+                with pytest.raises(ValueError):
+                    await hybrid.connect_device("AA:BB", kind)
+            assert (await plain.connect_device("AA:BB", "ble"))["transport"] == "ble"
+            assert len(created) == 1
+        finally:
+            await hybrid.shutdown(hybrid.app)
+            await plain.shutdown(plain.app)
 
     asyncio.run(scenario())

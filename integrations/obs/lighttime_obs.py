@@ -95,11 +95,12 @@ def _token(config):
             ) from None
     if (
         not isinstance(token, str)
-        or not token
         or len(token) > 8192
         or any(not 33 <= ord(c) <= 126 for c in token)
     ):
-        raise BridgeError("Set a valid bearer token or token file before connecting.")
+        raise BridgeError(
+            "Use a valid bearer token, or leave it empty for a personal no-auth bridge."
+        )
     return token
 
 
@@ -146,7 +147,7 @@ def _state(body):
         raise BridgeError("Bridge returned an invalid State object.")
     if (
         not isinstance(body["connected"], bool)
-        or body["transport"] not in (None, "ble", "serial", "mock")
+        or body["transport"] not in (None, "ble", "usb+ble", "serial", "mock")
         or any(
             body[key] is not None and not isinstance(body[key], str)
             for key in ("address", "updatedAt")
@@ -315,7 +316,7 @@ class BridgeWorker:
                 path,
                 payload,
                 {
-                    "Authorization": "Bearer " + token,
+                    **({"Authorization": "Bearer " + token} if token else {}),
                     "Content-Type": "application/json",
                     "Accept": "application/json",
                 },
@@ -439,7 +440,7 @@ _presets = {}
 _scene_enabled = False
 _address = ""
 _hotkeys = []
-_status = "Configure the local bridge and token. Status changes also appear in the OBS log."
+_status = "Configure the local bridge. Add a token if it requires one. Status changes also appear in the OBS log."
 
 
 def _report(message, error=False):

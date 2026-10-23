@@ -14,13 +14,17 @@ control (the explicit personal no-auth mode is specified below):
   returns `EffectStatus` after cancelling and, when requested, verifying the
   original brightness/CCT restoration. No active effect is an idempotent stop.
 
-`EffectConfig` has required `pattern`: `blink`, `breathe`, `fade-in`, `fade-out`
-or `cct-sweep`. Optional fields:
+`EffectConfig` has required `pattern`. The original patterns are `blink`,
+`breathe`, `fade-in`, `fade-out` and `cct-sweep`. Nine further patterns, plus
+`seed`, `curve` and the pattern-specific fields, are defined by
+[the expanded program contract](effects-programs-contract.md). Python's
+reference semantics are in [the effect guide](effects.md#program-reference).
+The original optional fields keep these meanings:
 
 | Field | Meaning / default |
 | --- | --- |
-| `duration` | Seconds, 1–3600; default 10. `null` means until stopped for cyclic patterns only. |
-| `period` | Cycle length, 1–60 seconds; default 4. Fades use duration. |
+| `duration` | Seconds, 1–3600; default 10 (sunrise 900). `null` means until stopped for cyclic patterns only. |
+| `period` | Cycle length, 1–60 seconds (blink 0.2–60); default 4. Fades use duration. |
 | `minBrightness` | Whole percent 0–100, default 0. |
 | `maxBrightness` | Whole percent 0–100, default verified nonzero baseline or 5. Must be >= min. |
 | `cct` | 2700–6500 K in 100 K steps; default baseline CCT. |
@@ -31,7 +35,8 @@ Reject unknown fields and invalid/non-finite inputs before any output write.
 Blink alternates max/min. Breathe follows a smooth rise/fall curve. Fade-in
 interpolates min to max; fade-out max to min. CCT sweep goes out and back while
 holding max brightness. A finite fade holds its exact endpoint unless restore
-was requested. Brightness/CCT are quantized to actual hardware resolution.
+was requested. Brightness/CCT are quantized to actual hardware resolution with
+`floor(x + 0.5)`, in whole percent and 100 K units.
 
 `EffectStatus` is:
 
@@ -39,7 +44,7 @@ was requested. Brightness/CCT are quantized to actual hardware resolution.
 {
   running: boolean;
   id: string | null;
-  pattern: 'blink' | 'breathe' | 'fade-in' | 'fade-out' | 'cct-sweep' | null;
+  pattern: EffectPattern | null; // Any of the fourteen pattern names.
   startedAt: string | null;
   endsAt: string | null;
   progress: number | null; // 0..1 for a finite run; null for idle/unbounded
@@ -48,8 +53,9 @@ was requested. Brightness/CCT are quantized to actual hardware resolution.
 ```
 
 Hardware output updates are serialized with manual writes, use monotonic
-timing, skip identical quantized targets, run at most five updates per second,
-and verify actual readback. A late frame must never replay after cancellation.
+timing, skip identical quantized targets, start at most one verified write per
+0.1 seconds (measured between write starts), and verify actual readback. A late
+frame must never replay after cancellation; missed targets are skipped.
 Manual state writes stop the effect without restoration before applying the
 manual setting. Explicit disconnect stops the effect; no effect survives a
 device replacement. Shutdown cancels/drains effect work before client cleanup

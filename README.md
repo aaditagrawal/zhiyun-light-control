@@ -16,14 +16,21 @@ This is a breaking replacement of the previous `zhiyun_light_control` /
 
 The original project explored unsupported-device reverse engineering with
 GPT‑5.5 xHigh in Codex. This overhaul continues that experiment with
-**GPT‑6.1 Sol through Codex**, using parallel research,
-implementation and review (using a laptop webcam) to turn protocol findings into reusable control
-tools. 
+**GPT‑6.1 Sol through Codex**, using parallel research, implementation and
+review to turn protocol findings into reusable control tools. This time the
+agent had access to Linux instead of macOS, along with the laptop webcam to
+verify changes to the physical light. The user provided the G60 and requested
+the SDK, browser, OBS and Android stack. Vendor-app analysis, captured replies,
+automated regressions and real-device readback inform the implementation.
 
- this time, apart from just giving the light, the agent also had access to Linux instead of MacOS, as well as the webcam which helped with verification.
+Subsequent effect exploration, USB analysis and Android enhancements also use
+parallel **Claude Opus 5.5** agents, coordinated and physically tested by the
+GPT‑6.1 Sol parent.
 
 The result is an early-stage control toolkit validated on one G60:
-**Linux BLE brightness/CCT control is verified.** 
+**Linux BLE control and USB brightness/CCT writes are verified.** USB state
+reads remain unanswered; reliable USB control uses Bluetooth readback. Other
+MOLUS models have not been validated.
 
 ## Start on Linux
 
@@ -91,9 +98,10 @@ authentication and a Linux user-service template.
   An arm64 standalone preview APK was built and inspected with **debug/test
   signing**. Physical installation, permission flow and BLE testing are deferred
   until the user connects a phone. Expo Go cannot load the native BLE module.
-- [Shared effect contract](docs/effects-contract.md): bridge-generated blink,
-  breathe, fades and CCT sweep use ordinary brightness/CCT commands. The bridge
-  owns effect timing and cancellation across clients. All five patterns,
+- [Shared effect contract](docs/effects-contract.md): fourteen patterns include
+  blink, breathe, fades, temperature sweeps, heartbeat, candle/fire, lightning,
+  sunrise/sunset, white bursts, camera flashes, TV glow, Morse and keyframes.
+  The bridge owns timing and cancellation across clients. All fourteen,
   stop/restore and manual override have been tested on the G60; see the
   [effect guide](docs/effects.md) and validation record.
 
@@ -113,8 +121,13 @@ binds `cdc_acm` automatically:
 uv run lighttime usb-info --port /dev/ttyACM0
 ```
 
-Identity queries work; brightness/CCT reads did not answer. The bridge rejects
-serial runtime control. If access is denied, review
+Identity queries work. Single, isolated `00 01` USB writes changed brightness
+and CCT, and all 60 repeated write cases matched independent Bluetooth
+readback. USB brightness/CCT reads still did not answer; a serial echo does
+not establish success. Opt into the verified hybrid using
+`--usb-writes /dev/ttyACM0` on `serve` or `set`; see the
+[USB SDK guide](docs/usb.md), [USB research](docs/research/usb-deep.md) and the
+[ramp and timing experiments](docs/experiments.md). If access is denied, review
 [`scripts/install-usb-access.sh`](scripts/install-usb-access.sh) and its
 device-specific `uaccess` rule before installing it with sudo. No firmware
 flasher is included. Windows/macOS hardware and direct Web Bluetooth remain

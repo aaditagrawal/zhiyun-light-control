@@ -40,8 +40,8 @@ on Linux.
 
 Linux already loaded `cdc_acm` for USB `fff8:0180`. `lighttime usb-info` returns
 the real model/serial and device ID at 115200 baud. Brightness/CCT reads over
-USB received no reply. USB lighting control is deliberately not exposed as a
-verified bridge transport.
+USB received no reply. Later isolated writes established the verified USB/BLE
+hybrid described below; USB-only readback remains unsupported.
 
 ### Shared bridge
 
@@ -199,10 +199,52 @@ are pinned to the official release commits for
 checked on 2026-10-23. Adding the workflow is separate from observing a hosted
 CI run; local validation does not establish GitHub-hosted results.
 
+## Expanded effects and USB write investigation
+
+The final Python implementation passed **414 tests and 34 subtests**,
+including 119 pure-program cases and 30 shared-vector cases with 691 expected
+targets, plus thirteen POSIX pseudo-terminal and fake-BLE hybrid lifecycle cases.
+The browser passed **64 real-browser regressions** with fake fetch/GATT,
+including all fourteen forms, eleven presets, malformed keyframes, fast blink
+validation, no-auth recovery and hybrid-state parsing. A preset-default CCT
+defect found in the first expanded run was fixed before that passing run.
+The SDK passed **123 tests / 3,151 assertions**, including all shared program
+samples, twenty direct-runner tests and twenty-three native-drain regressions.
+Typecheck, ESM/declaration build and public import smoke passed. Android passed
+**24 tests / 204 assertions**, typecheck and a Hermes bundle export. These are
+offline software checks; no Android phone appeared in ADB.
+The final review's three supported lifecycle findings were corrected:
+ordinary native runner handoffs preserve an admitted transaction, Android
+releases its busy UI after background cancellation, and Web Bluetooth cleanup
+finishes after an already disconnected link. Real controller/transport and
+actual hook-body regressions cover those paths.
+
+All fourteen programs subsequently ran through the public bridge API on the
+actual G60, with 141 state events and camera video retained locally. Explicit
+stop and manual override passed, and 7% / 6100 K was restored. After recovering
+a slow BLE session by closing its owned connection and reconnecting, the
+verified 0.2-second blink cycle produced median 104.9 ms between confirmed
+alternating brightness changes. Camera processing and optical contrast remain
+separate limits. See [the experiment report](experiments.md).
+
+The USB investigation isolated individual frames: `00 01` absolute brightness
+and CCT writes changed output; `01 03` echoes did not. Sixty repeated write
+cases all matched fresh Bluetooth readback. USB identity matched the BLE
+serial/model, and baseline restoration passed. Pure USB functional reads still
+received no reply. [USB research](research/usb-deep.md) records routing evidence.
+
+The integrated hybrid then ran all fourteen programs with **427 state events**
+and camera video. Explicit stop, manual override and 7% / 6100 K restoration
+passed. Matched HTTPS measurements with SSE open gave median verified PATCH
+latencies of **55.1 ms brightness**, **54.7 ms CCT** and **55.8 ms combined**,
+versus 84.3, 85.3 and 114.1 ms on the preceding BLE-only run. Each mode used
+twenty measured pairs. These laptop API round trips include fresh BLE
+readback, not remote-phone latency or optical response; see [latency.md](latency.md).
+
 ## Scope of verified compatibility
 
 Linux BLE control and camera-visible output have been tested on this G60.
-USB runtime lighting control, factory-reset provisioning behavior, vendor sleep
+Pure USB readback, factory-reset provisioning behavior, vendor sleep
 commands, Windows/macOS hardware, direct browser Bluetooth, an installed OBS
 session, and a physical Android device remain separate validation targets.
 The available SDK/app source and compile/test checks must not be mistaken for

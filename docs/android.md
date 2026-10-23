@@ -21,12 +21,12 @@ Linux build host on 2026-10-23. The local validation artifact is:
 The APK and build logs are ignored local artifacts, not committed downloads.
 Build from source using the instructions below and the build record.
 
-It is 22,695,025 bytes, package `dev.lighttime.android`, version `0.1.0` (1),
+It is 22,779,861 bytes, package `dev.lighttime.android`, version `0.1.0` (1),
 minimum Android API 24, target API 36. **JavaScript/Hermes and assets are
 embedded; Metro and a development server are not required.**
 
 ```text
-SHA-256: d81e6e443ad6458ad3c7650e4aaa0bfdd37e955b0ae3ff3ad40340fd81b9b62e
+SHA-256: b981eb0633ae7770e9f972a8314086f6d40b543a9e2d26609d2e74f6233ef3a0
 ```
 
 The APK uses the generated public **debug/test keystore**, alias
@@ -138,6 +138,12 @@ TMPDIR="$PWD/.cache/tmp" bun run export:android
    hardware values and the time they were read. No write is labeled confirmed
    until readback matches. An error leaves controls disabled; **Read light**
    refreshes the actual state and allows recovery. There is no background poll.
+7. Open **Patterns** to choose one of eleven shared scene presets or the five
+   original effects. Selection and tuning change requested settings only;
+   **Start pattern** begins output. The panel supports brightness, CCT,
+   duration, cyclic period, seed, heartbeat BPM and Morse text. **Stop &
+   restore** returns to both brightness and CCT captured at Start. See
+   [Android light patterns](android-patterns.md) for controls and lifecycle.
 
 **Turn off** sets brightness to zero. **Turn on** restores the last nonzero
 brightness observed during this controller session; connecting to an already
@@ -146,10 +152,14 @@ power. Disconnecting leaves the current physical settings unchanged.
 
 Scanning stops on connection, cancellation, timeout, backgrounding and unmount.
 Backgrounding the app closes the active connection; reconnect explicitly when
-returning. Disconnect and cancellation abort pending operations, remove native
-notification/disconnect subscriptions, and invalidate stale readback. The BLE
-manager is destroyed when the screen unmounts. Rapid UI events cannot queue
-concurrent slider/power operations.
+returning. Effects run on this phone while the app is open. Manual slider and
+power writes cancel the runner without restoration before applying their own
+request. Background, disconnect and unmount invalidate it synchronously and
+drain owned writes before controller teardown. Failed cleanup retains its
+owner for retry and blocks a replacement connection. Native subscriptions and
+stale readback are invalidated; the BLE manager is destroyed after successful
+cleanup when the screen unmounts. Rapid UI events cannot queue concurrent
+slider/power operations.
 
 ## SDK and native transport integration
 
@@ -168,6 +178,11 @@ concurrent slider/power operations.
 - The app adds a UI operation gate and a connection generation guard, so a late
   asynchronous result cannot report a disconnected session as successful.
   Each reconnect creates a fresh adapter, transport and controller.
+- `DirectEffectRunner` adds local, verified effects to that controller.
+  `EffectOwnership` and `EffectRetirement` keep cleanup ordered and retain
+  failed drains for retry. Runner callbacks also check connection generation
+  and runner identity. Requested forms use shared SDK preset/parser defaults;
+  hardware values continue to come only from controller readback.
 - Keep native BLE integration in this app and protocol behavior in the SDK.
   If files are added to the local SDK while developing, rerun `bun install` to
   refresh Bun's local file-dependency links. Tests require the SDK source to be
@@ -181,7 +196,8 @@ bridge fallback is included; the primary path is fully direct BLE.
 
 ## Validation and remaining prerequisites
 
-Offline verification on 2026-10-23 includes 13 passing Bun tests, TypeScript checking, Expo dependency
+Offline verification on 2026-10-23 includes 21 passing Bun tests. Before the
+effect integration, the app also passed TypeScript checking, Expo dependency
 alignment, Android config/prebuild, and an Android Hermes bundle export. Bun
 tests exercise Android-version permission selection; PL103 discovery without
 service advertisements; actual captured TX/RX frames through the SDK and fake
@@ -192,6 +208,16 @@ notification failure; cleanup during a late connect; and concurrent UI-event
 suppression. Fixtures in `test/fixtures/g60-reads.json` copy the real captures
 from the shared contract. All these tests run without Bluetooth or camera
 access.
+
+The eight added pattern tests cover all sixteen requested forms, shared CCT
+defaults, frozen keyframe preset copying, 0.2-second blink validation, invalid
+configuration, synchronous runner cancellation, drain-before-disconnect and
+retained-owner recovery after failed cleanup. The effect integration's final
+TypeScript/bundle checks depend on the SDK runner export. The SDK must also
+drain underlying native work that can outlive a cancelled operation's public
+promise; the controlled app-side tests do not validate that lower-layer drain.
+This source work does not update the previously recorded APK or add
+physical-phone evidence.
 
 **The arm64 release APK was compiled and inspected; no physical Android/G60
 session was validated.** The build used a scoped, verified JDK 17 and Android
