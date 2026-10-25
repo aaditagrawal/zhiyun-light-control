@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { useLight } from '../useLight';
 import type { DiscoveredLight } from '../ble/constants';
@@ -45,12 +46,17 @@ function ProductHalo({ scanning = false }: { scanning?: boolean }) {
   </View>;
 }
 
-export function SetupFlow({ route, light, actionError, onNavigate, onBack, onSearch, onCancel, onConnect, onAppSettings, onBluetoothSettings, onExploreModel }: {
+export function SetupFlow({ route, light, actionError, onNavigate, onBack, onSearch, onCancel, onConnect, onAppSettings, onBluetoothSettings, onExploreModel, modelActive = true }: {
   route: SetupRoute; light: Light; actionError: string | null;
   onNavigate: (route: SetupRoute) => void; onBack: () => void; onSearch: () => void; onCancel: () => void;
   onConnect: (device: DiscoveredLight) => void; onAppSettings: () => void; onBluetoothSettings: () => void;
   onExploreModel?: () => void;
+  modelActive?: boolean;
 }) {
+  const [modelTouching, setModelTouching] = useState(false);
+  const [modelOnscreen, setModelOnscreen] = useState(true);
+  const heroBounds = useRef({ y: 56, height: 350 });
+  useEffect(() => { if (!modelActive) setModelTouching(false); }, [modelActive]);
   const welcome = route === 'welcome', discovery = route === 'discovery', connecting = light.connecting;
   const off = light.status === 'Bluetooth is off';
   const denied = !light.working && light.status === 'Bluetooth permission needed';
@@ -76,7 +82,13 @@ export function SetupFlow({ route, light, actionError, onNavigate, onBack, onSea
   const title = welcome ? 'lighttime' : route === 'help' ? 'Connection help' : route === 'ready' ? 'Connected' : discovery ? 'Discover' : 'Set up your G60';
 
   return <View style={s.shell}>
-    <ScrollView removeClippedSubviews={false} contentContainerStyle={[s.page, welcome && s.welcomePage, route === 'ready' && s.readyPage]} keyboardShouldPersistTaps="handled">
+    <ScrollView removeClippedSubviews={false} scrollEnabled={!modelTouching} scrollEventThrottle={64}
+      onScroll={event => {
+        const { contentOffset, layoutMeasurement } = event.nativeEvent;
+        setModelOnscreen(contentOffset.y < heroBounds.current.y + heroBounds.current.height
+          && contentOffset.y + layoutMeasurement.height > heroBounds.current.y);
+      }}
+      contentContainerStyle={[s.page, welcome && s.welcomePage, route === 'ready' && s.readyPage]} keyboardShouldPersistTaps="handled">
       <View style={[s.topbar, welcome && s.welcomeTopbar]}>
         {welcome ? <View accessible={false} style={s.brandOrb}><View style={s.brandCore} /></View>
           : <GlassCircle size={48} label={connecting ? 'Cancel connection and go back' : 'Go back'} onPress={onBack}>
@@ -93,9 +105,10 @@ export function SetupFlow({ route, light, actionError, onNavigate, onBack, onSea
       </View>}
 
       {welcome && <>
-        <View style={s.welcomeHero}>
+        <View style={s.welcomeHero} onLayout={event => { heroBounds.current = event.nativeEvent.layout; }}>
           <View pointerEvents="none" style={s.heroGlow} />
-          <View style={s.welcomeProduct}><G60Artwork onExplore={onExploreModel} /></View>
+          <View style={s.welcomeProduct}><G60Artwork interactive active={modelActive && modelOnscreen}
+            onInteractionChange={setModelTouching} onExplore={onExploreModel} /></View>
           <Text style={s.productName}>MOLUS G60</Text>
         </View>
         <View style={[s.welcomeSheet, jelly('ruby', 0.7)]}>
@@ -220,7 +233,7 @@ const s = StyleSheet.create({
   caption: { color: '#F2D2D1', fontFamily: face.regular, fontSize: 13, lineHeight: 21, textAlign: 'center' },
   welcomeHero: { height: 350, flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
   heroGlow: { position: 'absolute', width: '130%', height: '110%', top: -12, backgroundImage: 'radial-gradient(ellipse closest-side at 50% 54%, rgba(255,59,39,0.9) 0%, rgba(255,59,39,0.78) 20%, rgba(255,59,39,0.51) 40%, rgba(255,59,39,0.23) 60%, rgba(255,59,39,0.05) 80%, rgba(255,59,39,0) 100%)' },
-  welcomeProduct: { width: '143%', maxWidth: 750, marginTop: -12 },
+  welcomeProduct: { width: '100%', maxWidth: 600, marginTop: -12 },
   productName: { position: 'absolute', bottom: 16, color: '#FFFFFF', fontFamily: face.medium, fontSize: 15 },
   welcomeSheet: { borderTopLeftRadius: 42, borderTopRightRadius: 42, paddingHorizontal: 24, paddingTop: 26, paddingBottom: 16, gap: 18, overflow: 'hidden' },
   welcomeHeading: { color: '#FFFFFF', fontFamily: face.display, fontSize: 33, lineHeight: 42, textAlign: 'center', marginBottom: 5 },

@@ -1,6 +1,40 @@
 # Android preview APK build
 
-## Interactive model preview — 2026-10-25
+## Inline model preview — 2026-10-25
+
+`0.3.0-preview.3` / Android version code **6** makes the model interactive in
+place on Welcome, Light and Device. It loads automatically and turns slowly;
+drag and pinch directly, pause, or optionally expand for preset views.
+The inline canvas is transparent over native scarlet lighting. A still covers
+loading and failures. Reduced motion starts it still. Page scrolling yields
+only while model touches are held; offscreen, background and covered views pause.
+
+- Package `dev.lighttime.android`; ARM64 and x86-64; **42,624,382 bytes**.
+- SHA-256: `bf41dc6b17de5a7c444a76ef694bdf0d91d3a78939ff750c1ffff46319372be5`.
+- Existing test signer preserved; signature, CRC and 16 KB ZIP/ELF checks pass.
+- Four source-matching fonts, two OFL licenses and Three.js MIT are packaged.
+- The native HTML matches the generated source and embeds the original GLB.
+  The large page remains absent from Hermes.
+- TypeScript, **71 tests / 1639 assertions** and Hermes export pass.
+
+Exact-hash native checks cover a launch with no taps before model readiness,
+automatic motion, Pause, direct one-finger rotation, page scrolling and setup
+after dragging, optional fullscreen and Android Back, and HOME/resume. The
+installed `base.apk` hash matches the validated artifact. See the ignored
+`artifacts/inline-g60-20261025/` record for captures, limits and final settings
+restoration. Connected-screen checks use the fixture, not physical BLE.
+
+The initial build was killed by the host's memory manager. The retry reused
+the generated project and cached compilation, with our idle emulator stopped.
+Both source gates cover 215 checkout paths; release documentation was updated
+after compilation. The original key and native asset were checked before
+the build. No unrelated emulator or host memory setting was changed.
+
+Physical phone/G60, real phone GPU performance, native pinch and TalkBack are
+unverified. Existing Expo CLI build-tool advisories are unchanged. Expanding
+temporarily retains a paused inline renderer alongside the fullscreen one.
+
+## Previous fullscreen model preview — 2026-10-25
 
 `0.3.0-preview.2` / Android version code **5** adds the offline G60 showcase to
 Welcome, Light and Device. The actual embedded GLB supports turn, tilt, pinch

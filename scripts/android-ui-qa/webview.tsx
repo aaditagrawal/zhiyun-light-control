@@ -8,7 +8,7 @@ export const WebView = forwardRef(function WebView({ source, onMessage, style, c
   if (new URLSearchParams(location.search).get('viewerFail') === 'module') throw new Error('Fixture WebView module unavailable');
   const frame = useRef<HTMLIFrameElement>(null);
   const html = useMemo(() => (source.html ?? SHOWCASE_HTML).replace(/<head[^>]*>/i,
-    `$&<script>window.__LIGHTTIME_REDUCED_MOTION__=${source.uri?.endsWith('#reduce-motion') === true};window.ReactNativeWebView={postMessage:function(data){parent.postMessage({type:"lighttime-showcase-event",data:data},"*")}};<\/script>`), [source]);
+    `$&<script>window.__LIGHTTIME_REDUCED_MOTION__=${source.uri?.includes('reduce-motion') === true};window.__LIGHTTIME_INLINE__=${source.uri?.includes('#inline') === true};window.ReactNativeWebView={postMessage:function(data){parent.postMessage({type:"lighttime-showcase-event",data:data},"*")}};<\/script>`), [source]);
   useImperativeHandle(ref, () => ({
     injectJavaScript(script: string) {
       const match = script.match(/command\(("(?:\\.|[^"\\])*")\)/);

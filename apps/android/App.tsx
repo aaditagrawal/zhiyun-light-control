@@ -63,6 +63,9 @@ function LightScreen() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [showcaseOpen, setShowcaseOpen] = useState(false);
+  const [modelTouching, setModelTouching] = useState(false);
+  const [modelOnscreen, setModelOnscreen] = useState(true);
+  const lightHeroEnd = useRef(248);
   const [headerHeight, setHeaderHeight] = useState(64);
   const [navHeight, setNavHeight] = useState(68);
   const { width, fontScale } = useWindowDimensions();
@@ -121,7 +124,11 @@ function LightScreen() {
     return () => handler.remove();
   });
 
-  useEffect(() => { mainScroll.current?.scrollTo({ y: 0, animated: false }); setHelpOpen(false); }, [destination]);
+  useEffect(() => {
+    mainScroll.current?.scrollTo({ y: 0, animated: false }); setHelpOpen(false);
+    setModelTouching(false); setModelOnscreen(true);
+  }, [destination]);
+  useEffect(() => { setModelTouching(false); }, [route, showcaseOpen]);
   useEffect(() => { if (route === 'main') setMainOpened(true); }, [route]);
 
   const search = () => {
@@ -150,7 +157,7 @@ function LightScreen() {
       onCancel={() => perform(light.connecting ? light.disconnect : light.stopScan)}
       onConnect={device => perform(() => light.connect(device))}
       onAppSettings={openAppSettings} onBluetoothSettings={openBluetoothSettings}
-      onExploreModel={() => setShowcaseOpen(true)} />}
+      modelActive={!showcaseOpen} onExploreModel={() => setShowcaseOpen(true)} />}
 
     {/* Open the instruments on first use, then retain them across navigation. */}
     {(route === 'main' || mainOpened) && <View style={[s.main, route !== 'main' && s.hidden]} accessibilityElementsHidden={route !== 'main'}
@@ -186,6 +193,8 @@ function LightScreen() {
       </View>}
       </View>
       <ScrollView ref={mainScroll} style={s.scroller} removeClippedSubviews={false}
+        scrollEnabled={!modelTouching} scrollEventThrottle={64}
+        onScroll={event => setModelOnscreen(event.nativeEvent.contentOffset.y < (destination === 'light' ? lightHeroEnd.current : 256))}
         contentContainerStyle={[s.page, { paddingTop: headerHeight + 24, paddingBottom: navHeight + 60 }]}
         keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
         <View style={[s.destination, destination !== 'light' && s.hidden]} accessibilityElementsHidden={destination !== 'light'}
@@ -198,10 +207,12 @@ function LightScreen() {
             <Text accessibilityLiveRegion="polite" style={s.error}>{issue}</Text>
             {connected && !light.verified && <Button label="Read light again" secondary disabled={light.working} onPress={() => perform(light.refresh)} />}
           </View>}
-          <View style={s.stage}>
+          <View style={s.stage} onLayout={event => { lightHeroEnd.current = event.nativeEvent.layout.y + 248; }}>
             <View accessible={false} pointerEvents="none" style={s.deckBack} />
             <View accessible={false} pointerEvents="none" style={s.deckMid} />
-            <View style={s.product}><G60Artwork control onExplore={() => setShowcaseOpen(true)} /></View>
+            <View style={s.product}><G60Artwork control interactive={route === 'main' && destination === 'light'}
+              active={!showcaseOpen && modelOnscreen} onInteractionChange={setModelTouching}
+              onExplore={() => setShowcaseOpen(true)} /></View>
             <View style={[s.panel, jelly('ruby')]}>
               <View style={s.panelCorners}>
                 <View accessible accessibilityLabel={`${actualLabel}${readTime ? ` at ${readTime}` : ''}`} style={s.chipWrap}>
@@ -242,7 +253,9 @@ function LightScreen() {
         <View style={[s.destination, destination !== 'device' && s.hidden]} accessibilityElementsHidden={destination !== 'device'}
           importantForAccessibility={destination === 'device' ? 'auto' : 'no-hide-descendants'}>
           <View style={s.profile}>
-            <View style={[s.profileHalo, jelly('ruby', 0.8)]}><View style={s.profileProduct}><G60Artwork onExplore={() => setShowcaseOpen(true)} /></View></View>
+            <View style={[s.profileHalo, jelly('ruby', 0.8)]}><View style={s.profileProduct}><G60Artwork
+              interactive={route === 'main' && destination === 'device'} active={!showcaseOpen && modelOnscreen}
+              onInteractionChange={setModelTouching} onExplore={() => setShowcaseOpen(true)} /></View></View>
             <Text style={s.deviceTitle}>{deviceLabel(light.selected?.name)}</Text>
             <View style={s.centerChip}><GlassChip label={connected ? 'Connected' : 'Offline'} dot={connected ? '#FF4A4A' : color.muted} /></View>
           </View>
@@ -335,7 +348,7 @@ const s = StyleSheet.create({
   deckMid: { position: 'absolute', top: 16, left: 22, right: 22, height: 160, borderRadius: 36,
     backgroundColor: '#852222', backgroundImage: 'radial-gradient(ellipse 70% 90% at 50% 0%, rgba(255, 120, 110, 0.55) 0%, rgba(255, 120, 110, 0) 100%)',
     boxShadow: 'inset 0 1.5px 0 rgba(255, 220, 220, 0.6), 0 12px 28px rgba(0, 0, 0, 0.45)' },
-  product: { height: 152, marginTop: 12, marginBottom: -12, zIndex: 1, overflow: 'visible' },
+  product: { height: 212, marginTop: 12, marginBottom: 12, zIndex: 1, overflow: 'visible' },
   panel: { borderRadius: 36, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 24 },
   panelCorners: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   chipWrap: { paddingTop: 8 },

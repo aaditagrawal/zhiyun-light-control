@@ -129,20 +129,24 @@ read action, selectable identity details, and an obsidian Disconnect.
 
 ### 3D showcase
 
-The G60 artwork on Welcome, Light and Device opens a fullscreen, offline model
-viewer. A visible glass **3D** badge marks the interaction. It works before
-pairing. Drag to turn and tilt, pinch to zoom, or use Front, Back and Reset;
-a separate spin control pauses or starts the turntable. The default view fits
-the whole object, and deliberate zoom permits closer inspection.
+The G60 on Welcome, Light and Device is an inline, offline model. It starts a
+slow turntable automatically; drag to turn and tilt or pinch to zoom directly,
+before pairing. A glass pause control stops the spin and an expand control
+opens the optional fullscreen viewer with Front, Back and Reset. Reduced motion
+starts the model still. The default view fits the whole object, and deliberate
+zoom permits closer inspection. Keep the inline canvas transparent over the
+native scarlet light. Model touches temporarily hold page scrolling; releasing
+or cancelling a gesture restores it.
 
 Use the same scarlet studio light, soft canvas fades and crisp native controls.
 The LCD is blank in this viewer; it never displays sample settings that could
 pass for device readback. The model is an illustration, not live output.
 
-Load the renderer only when opened, directly from the bundled APK asset. Keep
+Load the inline renderer when its destination opens, directly from the bundled APK asset. Keep
 the large page out of React Native view properties. Batch static geometry, cap pixel density,
-draw only during motion and release the WebView when closed. Backgrounding
-pauses rendering. Respect Android reduced motion on opening. Keep the loading
+draw only during motion and release the WebView when its destination closes.
+Pause it offscreen, behind fullscreen, and while backgrounded. Respect Android
+reduced motion on opening. Keep the loading
 WebView visible beneath the still artwork: setting its opacity to zero can
 prevent Android from initializing the renderer. At large text sizes, stack
 the view buttons inside a scrollable footer. Real loading progress renews a

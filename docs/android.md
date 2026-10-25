@@ -13,7 +13,7 @@ requires its config plugin and a native build; Expo explains the
 
 ## Install the private Android preview
 
-The current test build is **0.3.0-preview.2 (5)**, package
+The current test build is **0.3.0-preview.3 (6)**, package
 `dev.lighttime.android`. On your private Unobtainium server, open the
 **Lighttime** app page (`/apps/lighttime`) and choose **Download APK** or
 **Add to Obtainium**. Its stable update feed is `/feed/lighttime`; subsequent
@@ -40,25 +40,26 @@ continue down the scrolling page. Drafts remain separate from verified actual
 readings. Sixteen scenes have SDK-sampled previews and editable tuning,
 including native keyframe sequences.
 
-Tap **3D** on Welcome, Light or Device to explore the actual G60 model before
-or after pairing. Drag to rotate and tilt, pinch to zoom, or use Front, Back,
-Reset and the spin toggle. Everything is bundled offline. The rear LCD stays
-blank, and model gestures never change light output.
+The G60 turns slowly in place on Welcome, Light and Device as soon as its
+model loads. Drag to rotate and tilt or pinch to zoom directly, before or after
+pairing. Pause the turntable or expand it for Front, Back and Reset. Everything
+is bundled offline. Reduced motion starts it still; offscreen and background
+views pause. The rear LCD stays blank, and model gestures never change output.
 
-The test-signed, R8-minified APK is 42,612,982 bytes. All 36 native libraries
+The test-signed, R8-minified APK is 42,624,382 bytes. All 36 native libraries
 and the APK ZIP layout passed 16 KB alignment checks. The original test
 certificate is preserved across updates; it is not production signing.
 
 ```text
-SHA-256: 22eb48229c0cafa1a5104ff173608cc3d1f6cd8a4f3a2abde91681a59860fe90
+SHA-256: bf41dc6b17de5a7c444a76ef694bdf0d91d3a78939ff750c1ffff46319372be5
 ```
 
 The ignored validation copy is
-`artifacts/showcase-20261025/lighttime-0.3.0-preview.2-showcase-final6.apk`.
+`artifacts/inline-g60-20261025/lighttime-0.3.0-preview.3-inline.apk`.
 Install that copy on an authorized connected phone with:
 
 ```sh
-adb install -r artifacts/showcase-20261025/lighttime-0.3.0-preview.2-showcase-final6.apk
+adb install -r artifacts/inline-g60-20261025/lighttime-0.3.0-preview.3-inline.apk
 ```
 
 **Physical phone-to-G60 operation remains unverified.** Compilation, package
@@ -223,12 +224,13 @@ bridge fallback is included; the primary path is fully direct BLE.
 ## Visual development
 
 The original [G60 model and render assets](../apps/android/assets/g60/README.md)
-include a reusable GLB and reproducible build tooling. Android uses static PNGs;
-the **3D** badge on Welcome, Light and Device opens the actual model in an
-offline showcase. Drag to rotate, pinch to zoom, use Front/Back/Reset or toggle
-the gentle spin. It works without connecting a light. The renderer pauses in
-the background and closes with Android Back. A running scene's Stop action
-stays available, including any restore failure. The model never controls output
+include a reusable GLB and reproducible build tooling. Welcome, Light and
+Device load the actual model automatically in a transparent offline view.
+Drag and pinch it directly, pause its slow turntable, or expand it for
+Front/Back/Reset. It works without connecting a light. Still PNGs cover loading
+and failures. The renderer pauses offscreen, behind fullscreen and in the
+background; leaving its destination releases it. Android Back closes fullscreen.
+A running scene's Stop action stays available, including any restore failure. The model never controls output
 or presents physical readings. Three.js is installed in the model tools; its
 compiled viewer and GLB are embedded in a local APK HTML asset. Regenerating
 that asset requires `bun run prebuild` before the next native Gradle build.

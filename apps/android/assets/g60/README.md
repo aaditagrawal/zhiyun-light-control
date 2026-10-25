@@ -24,12 +24,15 @@ compositing. Its opacity and scale can be tuned without changing the model.
 The image is a decorative preview; the warm COB appearance and example rear
 display do not represent live output or device readback.
 
-The normal native screens use the still PNGs. Tapping their **3D** badge opens
-an offline WebView with the actual embedded GLB and a bundled Three.js renderer.
+Welcome, Light and Device automatically load a transparent offline WebView
+with the actual GLB and bundled Three.js renderer. The model turns slowly and
+accepts drag and pinch directly. Pause and fullscreen expansion are optional;
+the still PNGs cover loading and failures and remain on the other setup screens.
 The native view opens the bundled `lighttime-showcase.html` asset directly; the
 large document is not sent through React Native view properties.
-The renderer loads only on opening and is released on closing. Three.js remains
-in the model-tool package rather than the app's JavaScript dependencies; its
+The renderer loads when its destination opens, pauses offscreen, behind
+fullscreen or in the background, and is released when the destination closes.
+Three.js remains in the model-tool package rather than the app's JavaScript dependencies; its
 viewer code and complete MIT license are included in the APK.
 
 ## Model and art direction

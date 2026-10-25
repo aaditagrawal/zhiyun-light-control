@@ -17,11 +17,16 @@ type Outgoing = { type: 'ready' } | { type: 'error'; message: string } | { type:
 
 const ACTIONS: readonly Action[] = ['front', 'back', 'reset', 'spin', 'pause', 'resume', 'dispose'];
 const HERO = { yaw: 0, elevation: RUBY.camera.el, zoom: 1 };
-const LIMITS = { elevation: [-50, 80], zoom: [.55, 1.7] } as const;
-const SPIN_DEG_PER_S = 14;
+// `#inline` (or an injected `window.__LIGHTTIME_INLINE__ = true`) renders the same
+// rig on a transparent page inside the app's own artwork, with a tighter fit and
+// a narrower zoom range because that view has no Reset control.
+const INLINE = location.hash === '#inline' || location.hash === '#inline-reduce-motion'
+  || (window as any).__LIGHTTIME_INLINE__ === true;
+const LIMITS = { elevation: [-50, 80], zoom: INLINE ? [.8, 1.5] : [.55, 1.7] } as const;
+const SPIN_DEG_PER_S = 8;
 const RESUME_AFTER_MS = 2600;
 const MAX_DPR = 1.5;
-const PADDING = 1.1;
+const PADDING = INLINE ? 1.03 : 1.1;
 // A confirmed software WebGL rasteriser (SwiftShader, llvmpipe, emulators)
 // keeps the same model, materials, lights, environment and contact shadow but
 // renders at 1x without MSAA or realtime shadow-map passes, at a capped rate.
@@ -39,7 +44,7 @@ const view = { yaw: HERO.yaw, elevation: HERO.elevation, zoom: HERO.zoom };
 const target = { ...view };
 const motion = { yaw: 0, elevation: 0 };
 // Native may inject `window.__LIGHTTIME_REDUCED_MOTION__ = true` before load.
-const prefersReduced = () => location.hash === '#reduce-motion'
+const prefersReduced = () => location.hash === '#reduce-motion' || location.hash === '#inline-reduce-motion'
   || (window as any).__LIGHTTIME_REDUCED_MOTION__ === true || !!reducedQuery?.matches;
 let reducedMotion = prefersReduced();
 let spinPreference = !reducedMotion;
@@ -247,7 +252,7 @@ function command(action: unknown): boolean {
 function getState() {
   const info = renderer?.info;
   return {
-    ready, failed, disposed, contextLost,
+    ready, failed, disposed, contextLost, inline: INLINE,
     paused: lifecyclePaused, hidden, reducedMotion,
     spinning: spinPreference, meshes: meshCount, spinActive: ready && running() && spinActive(), animating: frame !== 0, dragging,
     yaw: +view.yaw.toFixed(3), elevation: +view.elevation.toFixed(3), zoom: +view.zoom.toFixed(4),
