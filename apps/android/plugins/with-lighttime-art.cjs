@@ -35,6 +35,9 @@ module.exports = function withLighttimeArt(config) {
     await mkdir(licenses, { recursive: true });
     await Promise.all(['Poppins-OFL.txt', 'PlayfairDisplay-OFL.txt'].map(file =>
       copyFile(path.join(mod.modRequest.projectRoot, 'assets/fonts', file), path.join(licenses, file))));
+    await copyFile(path.join(mod.modRequest.projectRoot, 'assets/g60/Three-MIT.txt'), path.join(licenses, 'Three-MIT.txt'));
+    await copyFile(path.join(mod.modRequest.projectRoot, 'assets/g60/showcase.html'),
+      path.join(path.dirname(licenses), 'lighttime-showcase.html'));
     return mod;
   }]);
 };

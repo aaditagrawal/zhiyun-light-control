@@ -1,6 +1,69 @@
 # Android preview APK build
 
-## Current preview — 2026-10-25
+## Interactive model preview — 2026-10-25
+
+`0.3.0-preview.2` / Android version code **5** adds the offline G60 showcase to
+Welcome, Light and Device. The actual embedded GLB supports turn, tilt, pinch
+zoom, Front/Back/Reset and a slow spin toggle. It never reads or writes the
+physical light; the illustrative rear LCD is blank in the viewer.
+
+- Package `dev.lighttime.android`; ARM64 and x86-64; **42,612,982 bytes**.
+- SHA-256: `22eb48229c0cafa1a5104ff173608cc3d1f6cd8a4f3a2abde91681a59860fe90`.
+- Existing test certificate remains `fac61745dc0903786fb9ede62a962b399f7348f0bb6f899b8332667591033b9c`.
+- Signature, ZIP CRC, 16 KB ZIP layout and all 36 native ELF alignments pass.
+- The four unchanged fonts, two complete OFL licenses and complete Three.js
+  MIT license are packaged. The embedded GLB matches its source hash.
+- The viewer batches 248 model parts into 15 meshes, caps pixel density at 1.5,
+  pauses in the background and releases its WebView on closing. These are
+  implementation limits, not measured phone performance claims.
+
+The final native build verified **215 checkout paths** before
+and after compilation, from 12:04:18 to 12:12:57 UTC. It reused the isolated
+Android toolchain, pinned Bun 1.4.3 and the original signing key. Release records
+in these guides were added after the build. The ignored artifact and build
+records are under `artifacts/showcase-20261025/`, with the immutable APK named
+`lighttime-0.3.0-preview.2-showcase-final6.apk`.
+
+TypeScript, **68 tests / 1617 assertions** and Hermes export pass. The component
+fixture exercises the real viewer in a sandboxed iframe: rotation, zoom,
+Front/Back, idle rendering, pause/resume, reduced motion and disposal. Its scene
+Stop checks use mock state. A local error boundary contains viewer module
+failures without unmounting the Bluetooth owner. Page messages only update the
+demo; they cannot trigger hardware writes.
+
+The exact APK was gated by package, version, signer and SHA-256 before install;
+the installed `base.apk` hash matched. Native Android API 35 checks passed:
+offline Welcome entry, model readiness at 1× and 2× text, Pause, Front/Back,
+blank rear LCD, one-finger rotation, Reset, HOME/resume and hardware Back to
+Welcome. At 2× text the footer scroll exposed the complete Reset target at
+`[40,1066][680,1192]`, above the gesture inset, and Reset restarted spin. There
+was no new Lighttime ANR in either pass. The original 720×1280 / density 320 /
+font 1.0 settings were restored and the owned emulator exited cleanly.
+
+The Android ANR trace from an earlier candidate pointed to `loadDataWithBaseURL`
+on the UI thread. This build instead opens an immutable bundled HTML asset;
+its large model is absent from the Hermes bundle. File access and universal
+file-URL access stay disabled. The viewer uses the default native compositor.
+Confirmed software GPUs use DPR 1, no multisampling or realtime shadow passes,
+and a 30 fps ceiling; the ruby environment, geometry and contact shadow remain.
+Real GPUs retain the original DPR 1.5, antialiasing and shadow quality. The native
+log confirmed SwiftShader selected the software path without an override.
+
+The software emulator observed ready after 21.1 seconds at 2× text and 17.3
+seconds at 1×, including polling/command overhead. These are not phone timings
+or a speed-improvement claim. Progress renews a 20-second stall window within
+a 60-second active-time cap; background time is excluded. The original fixed
+timeout and the earlier ANR candidate were not published. The first fresh native
+build hit its 4 GiB memory limit; the successful retry used one worker and a
+6 GiB limit, reusing the generated native project and original signing key.
+
+Physical phone/G60, phone GPU performance, native pinch and TalkBack remain
+unverified. The previous redesign's permission evidence remains separate below.
+The dependency graph retains the two existing high Expo CLI build-tool
+advisories described in that record. Native evidence is in
+`artifacts/showcase-20261025/asset-final-*`; earlier reports are dated baselines.
+
+## Previous published redesign — 2026-10-25
 
 `0.3.0-preview.1` / Android version code **4** is the standalone scarlet-and-glass
 redesign, published under the existing private `lighttime` feed. It includes

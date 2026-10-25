@@ -45,10 +45,11 @@ function ProductHalo({ scanning = false }: { scanning?: boolean }) {
   </View>;
 }
 
-export function SetupFlow({ route, light, actionError, onNavigate, onBack, onSearch, onCancel, onConnect, onAppSettings, onBluetoothSettings }: {
+export function SetupFlow({ route, light, actionError, onNavigate, onBack, onSearch, onCancel, onConnect, onAppSettings, onBluetoothSettings, onExploreModel }: {
   route: SetupRoute; light: Light; actionError: string | null;
   onNavigate: (route: SetupRoute) => void; onBack: () => void; onSearch: () => void; onCancel: () => void;
   onConnect: (device: DiscoveredLight) => void; onAppSettings: () => void; onBluetoothSettings: () => void;
+  onExploreModel?: () => void;
 }) {
   const welcome = route === 'welcome', discovery = route === 'discovery', connecting = light.connecting;
   const off = light.status === 'Bluetooth is off';
@@ -94,7 +95,7 @@ export function SetupFlow({ route, light, actionError, onNavigate, onBack, onSea
       {welcome && <>
         <View style={s.welcomeHero}>
           <View pointerEvents="none" style={s.heroGlow} />
-          <View style={s.welcomeProduct}><G60Artwork /></View>
+          <View style={s.welcomeProduct}><G60Artwork onExplore={onExploreModel} /></View>
           <Text style={s.productName}>MOLUS G60</Text>
         </View>
         <View style={[s.welcomeSheet, jelly('ruby', 0.7)]}>

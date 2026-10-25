@@ -14,6 +14,8 @@ CAD, a manufacturer model, or a photograph. No AI image generation was used.
 | `hero-ruby.png` | Transparent 960 × 720 ruby-preset render: pale key, scarlet/coral rim and edge light, reflective ring, soft contact shadow. |
 | `compact-ruby.png` | Transparent 480 × 360 version of the ruby render with the same framing. |
 | `g60.glb` | Reusable glTF 2.0 model with PBR materials and embedded procedural textures. |
+| `showcase.html` | Generated offline viewer, copied into Android APK assets during prebuild. |
+| `Three-MIT.txt` | Complete license for the renderer bundled in the offline showcase. |
 
 Use the PNGs with a native `Image` static `require`, for example
 `require('../assets/g60/hero.png')` from `src/`. Render the glow as a separate
@@ -22,9 +24,13 @@ compositing. Its opacity and scale can be tuned without changing the model.
 The image is a decorative preview; the warm COB appearance and example rear
 display do not represent live output or device readback.
 
-No Three.js or WebGL runtime dependency is added to the Android app. The GLB is
-provided for reuse and editing; the current native presentation needs only the
-PNG assets.
+The normal native screens use the still PNGs. Tapping their **3D** badge opens
+an offline WebView with the actual embedded GLB and a bundled Three.js renderer.
+The native view opens the bundled `lighttime-showcase.html` asset directly; the
+large document is not sent through React Native view properties.
+The renderer loads only on opening and is released on closing. Three.js remains
+in the model-tool package rather than the app's JavaScript dependencies; its
+viewer code and complete MIT license are included in the APK.
 
 ## Model and art direction
 
@@ -50,6 +56,7 @@ All editable source and the build-only dependency live in
 cd scripts/model-g60
 bun install --frozen-lockfile
 bun run build
+bun run build:showcase
 bun run studio
 ```
 
@@ -71,6 +78,15 @@ shadow, so they are framed differently from `hero.png`.
 `studio.ts` contains the camera, softboxes, warm key and ruby rim, PNG export,
 glow generation and GLB export. The generator has no random inputs. Raster font
 metrics and WebGL output can vary slightly between browser/OS versions.
+
+`showcase.ts` provides the interactive turntable, tilt, zoom, reduced-motion
+handling and lifecycle controls. `showcase-build.ts` embeds the GLB and minified
+renderer into `apps/android/src/showcase/document.ts`; rebuild it after model,
+lighting or viewer changes. Then run `bun run prebuild` in `apps/android` to
+refresh the native asset before compiling. The generated document needs no remote assets.
+The showcase blanks the exported study's illustrative rear LCD to keep sample
+numbers separate from actual output. The source GLB and stills retain their
+original provenance.
 
 The studio server binds `0.0.0.0:9036`; use it on a trusted private network while
 working and stop with Ctrl-C. `G60_STUDIO_HOST=127.0.0.1` keeps it on loopback

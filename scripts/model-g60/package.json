@@ -5,6 +5,7 @@
   "packageManager": "bun@1.4.3",
   "scripts": {
     "build": "bun build.ts",
+    "build:showcase": "bun showcase-build.ts",
     "studio": "bun server.ts",
     "verify": "bun verify.ts"
   },

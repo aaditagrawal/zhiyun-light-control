@@ -15,6 +15,7 @@ const result = await Bun.build({
       if (path === '@react-native-community/slider') return { path: resolve(base, 'slider.tsx') };
       if (path === 'react-native-safe-area-context' || path === 'expo-status-bar') return { path: resolve(base, 'safe.tsx') };
       if (path === 'expo-font') return { path: resolve(base, 'font.tsx') };
+      if (path === 'react-native-webview') return { path: resolve(base, 'webview.tsx') };
       if (path === './src/useLight') return { path: resolve(base, 'hook.ts') };
       if (path === '@lighttime/sdk') return { path: resolve(repo, 'packages/sdk/src/index.ts') };
       return undefined;

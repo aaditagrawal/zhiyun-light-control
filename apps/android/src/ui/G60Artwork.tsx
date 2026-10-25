@@ -1,17 +1,19 @@
 import { memo } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { ImageSourcePropType } from 'react-native';
+import { font } from './theme';
 
 const hero = require('../../assets/g60/hero-ruby.png');
 const compactSource = require('../../assets/g60/compact-ruby.png');
 
 /** Illustrative product artwork under scarlet studio light. Live connection and output are shown separately. */
-export const G60Artwork = memo(function G60Artwork({ compact = false, control = false, source }: {
+export const G60Artwork = memo(function G60Artwork({ compact = false, control = false, source, onExplore }: {
   compact?: boolean;
   control?: boolean;
   source?: ImageSourcePropType;
+  onExplore?: () => void;
 }) {
-  return (
+  const artwork = (
     <View pointerEvents="none" accessible={false} importantForAccessibility="no-hide-descendants"
       style={[s.stage, compact && s.compact, control && s.control]}>
       <View style={s.glow} />
@@ -20,10 +22,25 @@ export const G60Artwork = memo(function G60Artwork({ compact = false, control = 
         style={[s.product, control && s.controlProduct]} fadeDuration={0} />
     </View>
   );
+  if (!onExplore) return artwork;
+  return <Pressable accessibilityRole="button" accessibilityLabel="Explore G60 in 3D"
+    accessibilityHint="Open the interactive model. Drag to rotate and pinch to zoom."
+    onPress={onExplore} style={[s.interactive, control && s.control]}>
+    {artwork}
+    <View pointerEvents="none" accessible={false} style={s.badge}>
+      <Text accessible={false} allowFontScaling={false} style={s.badgeLabel}>3D</Text>
+    </View>
+  </Pressable>;
 });
 
 const s = StyleSheet.create({
   stage: { width: '100%', aspectRatio: 1.42, alignItems: 'center', justifyContent: 'center' },
+  interactive: { width: '100%', position: 'relative' },
+  badge: { position: 'absolute', right: '18%', top: 8, width: 48, height: 48, borderRadius: 24,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: '#300909',
+    backgroundImage: 'linear-gradient(150deg, rgba(255,220,218,0.22) 0%, rgba(255,220,218,0) 65%)',
+    borderWidth: 1, borderColor: 'rgba(255,220,218,0.45)', boxShadow: '0 5px 18px rgba(25,0,0,0.2)' },
+  badgeLabel: { color: '#FFFFFF', fontFamily: font.medium, fontSize: 14, lineHeight: 20 },
   compact: { aspectRatio: 2.15 },
   control: { height: '100%', aspectRatio: undefined },
   controlProduct: { height: '128%' },

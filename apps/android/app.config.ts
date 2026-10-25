@@ -3,14 +3,14 @@ import type { ExpoConfig } from 'expo/config';
 const config: ExpoConfig = {
   name: 'Lighttime',
   slug: 'lighttime-android',
-  version: '0.3.0-preview.1',
+  version: '0.3.0-preview.2',
   scheme: 'lighttime',
   orientation: 'portrait',
   userInterfaceStyle: 'dark',
   platforms: ['android'],
   android: {
     package: 'dev.lighttime.android',
-    versionCode: 4,
+    versionCode: 5,
     // Native BLE is the only transport. No location data, media, or camera access.
     blockedPermissions: [
       'android.permission.RECORD_AUDIO',

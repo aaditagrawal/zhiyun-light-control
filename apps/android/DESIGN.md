@@ -127,6 +127,31 @@ A rim-lit circle holds the G60, then the device name in Playfair, a connection
 chip, three stat columns (brightness, white balance, reading time), a glass
 read action, selectable identity details, and an obsidian Disconnect.
 
+### 3D showcase
+
+The G60 artwork on Welcome, Light and Device opens a fullscreen, offline model
+viewer. A visible glass **3D** badge marks the interaction. It works before
+pairing. Drag to turn and tilt, pinch to zoom, or use Front, Back and Reset;
+a separate spin control pauses or starts the turntable. The default view fits
+the whole object, and deliberate zoom permits closer inspection.
+
+Use the same scarlet studio light, soft canvas fades and crisp native controls.
+The LCD is blank in this viewer; it never displays sample settings that could
+pass for device readback. The model is an illustration, not live output.
+
+Load the renderer only when opened, directly from the bundled APK asset. Keep
+the large page out of React Native view properties. Batch static geometry, cap pixel density,
+draw only during motion and release the WebView when closed. Backgrounding
+pauses rendering. Respect Android reduced motion on opening. Keep the loading
+WebView visible beneath the still artwork: setting its opacity to zero can
+prevent Android from initializing the renderer. At large text sizes, stack
+the view buttons inside a scrollable footer. Real loading progress renews a
+20-second stall window, within a 60-second total active-time limit. Background
+time does not consume either limit. A load failure
+keeps the still artwork and provides retry and Close; contain module failures
+without unmounting the Bluetooth owner. Keep a running scene's Stop action and
+any restoration error visible inside the showcase.
+
 ## Scenes
 
 Use visual scene choices and previews sampled from the shared SDK program,

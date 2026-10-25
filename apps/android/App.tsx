@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type { ComponentRef } from 'react';
 import {
   ActivityIndicator, BackHandler, Linking, Platform, Pressable, ScrollView,
@@ -11,6 +11,7 @@ import { useLight } from './src/useLight';
 import { PatternPanel } from './src/PatternPanel';
 import { Button } from './src/ui/Button';
 import { G60Artwork } from './src/ui/G60Artwork';
+import { ShowcaseBoundary } from './src/showcase/ShowcaseBoundary';
 import { IndicativeSlider } from './src/ui/IndicativeSlider';
 import { canvas, color, font } from './src/ui/theme';
 import { GlassChip, GlassCircle, ObsidianButton, StopGlyph, glass, jelly } from './src/pattern-ui/materials';
@@ -18,6 +19,7 @@ import { deviceLabel, SetupFlow, TextAction } from './src/setup/SetupFlow';
 import type { SetupRoute } from './src/setup/SetupFlow';
 
 type Destination = 'light' | 'scenes' | 'device';
+const G60Showcase = lazy(() => import('./src/showcase/G60Showcase'));
 
 const fonts = {
   [font.regular]: require('./assets/fonts/Poppins-Regular.ttf'),
@@ -60,6 +62,7 @@ function LightScreen() {
   const [mainOpened, setMainOpened] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [showcaseOpen, setShowcaseOpen] = useState(false);
   const [headerHeight, setHeaderHeight] = useState(64);
   const [navHeight, setNavHeight] = useState(68);
   const { width, fontScale } = useWindowDimensions();
@@ -146,7 +149,8 @@ function LightScreen() {
       onNavigate={navigate} onBack={goBack} onSearch={search}
       onCancel={() => perform(light.connecting ? light.disconnect : light.stopScan)}
       onConnect={device => perform(() => light.connect(device))}
-      onAppSettings={openAppSettings} onBluetoothSettings={openBluetoothSettings} />}
+      onAppSettings={openAppSettings} onBluetoothSettings={openBluetoothSettings}
+      onExploreModel={() => setShowcaseOpen(true)} />}
 
     {/* Open the instruments on first use, then retain them across navigation. */}
     {(route === 'main' || mainOpened) && <View style={[s.main, route !== 'main' && s.hidden]} accessibilityElementsHidden={route !== 'main'}
@@ -197,7 +201,7 @@ function LightScreen() {
           <View style={s.stage}>
             <View accessible={false} pointerEvents="none" style={s.deckBack} />
             <View accessible={false} pointerEvents="none" style={s.deckMid} />
-            <View style={s.product}><G60Artwork control /></View>
+            <View style={s.product}><G60Artwork control onExplore={() => setShowcaseOpen(true)} /></View>
             <View style={[s.panel, jelly('ruby')]}>
               <View style={s.panelCorners}>
                 <View accessible accessibilityLabel={`${actualLabel}${readTime ? ` at ${readTime}` : ''}`} style={s.chipWrap}>
@@ -238,7 +242,7 @@ function LightScreen() {
         <View style={[s.destination, destination !== 'device' && s.hidden]} accessibilityElementsHidden={destination !== 'device'}
           importantForAccessibility={destination === 'device' ? 'auto' : 'no-hide-descendants'}>
           <View style={s.profile}>
-            <View style={[s.profileHalo, jelly('ruby', 0.8)]}><View style={s.profileProduct}><G60Artwork /></View></View>
+            <View style={[s.profileHalo, jelly('ruby', 0.8)]}><View style={s.profileProduct}><G60Artwork onExplore={() => setShowcaseOpen(true)} /></View></View>
             <Text style={s.deviceTitle}>{deviceLabel(light.selected?.name)}</Text>
             <View style={s.centerChip}><GlassChip label={connected ? 'Connected' : 'Offline'} dot={connected ? '#FF4A4A' : color.muted} /></View>
           </View>
@@ -280,6 +284,11 @@ function LightScreen() {
         </Pressable>)}
       </View>
     </View>}
+    {showcaseOpen && <ShowcaseBoundary onClose={() => setShowcaseOpen(false)}>
+      <Suspense fallback={null}><G60Showcase onClose={() => setShowcaseOpen(false)}
+        running={light.effect.running} working={light.working} sceneError={light.effect.lastError}
+        onStop={light.stopEffect} /></Suspense>
+    </ShowcaseBoundary>}
   </SafeAreaView>;
 }
 

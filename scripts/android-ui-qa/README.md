@@ -16,3 +16,8 @@ Open port 18925. `?mode=welcome` is the default; additional fixture states are
 `permission`, `denied`, `offline`, `unsupported`, `working`, `running` and `error`.
 Set `api=30` to inspect legacy permission guidance; API 35 is the default.
 The server binds all interfaces for private-device review. Stop it with Ctrl+C.
+
+The **3D** badge opens the actual offline viewer in a sandboxed iframe. Native
+Android uses `react-native-webview`; the iframe adapter exercises the same
+document and command/status bridge. `?viewerFail=module` simulates an unavailable
+viewer module to check that its local error boundary preserves the app beneath.
