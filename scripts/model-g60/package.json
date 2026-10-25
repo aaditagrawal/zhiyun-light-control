@@ -1,0 +1,14 @@
+{
+  "name": "lighttime-g60-model-tools",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.3",
+  "scripts": {
+    "build": "bun build.ts",
+    "studio": "bun server.ts",
+    "verify": "bun verify.ts"
+  },
+  "devDependencies": {
+    "three": "0.180.0"
+  }
+}

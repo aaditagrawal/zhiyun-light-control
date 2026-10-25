@@ -1,0 +1,15 @@
+[Unit]
+Description=Lighttime ZHIYUN MOLUS G60 bridge
+After=bluetooth.target
+
+[Service]
+Type=simple
+# Replace PROJECT_PATH before installing. A single nearby G60 connects automatically.
+WorkingDirectory=PROJECT_PATH
+ExecStart=PROJECT_PATH/.venv/bin/lighttime serve
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

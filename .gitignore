@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+artifacts/
+vendor/
+*.egg-info/
+node_modules/
+dist/
+.expo/
+*.token
+*.log
+.gradle/
+local.properties
+.cxx/
+build/

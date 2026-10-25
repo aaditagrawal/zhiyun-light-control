@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Lighttime · G60 controller</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" type="module"></script>
+</head>
+<body>
+  <main>
+    <header><div class="wordmark">lighttime<span class="accent">.</span></div><span class="model">MOLUS G60</span></header>
+    <div class="connection-status"><span id="indicator" data-state="idle" aria-hidden="true"></span><p id="status" role="status" aria-live="polite">Disconnected. Choose a connection below.</p></div>
+    <div id="reconnect-actions" class="secondary-actions" hidden><button id="reconnect-light">Reconnect light</button><button id="choose-light" hidden>Choose a light</button></div>
+    <div id="personal-picker" class="secondary-actions" hidden><label for="personal-devices">Nearby G60 lights</label><select id="personal-devices"></select><button id="personal-connect">Connect this light</button></div>
+    <section aria-labelledby="controls-heading" class="controls">
+      <div class="section-line"><h1 id="controls-heading">Light controls</h1><button id="power" disabled>Turn output off</button></div>
+      <div class="slider-block">
+        <label for="brightness">Brightness <span class="draft-label">requested</span></label>
+        <output id="brightness-value" for="brightness">5<span>%</span></output>
+        <input id="brightness" type="range" min="0" max="100" step="1" value="5" disabled>
+        <div class="scale"><span>0%</span><span>100%</span></div>
+      </div>
+      <div class="slider-block cct-block">
+        <label for="cct">Color temperature <span class="draft-label">requested</span></label>
+        <output id="cct-value" for="cct">5000<span>K</span></output>
+        <input id="cct" type="range" min="2700" max="6500" step="100" value="5000" disabled>
+        <div class="scale"><span>2700 K · warm</span><span>6500 K · cool</span></div>
+      </div>
+      <div class="write-actions"><button id="apply" class="primary" disabled>Apply settings</button><label class="checkbox"><input id="live" type="checkbox"> Apply while sliding</label></div>
+      <p id="write-status" class="hint" aria-live="polite">Changes are successful only after the light reads them back.</p>
+      <div class="readback" aria-label="Actual device readback"><span class="readback-label">ACTUAL READBACK</span><dl><div><dt>Brightness</dt><dd id="actual-brightness">—</dd></div><div><dt>CCT</dt><dd id="actual-cct">—</dd></div><div><dt>Output</dt><dd id="actual-power">—</dd></div></dl><p id="last-read" class="hint">No verified state yet.</p></div>
+      <div class="secondary-actions"><button id="refresh" disabled>Read back</button><button id="disconnect" disabled>Disconnect light</button></div>
+      <p id="events-status" class="hint" role="status"></p>
+    </section>
+    <section class="patterns" aria-labelledby="patterns-heading">
+      <h2 id="patterns-heading">Light patterns</h2>
+      <p id="patterns-connection" class="hint">Attach through the bridge to run patterns. Direct Bluetooth supports manual controls.</p>
+      <form id="effect-form">
+        <fieldset id="effect-settings" disabled>
+          <legend>Requested pattern settings</legend>
+          <div class="effect-fields">
+            <label class="effect-wide" for="effect-preset">Starting look<select id="effect-preset"><option value="">Custom settings</option></select></label>
+            <label for="effect-pattern">Pattern<select id="effect-pattern"><option value="blink">Blink</option><option value="breathe">Breathe</option><option value="fade-in">Fade in</option><option value="fade-out">Fade out</option><option value="cct-sweep">CCT sweep</option><option value="pulse">Beat / heartbeat</option><option value="flicker">Candle / fire</option><option value="sunrise">Sunrise / sunset</option><option value="lightning">Lightning</option><option value="emergency">Alternating white bursts</option><option value="paparazzi">Camera flashes</option><option value="tv">Television glow</option><option value="morse">Morse message</option><option value="keyframes">Custom keyframes</option></select></label>
+            <label for="effect-duration">Duration (seconds)<input id="effect-duration" type="number" min="1" max="3600" step="any" value="10" required></label>
+            <label class="checkbox effect-wide"><input id="effect-until-stopped" type="checkbox"> Until stopped (cyclic patterns)</label>
+            <label for="effect-period">Cycle period (seconds)<input id="effect-period" type="number" min="0.2" max="60" step="any" value="4" required></label>
+            <label for="effect-min">Minimum brightness (%)<input id="effect-min" type="number" min="0" max="100" step="1" value="0" required></label>
+            <label for="effect-max">Maximum brightness (%)<input id="effect-max" type="number" min="0" max="100" step="1" value="5" required></label>
+            <label for="effect-cct">CCT / sweep start (K)<input id="effect-cct" type="number" min="2700" max="6500" step="100" value="5000" required></label>
+            <label for="effect-cct-end">Sweep end (K)<input id="effect-cct-end" type="number" min="2700" max="6500" step="100" value="6500" required></label>
+            <label for="effect-seed">Variation seed<input id="effect-seed" type="number" min="0" max="4294967295" step="1" value="1" required></label>
+            <label for="effect-curve">Brightness curve<select id="effect-curve"><option value="linear">Linear</option><option value="perceptual">Perceptual</option></select></label>
+            <div id="effect-parameters" class="effect-fields effect-wide"></div>
+            <label for="effect-keyframes" id="effect-keyframes-field" class="effect-wide" hidden>Keyframe program (JSON)<textarea id="effect-keyframes" spellcheck="false" rows="6">[{"at":0,"brightness":0,"cct":2700},{"at":2,"brightness":12,"cct":4500,"ease":"smooth"},{"at":4,"brightness":0,"cct":2700,"ease":"smooth"}]</textarea></label>
+            <label class="checkbox effect-wide"><input id="effect-restore" type="checkbox" checked> Restore starting brightness and CCT on completion</label>
+          </div>
+        </fieldset>
+        <div class="button-row"><button id="effect-start" class="primary" type="submit" disabled>Start pattern</button><button id="effect-stop" type="button" disabled>Stop &amp; restore</button></div>
+      </form>
+      <p id="effect-action" class="hint" role="status">Patterns run on the bridge and continue if this page closes. Manual Apply cancels the pattern before setting the light.</p>
+      <p class="hint">Period is a complete blink cycle. A 0.2 s cycle requests 0.1 s on / 0.1 s off at 50% duty. Transport timing and visible contrast vary; current output is verified above.</p>
+      <div class="effect-readback" aria-label="Actual bridge runner">
+        <p id="effect-status" role="status" aria-live="polite">Runner status unavailable. Attach through the bridge.</p>
+        <progress id="effect-progress" max="1" value="0" aria-label="Actual pattern progress" hidden></progress>
+        <p id="effect-observed" class="hint">No runner status received.</p>
+        <p id="effect-error" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+    <section id="connection-settings" class="connection" aria-labelledby="connection-heading">
+      <h2 id="connection-heading">Connection</h2>
+      <details open id="bridge-details"><summary>Local bridge <span>Browser / OBS dock</span></summary>
+        <div class="bridge-fields">
+          <label for="bridge-url">Bridge URL</label><input id="bridge-url" type="url" spellcheck="false" autocomplete="off" placeholder="Bridge origin, e.g. http://localhost:8877">
+          <label for="token">Access token</label><input id="token" type="password" spellcheck="false" autocomplete="off" placeholder="Paste your local bridge token">
+          <label class="checkbox"><input id="remember" type="checkbox"> Remember token in this tab’s session</label>
+          <p class="hint">Unchecked: memory only. Never put the token in a URL.</p>
+          <div class="button-row"><button id="attach" class="primary">Use bridge connection</button><button id="scan">Find lights</button></div>
+          <div id="device-picker" hidden><label for="devices">Discovered lights</label><select id="devices"></select><button id="connect-device">Connect selected light</button></div>
+          <p class="hint">“Use bridge connection” reads the light already connected to the bridge. Finding lights or connecting can take several seconds.</p>
+        </div>
+      </details>
+      <details id="direct-details"><summary>Direct Bluetooth <span>Supported Chromium only</span></summary><div class="direct-body"><p id="bluetooth-support" class="hint"></p><button id="direct">Choose G60 via Bluetooth</button><p class="hint">Requires a secure page, a user click, and an available Bluetooth adapter. Close other light controllers first. Use the bridge in OBS and browsers without Web Bluetooth.</p></div></details>
+    </section>
+    <footer><span>G60 · 2700–6500 K</span><span>Output off = brightness zero</span></footer>
+  </main>
+</body>
+</html>

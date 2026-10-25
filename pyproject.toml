@@ -1,0 +1,37 @@
+[project]
+name = "lighttime"
+version = "0.1.0"
+description = "Verified ZHIYUN MOLUS G60 controller, local web UI and SDK"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = [
+    "aiohttp>=3.14.5",
+    "bleak>=3.0.2",
+    "pyserial>=3.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.4,<0.14.0"]
+build-backend = "uv_build"
+
+[project.scripts]
+lighttime = "lighttime.cli:main"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["vendor", "artifacts", "node_modules"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+    "ty>=0.0.91",
+]

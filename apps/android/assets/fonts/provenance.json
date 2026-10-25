@@ -1,0 +1,44 @@
+{
+  "retrieved": "2026-10-25",
+  "repository": "https://github.com/google/fonts",
+  "commit": "e7db6ca603fd4862010383ff17ffd6cc4ffac1c0",
+  "license": "SIL Open Font License 1.1; see bundled family license files",
+  "files": [
+    {
+      "file": "Poppins-Regular.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/poppins/Poppins-Regular.ttf",
+      "bytes": 160316,
+      "sha256": "7e65201e9b79159e2300267cc885e16c8dcef2424cdfa09a29bfb0980a94a7ba"
+    },
+    {
+      "file": "Poppins-Medium.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/poppins/Poppins-Medium.ttf",
+      "bytes": 158576,
+      "sha256": "90373e7d838d32468438fc3e152dca0bdb12edcab99ea639f158790b1ba1fd05"
+    },
+    {
+      "file": "Poppins-SemiBold.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/poppins/Poppins-SemiBold.ttf",
+      "bytes": 157312,
+      "sha256": "d3bf1bdaf0550e83da9ac0b1d1d9fe6db086835a83aa28578e609a394b9a0286"
+    },
+    {
+      "file": "Poppins-OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/poppins/OFL.txt",
+      "bytes": 4385,
+      "sha256": "6be04893d770899a015649c7aa3b582f871b272f8747a92b78b17c3e5c8b2573"
+    },
+    {
+      "file": "PlayfairDisplay.ttf",
+      "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/playfairdisplay/PlayfairDisplay%5Bwght%5D.ttf",
+      "bytes": 300724,
+      "sha256": "c40f2293766a503bc70cce9e512ef844a4ccb7cbcde792fe2ea31d191917d8d6"
+    },
+    {
+      "file": "PlayfairDisplay-OFL.txt",
+      "source": "https://raw.githubusercontent.com/google/fonts/e7db6ca603fd4862010383ff17ffd6cc4ffac1c0/ofl/playfairdisplay/OFL.txt",
+      "bytes": 4449,
+      "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e"
+    }
+  ]
+}

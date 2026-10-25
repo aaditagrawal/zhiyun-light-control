@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.13", "3.14"]
+    steps:
+      # Official release commits verified on 2026-10-23.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          version: "0.13.4"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install frozen dependencies
+        run: uv sync --frozen --group dev --compile-bytecode
+      - name: Unit and integration tests (mock hardware)
+        run: uv run --frozen pytest -q
+      - name: Ruff
+        run: uv run --frozen ruff check src tests scripts integrations/obs
+      - name: Type check
+        run: uv run --frozen ty check
+
+  sdk:
+    name: TypeScript SDK and browser build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/sdk
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: packages/sdk/package.json
+      - name: Install frozen dependencies
+        run: bun install --frozen-lockfile
+      - name: SDK tests
+        run: bun test
+      - name: Type check
+        run: bun run typecheck
+      - name: Build ESM and declarations
+        run: bun run build
+      - name: Check the SDK included in Python wheels
+        run: cmp dist/index.js ../../src/lighttime/static/sdk.js
+      - name: Package import smoke test
+        run: bun run smoke
+      - name: Build browser controller
+        run: bun run build:browser
+
+  android:
+    name: Android offline checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: apps/android/package.json
+      - name: Install frozen dependencies
+        run: bun install --frozen-lockfile
+      - name: Offline permission and BLE-adapter tests
+        run: bun test
+      - name: Type check
+        run: bun run typecheck

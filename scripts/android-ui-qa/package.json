@@ -1,0 +1,7 @@
+{
+  "name": "lighttime-android-ui-qa",
+  "private": true,
+  "packageManager": "bun@1.4.3",
+  "scripts": { "build": "bun build.ts", "serve": "bun serve.ts" },
+  "dependencies": { "react": "19.3.0", "react-dom": "19.3.0", "react-native-web": "0.21.2" }
+}

@@ -1,0 +1,39 @@
+{
+  "name": "@lighttime/sdk",
+  "version": "0.1.0",
+  "description": "Independent ZHIYUN MOLUS G60 BLE and local bridge client",
+  "type": "module",
+  "packageManager": "bun@1.4.3",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "react-native": "./src/index.ts",
+  "exports": {
+    ".": {
+      "react-native": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target browser && tsc -p tsconfig.build.json && bun scripts/declarations.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build:browser": "bun build ../../examples/browser/app.ts --outfile ../../examples/browser/app.js --target browser --minify",
+    "smoke": "bun scripts/smoke.ts",
+    "smoke:bridge": "bun scripts/live-bridge.ts",
+    "dev:browser": "bun ../../examples/browser/serve.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.11",
+    "typescript": "5.9.3"
+  },
+  "license": "MIT"
+}
