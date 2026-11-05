@@ -29,8 +29,14 @@ function source(path: string): string {
 
 const baselineManifest = JSON.parse(source('apps/android/package.json'));
 const baselineLock = Bun.JSON5.parse(source('apps/android/bun.lock'));
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+const lockedCodec = isRecord(baselineLock) && isRecord(baselineLock.packages)
+  ? baselineLock.packages['base64-js'] : undefined;
 const version = baselineManifest.dependencies['base64-js'];
-if (version !== '1.5.1' || !baselineLock.packages['base64-js'][0].startsWith(`base64-js@${version}`)) {
+if (version !== '1.5.1' || !Array.isArray(lockedCodec) || lockedCodec[0] !== `base64-js@${version}`
+    || typeof lockedCodec[3] !== 'string' || !lockedCodec[3].startsWith('sha512-')) {
   throw new Error('The selected baseline must consume base64-js 1.5.1.');
 }
 const temporary = await mkdtemp(join(tmpdir(), 'lighttime-codec-baseline-'));
@@ -41,7 +47,7 @@ try {
   await writeFile(join(temporary, 'package.json'), JSON.stringify(fixtureManifest));
   await writeFile(join(temporary, 'bun.lock'), JSON.stringify({
     lockfileVersion: 2, configVersion: 1,
-    workspaces: { '': fixtureManifest }, packages: { 'base64-js': baselineLock.packages['base64-js'] },
+    workspaces: { '': fixtureManifest }, packages: { 'base64-js': lockedCodec },
   }));
   const install = Bun.spawnSync([process.execPath, 'install', '--frozen-lockfile', '--ignore-scripts'], { cwd: temporary });
   if (install.exitCode) throw new Error(install.stderr.toString());
