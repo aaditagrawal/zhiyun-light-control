@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import type { BleManager, Device } from 'react-native-ble-plx';
-import { fromByteArray, toByteArray } from 'base64-js';
 import { BleProtocolTransport, crc16Xmodem, LightController } from '@lighttime/sdk';
 import { NativeBleAdapter } from '../src/ble/NativeBleAdapter';
 import { advertisedLight, G60_NOTIFY, G60_SERVICE, G60_WRITE } from '../src/ble/constants';
@@ -40,7 +39,7 @@ function nativeHarness({ unsupported = false, ignoreWrites = false } = {}) {
     },
     writeCharacteristicWithResponseForService: async (service: string, characteristic: string, value: string) => {
       expect(service).toBe(G60_SERVICE); expect(characteristic).toBe(G60_WRITE);
-      const chunk = toByteArray(value); chunks.push(chunk.length); buffered.push(...chunk);
+      const chunk = Uint8Array.from(Buffer.from(value, 'base64')); chunks.push(chunk.length); buffered.push(...chunk);
       while (buffered.length >= 4) {
         const length = buffered[2]! | buffered[3]! << 8;
         if (buffered.length < length + 6) break;
@@ -65,7 +64,7 @@ function nativeHarness({ unsupported = false, ignoreWrites = false } = {}) {
         responseView.setUint16(response.length - 2, crc16Xmodem(response.subarray(4, -2)), true);
         // Real native callbacks carry Base64, with notification boundaries unrelated to frames.
         for (const part of [response.slice(0, 7), response.slice(7)]) {
-          notify?.(null, { value: fromByteArray(part) });
+          notify?.(null, { value: Buffer.from(part).toString('base64') });
         }
       }
       return {};
@@ -83,6 +82,7 @@ function nativeHarness({ unsupported = false, ignoreWrites = false } = {}) {
   return {
     manager: native as unknown as BleManager, device: device as unknown as Device, frames, chunks,
     monitorError: () => notify?.(new Error('GATT failure'), null),
+    notification: (value: string) => notify?.(null, { value }),
     get monitorRemovals() { return monitorRemovals; }, get disconnectRemovals() { return disconnectRemovals; },
     get cancelled() { return cancelled; },
   };
@@ -161,6 +161,34 @@ describe('Android BLE integration with captured G60 frames', () => {
     expect(native.disconnectRemovals).toBe(1);
     await expect(light.refresh()).rejects.toThrow();
     await light.disconnect();
+  });
+
+  test('corrupt base64 invalidates readback and releases native subscriptions once', async () => {
+    const native = nativeHarness();
+    const light = new LightController(new BleProtocolTransport(new NativeBleAdapter(native.manager, 'test-g60')));
+    await light.connect();
+    native.notification('!!!!');
+    expect(light.state.connected).toBe(false);
+    expect(native.monitorRemovals).toBe(1);
+    expect(native.disconnectRemovals).toBe(1);
+    expect(native.cancelled).toBe(1);
+    await expect(light.refresh()).rejects.toThrow();
+    await light.disconnect();
+    expect(native.monitorRemovals).toBe(1);
+    expect(native.disconnectRemovals).toBe(1);
+  });
+
+  test('notification listeners can retain or mutate bytes without changing later notifications', async () => {
+    const native = nativeHarness();
+    const adapter = new NativeBleAdapter(native.manager, 'test-g60');
+    await adapter.connect();
+    const received: Uint8Array[] = [];
+    await adapter.subscribe((bytes) => { received.push(bytes); });
+    native.notification('Zm9v');
+    received[0]!.fill(0);
+    native.notification('Zm9v');
+    expect(received[1]).toEqual(new Uint8Array([102, 111, 111]));
+    await adapter.disconnect();
   });
 
   test('cancels a connection which completes after cleanup', async () => {
