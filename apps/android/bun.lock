@@ -7,7 +7,6 @@
       "dependencies": {
         "@lighttime/sdk": "file:../../packages/sdk",
         "@react-native-community/slider": "5.2.1",
-        "base64-js": "1.5.1",
         "expo": "~58.0.21",
         "expo-constants": "~58.0.14",
         "expo-dev-client": "~58.0.17",
@@ -21,7 +20,6 @@
         "react-native-webview": "14.0.1",
       },
       "devDependencies": {
-        "@types/base64-js": "^1.5.0",
         "@types/bun": "^1.4.4",
         "@types/react": "~19.3.0",
         "typescript": "~6.0.3",
@@ -299,8 +297,6 @@
     "@react-native/virtualized-lists": ["@react-native/virtualized-lists@0.88.1", "", { "dependencies": { "invariant": "^2.2.4", "nullthrows": "^1.1.1" }, "peerDependencies": { "@types/react": "^19.2.0", "react": "*", "react-native": "0.88.1" }, "optionalPeers": ["@types/react"] }, "sha512-Zt+OGvJE6VgmzgemZL8TSA0VomNWpHMNcG0OvLkkBQEGrzY8OdDHRfjJh7S+f+UFJF77kicRC6o6mt3A7ER9lQ=="],
 
     "@sinclair/typebox": ["@sinclair/typebox@0.27.12", "", {}, "sha512-hhyNJ+nbR6ZR7pToHvllEFun9TL0sbL+tk/ON75lo+Xas054uez98qRbsuNt7MBCyZKK4+8Yli/OAGZhmfBZ/g=="],
-
-    "@types/base64-js": ["@types/base64-js@1.5.0", "", { "dependencies": { "base64-js": "*" } }, "sha512-xDDGwUoGXW4FHFWs1pIMXZrVD4kxOAo4KmNSZlb0w5hT52Gd4eIzkjwVp/XRpSox2hfR3h7ZO6witfU7aAZ6XA=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 

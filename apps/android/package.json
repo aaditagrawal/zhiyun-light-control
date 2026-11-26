@@ -19,7 +19,6 @@
   "dependencies": {
     "@lighttime/sdk": "file:../../packages/sdk",
     "@react-native-community/slider": "5.2.1",
-    "base64-js": "1.5.1",
     "expo": "~58.0.21",
     "expo-constants": "~58.0.14",
     "expo-dev-client": "~58.0.17",
@@ -33,7 +32,6 @@
     "react-native-webview": "14.0.1"
   },
   "devDependencies": {
-    "@types/base64-js": "^1.5.0",
     "@types/bun": "^1.4.4",
     "@types/react": "~19.3.0",
     "typescript": "~6.0.3"

@@ -1,6 +1,6 @@
 import type { BleAdapter, Unsubscribe } from '@lighttime/sdk';
 import type { BleManager, Device, Subscription } from 'react-native-ble-plx';
-import { fromByteArray, toByteArray } from 'base64-js';
+import { decodeBase64, encodeBase64 } from './base64';
 import { G60_NOTIFY, G60_SERVICE, G60_WRITE } from './constants';
 
 /** Only native GATT I/O lives here; framing, correlation and verification belong to the SDK. */
@@ -61,7 +61,7 @@ export class NativeBleAdapter implements BleAdapter {
         return;
       }
       if (characteristic?.value) {
-        try { listener(toByteArray(characteristic.value).slice()); }
+        try { listener(decodeBase64(characteristic.value)); }
         catch {
           this.drop();
           void this.manager.cancelDeviceConnection(this.address).catch(() => {});
@@ -87,7 +87,7 @@ export class NativeBleAdapter implements BleAdapter {
     const device = this.requireDevice();
     // SDK splits frames into <=20-byte writes, which work at the default ATT MTU.
     if (bytes.length > 20) throw new Error('BLE writes must be split into 20-byte chunks.');
-    await device.writeCharacteristicWithResponseForService(G60_SERVICE, G60_WRITE, fromByteArray(bytes));
+    await device.writeCharacteristicWithResponseForService(G60_SERVICE, G60_WRITE, encodeBase64(bytes));
     this.requireDevice();
     // ATT acknowledgement is not a proprietary protocol reply. Queries alone wait for replies.
   }
